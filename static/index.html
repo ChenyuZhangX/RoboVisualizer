@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LeRobot Visualizer</title>
-  <link rel="stylesheet" href="/style.css?v=5" />
+  <link rel="stylesheet" href="/style.css?v=6" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -29,6 +29,10 @@
               <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
             </svg>
           </button>
+        </div>
+        <!-- Search -->
+        <div id="sidebar-search">
+          <input type="text" id="search-input" placeholder="Filter tasks…" autocomplete="off" spellcheck="false" />
         </div>
         <div id="dataset-tree"></div>
       </aside>
@@ -66,23 +70,44 @@
             <div class="chart-card" id="chart-card-state">
               <div class="chart-title-bar">
                 <span class="chart-title-text" id="chart-title-state">State</span>
-                <button class="expand-btn" id="expand-state" title="Split by dimension">
-                  <svg class="icon-expand" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-                  <svg class="icon-collapse hidden" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
-                </button>
+                <div class="chart-btn-group">
+                  <button class="chart-tool-btn" id="hist-state" title="Toggle histogram">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="12" width="4" height="9"/><rect x="10" y="7" width="4" height="14"/><rect x="17" y="3" width="4" height="18"/></svg>
+                  </button>
+                  <button class="expand-btn" id="expand-state" title="Split by dimension">
+                    <svg class="icon-expand" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                    <svg class="icon-collapse hidden" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                  </button>
+                </div>
               </div>
               <div class="chart-body" id="chart-body-state"></div>
             </div>
             <div class="chart-card" id="chart-card-action">
               <div class="chart-title-bar">
                 <span class="chart-title-text" id="chart-title-action">Action</span>
-                <button class="expand-btn" id="expand-action" title="Split by dimension">
-                  <svg class="icon-expand" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-                  <svg class="icon-collapse hidden" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
-                </button>
+                <div class="chart-btn-group">
+                  <button class="chart-tool-btn" id="hist-action" title="Toggle histogram">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="12" width="4" height="9"/><rect x="10" y="7" width="4" height="14"/><rect x="17" y="3" width="4" height="18"/></svg>
+                  </button>
+                  <button class="expand-btn" id="expand-action" title="Split by dimension">
+                    <svg class="icon-expand" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                    <svg class="icon-collapse hidden" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                  </button>
+                </div>
               </div>
               <div class="chart-body" id="chart-body-action"></div>
             </div>
+          </div>
+
+          <!-- Correlation heatmap -->
+          <div id="corr-section" class="chart-card hidden">
+            <div class="chart-title-bar">
+              <span class="chart-title-text">Action Correlation</span>
+              <button class="expand-btn active" id="corr-close" title="Hide correlation">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+              </button>
+            </div>
+            <div id="corr-body"></div>
           </div>
 
           <!-- Playback controls -->
@@ -94,6 +119,16 @@
               <svg id="play-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
               <svg id="pause-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" class="hidden"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
             </button>
+            <button id="btn-loop" class="ctrl-btn" title="Toggle loop">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+            </button>
+            <select id="speed-select" title="Playback speed">
+              <option value="0.25">0.25×</option>
+              <option value="0.5">0.5×</option>
+              <option value="1" selected>1×</option>
+              <option value="2">2×</option>
+              <option value="4">4×</option>
+            </select>
             <input type="range" id="scrubber" min="0" value="0" step="1" />
             <span id="frame-counter" class="frame-count">0 / 0</span>
             <button id="btn-shortcuts" class="ctrl-btn" title="Keyboard shortcuts">
@@ -116,12 +151,20 @@
         <tr><td><kbd>R</kbd> / <kbd>Home</kbd></td><td>Rewind to start</td></tr>
         <tr><td><kbd>End</kbd></td><td>Jump to last frame</td></tr>
         <tr><td><kbd>Ctrl</kbd>+click ep</td><td>Compare episode overlay</td></tr>
-        <tr><td><kbd>Esc</kbd></td><td>Clear comparison</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>Clear comparison / close</td></tr>
       </table>
       <p class="modal-hint">Click outside to close</p>
     </div>
   </div>
 
-  <script src="/app.js?v=5"></script>
+  <!-- Camera lightbox -->
+  <div id="cam-lightbox" class="modal-overlay hidden">
+    <div class="lightbox-box">
+      <img id="lightbox-img" alt="" />
+      <div id="lightbox-label"></div>
+    </div>
+  </div>
+
+  <script src="/app.js?v=6"></script>
 </body>
 </html>
