@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LeRobot Visualizer</title>
-  <link rel="stylesheet" href="/style.css?v=4" />
+  <link rel="stylesheet" href="/style.css?v=5" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -45,6 +45,14 @@
         <div id="viewer" class="hidden">
           <!-- Language description -->
           <div id="task-label"></div>
+
+          <!-- Compare banner (hidden when no compare episode) -->
+          <div id="compare-banner" class="hidden">
+            <span id="compare-label"></span>
+            <button id="compare-clear" title="Clear comparison">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
 
           <!-- Camera views -->
           <div id="cameras">
@@ -107,11 +115,13 @@
         <tr><td><kbd>⇧←</kbd> <kbd>⇧→</kbd></td><td>Step 10 frames</td></tr>
         <tr><td><kbd>R</kbd> / <kbd>Home</kbd></td><td>Rewind to start</td></tr>
         <tr><td><kbd>End</kbd></td><td>Jump to last frame</td></tr>
+        <tr><td><kbd>Ctrl</kbd>+click ep</td><td>Compare episode overlay</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>Clear comparison</td></tr>
       </table>
       <p class="modal-hint">Click outside to close</p>
     </div>
   </div>
 
-  <script src="/app.js?v=4"></script>
+  <script src="/app.js?v=5"></script>
 </body>
 </html>

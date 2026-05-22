@@ -14,6 +14,10 @@ const state = {
   activeEpIndex: null,
   frameCache: new Map(),      // frame_index -> {key: base64, ...}
   prefetchPending: new Set(), // frame indices currently in-flight
+  // comparison overlay
+  compareEpisode: null,
+  compareDataset: null,
+  compareEpIndex: null,
 };
 
 const PREFETCH_AHEAD = 8;
@@ -22,6 +26,11 @@ const PREFETCH_AHEAD = 8;
 const PALETTE = [
   "#3B82F6","#10B981","#F59E0B","#EF4444","#8B5CF6",
   "#06B6D4","#F97316","#EC4899","#14B8A6","#6366F1",
+];
+// Compare episode uses same hues but desaturated/amber-shifted via opacity
+const PALETTE_CMP = [
+  "#F59E0B","#F97316","#EF4444","#8B5CF6","#EC4899",
+  "#14B8A6","#6366F1","#06B6D4","#10B981","#3B82F6",
 ];
 
 /* ── Normalization ───────────────────────────────────────── */
@@ -163,7 +172,13 @@ function buildTaskNode(dsPath, task) {
       <span class="ep-dot"></span>
       <span>ep_${String(ep.episode_index).padStart(6, "0")}</span>
       <span class="ep-len">${ep.length}f</span>`;
-    item.addEventListener("click", () => selectEpisode(dsPath, ep.episode_index, task.task, item));
+    item.addEventListener("click", e => {
+      if (e.ctrlKey || e.metaKey) {
+        selectCompareEpisode(dsPath, ep.episode_index, item);
+      } else {
+        selectEpisode(dsPath, ep.episode_index, task.task, item);
+      }
+    });
     eps.appendChild(item);
   }
 
@@ -194,6 +209,10 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
   state.activeEpIndex = epIndex;
   state.frameCache.clear();
   state.prefetchPending.clear();
+  // Auto-clear comparison if it matches the new primary episode
+  if (state.compareDataset === dsPath && state.compareEpIndex === epIndex) {
+    clearCompare();
+  }
 
   el("welcome").classList.add("hidden");
   el("viewer").classList.remove("hidden");
@@ -213,6 +232,40 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
   } catch (e) {
     el("task-label").textContent = `Error: ${e.message}`;
   }
+}
+
+async function selectCompareEpisode(dsPath, epIndex, clickedEl) {
+  // Toggle off if same episode clicked again
+  if (state.compareDataset === dsPath && state.compareEpIndex === epIndex) {
+    clearCompare();
+    return;
+  }
+
+  document.querySelectorAll(".ep-item.compare").forEach(e => e.classList.remove("compare"));
+  clickedEl.classList.add("compare");
+
+  state.compareDataset = dsPath;
+  state.compareEpIndex = epIndex;
+
+  try {
+    const ep = await apiFetch(`/api/datasets/${encodeURIComponent(dsPath)}/episodes/${epIndex}`);
+    state.compareEpisode = ep;
+    const ns = state.normStats; // use primary episode's norm stats for overlay
+    buildCharts(state.episode);
+    el("compare-banner").classList.remove("hidden");
+    el("compare-label").textContent = `Comparing ep_${String(epIndex).padStart(6,"0")} (dashed)`;
+  } catch (e) {
+    state.compareEpisode = null;
+  }
+}
+
+function clearCompare() {
+  state.compareEpisode = null;
+  state.compareDataset = null;
+  state.compareEpIndex = null;
+  document.querySelectorAll(".ep-item.compare").forEach(e => e.classList.remove("compare"));
+  el("compare-banner").classList.add("hidden");
+  if (state.episode) buildCharts(state.episode);
 }
 
 /* ── Camera rendering ────────────────────────────────────── */
@@ -291,11 +344,15 @@ function buildCharts(ep) {
   const { data: stateData,  normalized: sNorm } = normalizeData(ep.state,   ns?.state);
   const { data: actionData, normalized: aNorm } = normalizeData(ep.actions, ns?.action);
 
-  state.stateCharts  = buildChartCard("state",  stateData,  ep.state_names,  sNorm, ep);
-  state.actionCharts = buildChartCard("action", actionData, ep.action_names, aNorm, ep);
+  const cmp = state.compareEpisode;
+  const cmpState  = cmp ? normalizeData(cmp.state,   ns?.state).data  : null;
+  const cmpAction = cmp ? normalizeData(cmp.actions, ns?.action).data : null;
+
+  state.stateCharts  = buildChartCard("state",  stateData,  ep.state_names,  sNorm, ep, cmpState);
+  state.actionCharts = buildChartCard("action", actionData, ep.action_names, aNorm, ep, cmpAction);
 }
 
-function buildChartCard(type, data2d, names, normalized, ep) {
+function buildChartCard(type, data2d, names, normalized, ep, cmpData2d = null) {
   const expanded = state[`${type}Expanded`];
   const body    = el(`chart-body-${type}`);
   const titleEl = el(`chart-title-${type}`);
@@ -324,7 +381,7 @@ function buildChartCard(type, data2d, names, normalized, ep) {
   if (!expanded) {
     // ── Collapsed: all dims on one chart ────────────────────
     body.innerHTML = `<div class="chart-wrap"><canvas id="${type}-chart"></canvas></div>`;
-    charts.push(makeChart(`${type}-chart`, labels, data2d, names, normalized, dims));
+    charts.push(makeChart(`${type}-chart`, labels, data2d, names, normalized, dims, null, cmpData2d));
   } else {
     // ── Expanded: one mini chart per dim ────────────────────
     body.innerHTML = `<div class="chart-grid" id="${type}-grid"></div>`;
@@ -339,7 +396,7 @@ function buildChartCard(type, data2d, names, normalized, ep) {
         <div class="mini-chart-label" style="color:${color}">${label}</div>
         <div class="mini-chart-wrap"><canvas id="${itemId}"></canvas></div>`;
       grid.appendChild(item);
-      charts.push(makeChart(itemId, labels, data2d, names, normalized, 1, d));
+      charts.push(makeChart(itemId, labels, data2d, names, normalized, 1, d, cmpData2d));
     }
   }
 
@@ -347,27 +404,44 @@ function buildChartCard(type, data2d, names, normalized, ep) {
 }
 
 // dims: how many dims to show; dimIndex: which single dim (for mini charts)
-function makeChart(canvasId, labels, data2d, names, normalized, dims, dimIndex = null) {
+function makeChart(canvasId, labels, data2d, names, normalized, dims, dimIndex = null, cmpData2d = null) {
   const ctx = el(canvasId).getContext("2d");
   const isMini = dimIndex !== null;
 
-  const datasets = isMini
-    ? [{
-        label: names[dimIndex] ?? `dim_${dimIndex}`,
-        data: data2d.map(row => row[dimIndex]),
-        borderColor: PALETTE[dimIndex % PALETTE.length],
-        borderWidth: 1.5,
-        pointRadius: 0,
-        tension: 0.2,
-      }]
-    : Array.from({ length: dims }, (_, d) => ({
-        label: names[d] ?? `dim_${d}`,
-        data: data2d.map(row => row[d]),
-        borderColor: PALETTE[d % PALETTE.length],
-        borderWidth: 1.5,
-        pointRadius: 0,
-        tension: 0.2,
-      }));
+  function primaryDatasets() {
+    if (isMini) return [{
+      label: names[dimIndex] ?? `dim_${dimIndex}`,
+      data: data2d.map(row => row[dimIndex]),
+      borderColor: PALETTE[dimIndex % PALETTE.length],
+      borderWidth: 1.5, pointRadius: 0, tension: 0.2,
+    }];
+    return Array.from({ length: dims }, (_, d) => ({
+      label: names[d] ?? `dim_${d}`,
+      data: data2d.map(row => row[d]),
+      borderColor: PALETTE[d % PALETTE.length],
+      borderWidth: 1.5, pointRadius: 0, tension: 0.2,
+    }));
+  }
+
+  function compareDatasets() {
+    if (!cmpData2d) return [];
+    if (isMini) return [{
+      label: `B: ${names[dimIndex] ?? `dim_${dimIndex}`}`,
+      data: cmpData2d.map(row => row[dimIndex]),
+      borderColor: PALETTE_CMP[dimIndex % PALETTE_CMP.length],
+      borderWidth: 1.5, pointRadius: 0, tension: 0.2,
+      borderDash: [4, 3],
+    }];
+    return Array.from({ length: dims }, (_, d) => ({
+      label: `B: ${names[d] ?? `dim_${d}`}`,
+      data: cmpData2d.map(row => row[d]),
+      borderColor: PALETTE_CMP[d % PALETTE_CMP.length],
+      borderWidth: 1.5, pointRadius: 0, tension: 0.2,
+      borderDash: [4, 3],
+    }));
+  }
+
+  const datasets = [...primaryDatasets(), ...compareDatasets()];
 
   const yConfig = normalized
     ? { min: -1.05, max: 1.05,
@@ -427,11 +501,16 @@ function toggleExpand(type) {
   if (!state.episode) return;
   const ep = state.episode;
   const ns = state.normStats;
+  const nsKey = type === "state" ? "state" : "action";
   const data = type === "state" ? ep.state : ep.actions;
   const names = type === "state" ? ep.state_names : ep.action_names;
-  const nsKey = type === "state" ? "state" : "action";
   const { data: normData, normalized } = normalizeData(data, ns?.[nsKey]);
-  state[`${type}Charts`] = buildChartCard(type, normData, names, normalized, ep);
+
+  const cmp = state.compareEpisode;
+  const cmpRaw = cmp ? (type === "state" ? cmp.state : cmp.actions) : null;
+  const cmpData = cmpRaw ? normalizeData(cmpRaw, ns?.[nsKey]).data : null;
+
+  state[`${type}Charts`] = buildChartCard(type, normData, names, normalized, ep, cmpData);
 }
 
 /* ── Playback ────────────────────────────────────────────── */
@@ -506,6 +585,8 @@ document.addEventListener("DOMContentLoaded", () => {
   el("expand-state").addEventListener("click",  () => toggleExpand("state"));
   el("expand-action").addEventListener("click", () => toggleExpand("action"));
 
+  el("compare-clear").addEventListener("click", clearCompare);
+
   // ── Keyboard shortcuts ────────────────────────────────────
   document.addEventListener("keydown", e => {
     // Ignore when focus is inside an input / textarea
@@ -538,6 +619,9 @@ document.addEventListener("DOMContentLoaded", () => {
         e.preventDefault();
         stopPlayback();
         setFrame(state.episode.length - 1);
+        break;
+      case "Escape":
+        if (state.compareEpisode) { e.preventDefault(); clearCompare(); }
         break;
     }
   });

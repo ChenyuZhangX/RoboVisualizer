@@ -6,6 +6,9 @@
   --blue-lt: #EFF6FF;
   --blue-dk: #1D4ED8;
   --green:   #10B981;
+  --amber:   #F59E0B;
+  --amber-lt:#FFFBEB;
+  --amber-dk:#B45309;
   --text:    #1E293B;
   --text-2:  #64748B;
   --text-3:  #94A3B8;
@@ -201,6 +204,12 @@ body {
   color: var(--blue-dk);
   font-weight: 600;
 }
+.ep-item.compare {
+  background: var(--amber-lt);
+  color: var(--amber-dk);
+  font-weight: 600;
+}
+.ep-item.compare .ep-dot { background: var(--amber); }
 
 .ep-dot {
   width: 6px; height: 6px;
@@ -276,6 +285,34 @@ body {
   padding: 16px 20px 12px;
   min-height: 0;
 }
+
+/* Compare banner */
+#compare-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--amber-dk);
+  background: var(--amber-lt);
+  border-left: 3px solid var(--amber);
+  padding: 6px 10px 6px 12px;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  margin-bottom: 10px;
+}
+#compare-banner button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--amber-dk);
+  padding: 2px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  opacity: .7;
+  transition: opacity .15s;
+}
+#compare-banner button:hover { opacity: 1; }
 
 /* Task label */
 #task-label {
