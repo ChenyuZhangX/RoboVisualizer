@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import base64
 import io
+from collections import OrderedDict
 from pathlib import Path
 from typing import Optional
 
@@ -24,6 +25,28 @@ DATA_DIR = Path(__file__).parent / "data"
 STATIC_DIR = Path(__file__).parent / "static"
 
 app = FastAPI(title="LeRobot Visualizer")
+
+# ── Parquet table cache (LRU, max 24 tables) ─────────────────────────────────
+_TABLE_CACHE: OrderedDict = OrderedDict()
+_TABLE_CACHE_MAX = 24
+
+
+def read_parquet_cached(path: Path, columns: list[str] | None = None):
+    """Read a parquet file, caching the full table keyed by path."""
+    key = str(path)
+    if key in _TABLE_CACHE:
+        _TABLE_CACHE.move_to_end(key)
+        table = _TABLE_CACHE[key]
+    else:
+        table = pq.read_table(path)
+        _TABLE_CACHE[key] = table
+        _TABLE_CACHE.move_to_end(key)
+        if len(_TABLE_CACHE) > _TABLE_CACHE_MAX:
+            _TABLE_CACHE.popitem(last=False)
+    if columns is not None:
+        existing = [c for c in columns if c in table.schema.names]
+        return table.select(existing) if existing else table
+    return table
 
 
 def is_valid_dataset(path: Path) -> bool:
@@ -139,7 +162,7 @@ def get_episode(dataset: str, episode_index: int):
     if not parquet_path.exists():
         raise HTTPException(404, f"Episode {episode_index} not found")
 
-    table = pq.read_table(parquet_path)
+    table = read_parquet_cached(parquet_path)
     df_dict = table.to_pydict()
 
     features = info.get("features", {})
@@ -216,7 +239,7 @@ def get_frame(dataset: str, episode_index: int, frame_index: int):
     # ── Parquet-embedded images (only for keys not already served from video) ─
     remaining = [k for k in image_keys if k not in result]
     if remaining:
-        table = pq.read_table(parquet_path, columns=remaining)
+        table = read_parquet_cached(parquet_path, columns=remaining)
         df_dict = table.to_pydict()
 
         if frame_index < 0 or frame_index >= table.num_rows:
