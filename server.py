@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import base64
 import io
@@ -9,6 +11,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from PIL import Image
+
+# Optional video support via cv2 (OpenCV)
+try:
+    import cv2 as _cv2
+    _HAS_CV2 = True
+except ImportError:
+    _cv2 = None
+    _HAS_CV2 = False
 
 DATA_DIR = Path(__file__).parent / "data"
 STATIC_DIR = Path(__file__).parent / "static"
@@ -25,6 +35,30 @@ def get_dataset_path(dataset: str) -> Path:
     if not p.exists() or not is_valid_dataset(p):
         raise HTTPException(404, f"Dataset '{dataset}' not found")
     return p
+
+
+# ── Video helpers ────────────────────────────────────────────────────────────
+
+def video_path_for(base: Path, key: str, chunk: int, episode_index: int) -> Path:
+    return base / "videos" / f"chunk-{chunk:03d}" / f"{key}_episode_{episode_index:06d}.mp4"
+
+
+def extract_video_frame(video_path: Path, frame_index: int) -> str | None:
+    """Return base64 JPEG data-URI for frame_index from an MP4 file, or None on failure."""
+    if not _HAS_CV2:
+        return None
+    cap = _cv2.VideoCapture(str(video_path))
+    try:
+        cap.set(_cv2.CAP_PROP_POS_FRAMES, frame_index)
+        ok, frame = cap.read()
+        if not ok:
+            return None
+        ok2, buf = _cv2.imencode(".jpg", frame, [_cv2.IMWRITE_JPEG_QUALITY, 85])
+        if not ok2:
+            return None
+        return "data:image/jpeg;base64," + base64.b64encode(buf.tobytes()).decode()
+    finally:
+        cap.release()
 
 
 # ── API ──────────────────────────────────────────────────────────────────────
@@ -110,13 +144,21 @@ def get_episode(dataset: str, episode_index: int):
 
     features = info.get("features", {})
 
-    # detect image keys (dtype == "image" or column contains bytes/large_binary)
+    # detect image keys (embedded bytes in parquet)
     image_keys = [k for k, v in features.items() if v.get("dtype") == "image"]
     if not image_keys:
-        # fallback: check schema
         for field in table.schema:
             if "binary" in str(field.type).lower():
                 image_keys.append(field.name)
+
+    # detect video keys (separate MP4 files)
+    video_keys = [
+        k for k, v in features.items()
+        if v.get("dtype") == "video"
+        and video_path_for(base, k, chunk, episode_index).exists()
+    ]
+    # merge; video keys take priority when both present for same logical camera
+    all_visual_keys = image_keys + [k for k in video_keys if k not in image_keys]
 
     state_names = features.get("state", {}).get("names") or [f"state_{i}" for i in range(len(df_dict.get("state", [[]])[0]))]
     action_names = features.get("actions", {}).get("names") or [f"action_{i}" for i in range(len(df_dict.get("actions", [[]])[0]))]
@@ -139,8 +181,9 @@ def get_episode(dataset: str, episode_index: int):
         "actions": to_list(df_dict.get("actions", [])),
         "state_names": state_names if isinstance(state_names, list) else list(state_names),
         "action_names": action_names if isinstance(action_names, list) else list(action_names),
-        "image_keys": image_keys,
-        "has_images": len(image_keys) > 0,
+        "image_keys": all_visual_keys,
+        "has_images": len(all_visual_keys) > 0,
+        "video_keys": video_keys,
     }
 
 
@@ -157,30 +200,43 @@ def get_frame(dataset: str, episode_index: int, frame_index: int):
 
     features = info.get("features", {})
     image_keys = [k for k, v in features.items() if v.get("dtype") == "image"]
-
-    table = pq.read_table(parquet_path, columns=image_keys if image_keys else None)
-    df_dict = table.to_pydict()
-
-    if frame_index < 0 or frame_index >= table.num_rows:
-        raise HTTPException(400, f"frame_index {frame_index} out of range")
+    video_keys = [k for k, v in features.items() if v.get("dtype") == "video"]
 
     result = {}
-    for key in image_keys:
-        col = df_dict.get(key, [])
-        if not col or frame_index >= len(col):
+
+    # ── Video-based frames ────────────────────────────────────────────────────
+    for key in video_keys:
+        vp = video_path_for(base, key, chunk, episode_index)
+        if not vp.exists():
             continue
-        raw = col[frame_index]
-        # raw may be bytes or a dict with "bytes" key (lerobot format)
-        if isinstance(raw, dict):
-            raw = raw.get("bytes", b"")
-        if isinstance(raw, (bytes, bytearray)) and raw:
-            try:
-                img = Image.open(io.BytesIO(raw))
-                buf = io.BytesIO()
-                img.save(buf, format="JPEG", quality=85)
-                result[key] = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
-            except Exception:
-                pass
+        uri = extract_video_frame(vp, frame_index)
+        if uri:
+            result[key] = uri
+
+    # ── Parquet-embedded images (only for keys not already served from video) ─
+    remaining = [k for k in image_keys if k not in result]
+    if remaining:
+        table = pq.read_table(parquet_path, columns=remaining)
+        df_dict = table.to_pydict()
+
+        if frame_index < 0 or frame_index >= table.num_rows:
+            raise HTTPException(400, f"frame_index {frame_index} out of range")
+
+        for key in remaining:
+            col = df_dict.get(key, [])
+            if not col or frame_index >= len(col):
+                continue
+            raw = col[frame_index]
+            if isinstance(raw, dict):
+                raw = raw.get("bytes", b"")
+            if isinstance(raw, (bytes, bytearray)) and raw:
+                try:
+                    img = Image.open(io.BytesIO(raw))
+                    buf = io.BytesIO()
+                    img.save(buf, format="JPEG", quality=85)
+                    result[key] = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+                except Exception:
+                    pass
 
     return result
 
