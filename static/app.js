@@ -12,7 +12,11 @@ const state = {
   actionExpanded: false,
   activeDataset: null,
   activeEpIndex: null,
+  frameCache: new Map(),      // frame_index -> {key: base64, ...}
+  prefetchPending: new Set(), // frame indices currently in-flight
 };
+
+const PREFETCH_AHEAD = 8;
 
 /* ── Palette ─────────────────────────────────────────────── */
 const PALETTE = [
@@ -188,6 +192,8 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
 
   state.activeDataset = dsPath;
   state.activeEpIndex = epIndex;
+  state.frameCache.clear();
+  state.prefetchPending.clear();
 
   el("welcome").classList.add("hidden");
   el("viewer").classList.remove("hidden");
@@ -215,36 +221,68 @@ function resetCam(i) {
   slot.innerHTML = `<div class="cam-placeholder"><span>No camera</span></div>`;
 }
 
+function prefetchFrames() {
+  const ep = state.episode;
+  if (!ep || !ep.has_images) return;
+  const ds = state.activeDataset;
+  const epIdx = state.activeEpIndex;
+  const end = Math.min(state.frame + PREFETCH_AHEAD, ep.length - 1);
+  for (let f = state.frame + 1; f <= end; f++) {
+    if (state.frameCache.has(f) || state.prefetchPending.has(f)) continue;
+    state.prefetchPending.add(f);
+    apiFetch(`/api/datasets/${encodeURIComponent(ds)}/episodes/${epIdx}/frame/${f}`)
+      .then(data => { state.frameCache.set(f, data); state.prefetchPending.delete(f); })
+      .catch(() => state.prefetchPending.delete(f));
+  }
+  // Evict frames well behind the cursor to bound memory
+  for (const k of state.frameCache.keys()) {
+    if (k < state.frame - 2) state.frameCache.delete(k);
+  }
+}
+
+function renderFrameData(keys, frames) {
+  keys.forEach((key, i) => {
+    const slot = el(`cam-${i}`);
+    const src = frames[key];
+    if (!src) { resetCam(i); return; }
+    let img = slot.querySelector("img");
+    if (!img) {
+      slot.innerHTML = "";
+      img = document.createElement("img");
+      img.alt = key;
+      slot.appendChild(img);
+      const label = document.createElement("div");
+      label.className = "cam-label";
+      label.textContent = key.replace(/_/g, " ");
+      slot.appendChild(label);
+    }
+    img.src = src;
+  });
+}
+
 async function updateImages() {
   const ep = state.episode;
   if (!ep || !ep.has_images) return;
 
   const keys = ep.image_keys.slice(0, 3);
-  // Fill missing slots with placeholder
   for (let i = keys.length; i < 3; i++) resetCam(i);
 
-  try {
-    const frames = await apiFetch(
-      `/api/datasets/${encodeURIComponent(state.activeDataset)}/episodes/${state.activeEpIndex}/frame/${state.frame}`
-    );
-    keys.forEach((key, i) => {
-      const slot = el(`cam-${i}`);
-      const src = frames[key];
-      if (!src) { resetCam(i); return; }
-      let img = slot.querySelector("img");
-      if (!img) {
-        slot.innerHTML = "";
-        img = document.createElement("img");
-        img.alt = key;
-        slot.appendChild(img);
-        const label = document.createElement("div");
-        label.className = "cam-label";
-        label.textContent = key.replace(/_/g, " ");
-        slot.appendChild(label);
+  const f = state.frame;
+  if (state.frameCache.has(f)) {
+    renderFrameData(keys, state.frameCache.get(f));
+  } else {
+    try {
+      const frames = await apiFetch(
+        `/api/datasets/${encodeURIComponent(state.activeDataset)}/episodes/${state.activeEpIndex}/frame/${f}`
+      );
+      // Guard: frame may have changed while we awaited
+      if (state.frame === f) {
+        state.frameCache.set(f, frames);
+        renderFrameData(keys, frames);
       }
-      img.src = src;
-    });
-  } catch (_) {}
+    } catch (_) {}
+  }
+  prefetchFrames();
 }
 
 /* ── Charts ─────────────────────────────────────────────── */
