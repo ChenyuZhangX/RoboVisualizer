@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LeRobot Visualizer</title>
+  <link rel="stylesheet" href="/style.css?v=2" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header id="topbar">
+      <div class="logo">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>
+        </svg>
+        LeRobot Visualizer
+      </div>
+    </header>
+
+    <div id="main">
+      <!-- Sidebar -->
+      <aside id="sidebar">
+        <div id="sidebar-header">
+          <span class="sidebar-title">Datasets</span>
+          <button id="refresh-btn" title="Refresh" onclick="loadDatasets()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+            </svg>
+          </button>
+        </div>
+        <div id="dataset-tree"></div>
+      </aside>
+
+      <!-- Main panel -->
+      <main id="panel">
+        <div id="welcome" class="welcome-msg">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#CBD5E1" stroke-width="1.5">
+            <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>
+          </svg>
+          <p>Select an episode from the sidebar to begin</p>
+        </div>
+
+        <div id="viewer" class="hidden">
+          <!-- Language description -->
+          <div id="task-label"></div>
+
+          <!-- Camera views -->
+          <div id="cameras">
+            <div class="cam-slot" id="cam-0"><div class="cam-placeholder"><span>No camera</span></div></div>
+            <div class="cam-slot" id="cam-1"><div class="cam-placeholder"><span>No camera</span></div></div>
+            <div class="cam-slot" id="cam-2"><div class="cam-placeholder"><span>No camera</span></div></div>
+          </div>
+
+          <!-- Charts -->
+          <div id="charts-area">
+            <div class="chart-card" id="chart-card-state">
+              <div class="chart-title-bar">
+                <span class="chart-title-text" id="chart-title-state">State</span>
+                <button class="expand-btn" id="expand-state" title="Split by dimension">
+                  <svg class="icon-expand" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                  <svg class="icon-collapse hidden" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                </button>
+              </div>
+              <div class="chart-body" id="chart-body-state"></div>
+            </div>
+            <div class="chart-card" id="chart-card-action">
+              <div class="chart-title-bar">
+                <span class="chart-title-text" id="chart-title-action">Action</span>
+                <button class="expand-btn" id="expand-action" title="Split by dimension">
+                  <svg class="icon-expand" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                  <svg class="icon-collapse hidden" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                </button>
+              </div>
+              <div class="chart-body" id="chart-body-action"></div>
+            </div>
+          </div>
+
+          <!-- Playback controls -->
+          <div id="controls">
+            <button id="btn-rewind" class="ctrl-btn" title="Rewind">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M11 19V5l-9 7 9 7zm9-14v14l-9-7 9-7z"/></svg>
+            </button>
+            <button id="btn-play" class="ctrl-btn primary" title="Play/Pause">
+              <svg id="play-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+              <svg id="pause-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" class="hidden"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+            </button>
+            <input type="range" id="scrubber" min="0" value="0" step="1" />
+            <span id="frame-counter" class="frame-count">0 / 0</span>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script src="/app.js?v=2"></script>
+</body>
+</html>
