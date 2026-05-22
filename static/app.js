@@ -467,4 +467,47 @@ document.addEventListener("DOMContentLoaded", () => {
 
   el("expand-state").addEventListener("click",  () => toggleExpand("state"));
   el("expand-action").addEventListener("click", () => toggleExpand("action"));
+
+  // ── Keyboard shortcuts ────────────────────────────────────
+  document.addEventListener("keydown", e => {
+    // Ignore when focus is inside an input / textarea
+    if (["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName)) return;
+    if (!state.episode) return;
+
+    switch (e.key) {
+      case " ":
+        e.preventDefault();
+        if (state.playing) stopPlayback(); else startPlayback();
+        break;
+      case "ArrowLeft":
+        e.preventDefault();
+        stopPlayback();
+        setFrame(state.frame - (e.shiftKey ? 10 : 1));
+        break;
+      case "ArrowRight":
+        e.preventDefault();
+        stopPlayback();
+        setFrame(state.frame + (e.shiftKey ? 10 : 1));
+        break;
+      case "r":
+      case "R":
+      case "Home":
+        e.preventDefault();
+        stopPlayback();
+        setFrame(0);
+        break;
+      case "End":
+        e.preventDefault();
+        stopPlayback();
+        setFrame(state.episode.length - 1);
+        break;
+    }
+  });
+
+  el("btn-shortcuts").addEventListener("click", () => {
+    el("shortcuts-modal").classList.toggle("hidden");
+  });
+  el("shortcuts-modal").addEventListener("click", e => {
+    if (e.target === el("shortcuts-modal")) el("shortcuts-modal").classList.add("hidden");
+  });
 });

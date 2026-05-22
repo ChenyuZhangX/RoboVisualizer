@@ -503,3 +503,69 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
+
+/* ── Keyboard shortcuts modal ─────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, .35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  backdrop-filter: blur(2px);
+}
+
+.modal-box {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 22px 28px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.12);
+  min-width: 280px;
+}
+
+.modal-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 14px;
+  letter-spacing: -.1px;
+}
+
+.shortcuts-table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.shortcuts-table tr + tr td { padding-top: 8px; }
+
+.shortcuts-table td:first-child {
+  padding-right: 20px;
+  white-space: nowrap;
+}
+
+.shortcuts-table td:last-child {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.modal-hint {
+  margin-top: 16px;
+  font-size: 11px;
+  color: var(--text-3);
+  text-align: center;
+}
+
+kbd {
+  display: inline-block;
+  font-family: ui-monospace, monospace;
+  font-size: 10.5px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: var(--text);
+  line-height: 1.5;
+}
