@@ -208,6 +208,25 @@ body {
 }
 .search-clear:hover { color: var(--text); }
 
+.search-count {
+  padding: 4px 14px;
+  font-size: 10.5px;
+  color: var(--blue);
+  background: var(--blue-lt);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.sidebar-footer {
+  padding: 6px 14px;
+  font-size: 10px;
+  color: var(--text-3);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  margin-top: auto;
+  font-variant-numeric: tabular-nums;
+}
+
 mark.search-hl {
   background: rgba(59,130,246,.25);
   color: var(--text);
@@ -905,7 +924,12 @@ html.dark #speed-select { background: var(--bg-2); }
   font-size: 10px;
   color: var(--text-2);
   white-space: nowrap;
+  border-radius: 3px;
+  padding: 1px 3px;
+  transition: background var(--transition);
 }
+.legend-item[data-dim]:hover { background: var(--bg-3); }
+.legend-item.legend-hidden { opacity: .4; text-decoration: line-through; }
 .legend-dot {
   width: 8px; height: 8px;
   border-radius: 50%;
@@ -925,7 +949,8 @@ html.dark #speed-select { background: var(--bg-2); }
 }
 .crumb-sep { color: var(--text-3); }
 .crumb-ds  { color: var(--text-2); max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
-.crumb-ep  { color: var(--blue); font-weight: 600; }
+.crumb-ep  { color: var(--blue); font-weight: 600; border-radius: 3px; padding: 1px 3px; }
+.crumb-ep:hover  { background: var(--blue-lt); }
 
 /* ── FPS badge ────────────────────────────────────────────── */
 .fps-badge {

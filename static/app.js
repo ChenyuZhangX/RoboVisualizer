@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v22
+   LeRobot Visualizer — app.js  v23
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -297,6 +297,7 @@ async function loadDatasets() {
     const datasets = await apiFetch("/api/datasets");
     if (!datasets.length) {
       tree.innerHTML = `<div class="loading-msg">No datasets found in ./data/</div>`;
+      updateSidebarFooter(0, 0);
       return;
     }
     tree.innerHTML = "";
@@ -305,9 +306,26 @@ async function loadDatasets() {
     if (datasets.length === 1) {
       tree.querySelector(".ds-header")?.click();
     }
+    const totalEps = datasets.reduce((s, d) => s + d.total_episodes, 0);
+    updateSidebarFooter(datasets.length, totalEps);
   } catch (e) {
     tree.innerHTML = `<div class="error-msg">Failed: ${e.message}</div>`;
+    updateSidebarFooter(0, 0);
   }
+}
+
+function updateSidebarFooter(numDatasets, totalEps) {
+  let footer = document.getElementById("sidebar-footer");
+  if (!footer) {
+    footer = document.createElement("div");
+    footer.id = "sidebar-footer";
+    footer.className = "sidebar-footer";
+    el("sidebar")?.appendChild(footer);
+  }
+  footer.textContent = numDatasets > 0
+    ? `${numDatasets} dataset${numDatasets > 1 ? "s" : ""} · ${totalEps} episodes`
+    : "";
+  footer.classList.toggle("hidden", numDatasets === 0);
 }
 
 function buildDatasetNode(ds) {
@@ -452,6 +470,7 @@ function applySearch(query) {
     }
   });
 
+  let totalVisible = 0;
   document.querySelectorAll(".ds-node").forEach(node => {
     const children = node.querySelector(".ds-children");
     if (!children) return;
@@ -462,8 +481,20 @@ function applySearch(query) {
       if (q && visible && !node.classList.contains("open")) {
         node.querySelector(".ds-header")?.click();
       }
+      totalVisible += visible;
     }
   });
+
+  // Show/hide search result count
+  let countEl = document.getElementById("search-count");
+  if (!countEl) {
+    countEl = document.createElement("div");
+    countEl.id = "search-count";
+    countEl.className = "search-count";
+    el("dataset-tree").before(countEl);
+  }
+  countEl.textContent = q ? `${totalVisible} task${totalVisible !== 1 ? "s" : ""} found` : "";
+  countEl.classList.toggle("hidden", !q);
 }
 
 /* ── Episode loading ─────────────────────────────────────── */
@@ -1008,8 +1039,9 @@ function buildChartCard(type, data2d, names, normalized, ep, cmpData2d = null, n
     }
   } else if (!expanded) {
     body.innerHTML = `<div class="chart-wrap"><canvas id="${type}-chart"></canvas></div>`;
-    charts.push(makeChart(`${type}-chart`, labels, data2d, names, normalized, dims, null, cmpData2d, null));
-    // Compact legend below chart
+    const mainChart = makeChart(`${type}-chart`, labels, data2d, names, normalized, dims, null, cmpData2d, null);
+    charts.push(mainChart);
+    // Compact legend below chart — click to toggle series visibility
     if (dims > 0 && dims <= 12) {
       const legendDiv = document.createElement("div");
       legendDiv.className = "chart-legend";
@@ -1017,7 +1049,17 @@ function buildChartCard(type, data2d, names, normalized, ep, cmpData2d = null, n
       for (let d = 0; d < Math.min(dims, maxShow); d++) {
         const item = document.createElement("span");
         item.className = "legend-item";
+        item.title = `Click to show/hide ${names[d] ?? `dim_${d}`}`;
+        item.style.cursor = "pointer";
+        item.dataset.dim = d;
         item.innerHTML = `<span class="legend-dot" style="background:${PALETTE[d % PALETTE.length]}"></span>${names[d] ?? `dim_${d}`}`;
+        item.addEventListener("click", () => {
+          if (!mainChart) return;
+          const meta = mainChart.getDatasetMeta(d);
+          meta.hidden = !meta.hidden;
+          mainChart.update("none");
+          item.classList.toggle("legend-hidden", !!meta.hidden);
+        });
         legendDiv.appendChild(item);
       }
       if (dims > maxShow) {
@@ -1531,10 +1573,11 @@ function updateTopbarBreadcrumb() {
   const epStr = `ep_${String(state.activeEpIndex).padStart(6, "0")}`;
   crumb.innerHTML =
     `<span class="crumb-sep">›</span>` +
-    `<span class="crumb-ds">${state.activeDataset}</span>` +
+    `<span class="crumb-ds" title="${escapeHTML(state.activeDataset)}">${escapeHTML(state.activeDataset)}</span>` +
     `<span class="crumb-sep">›</span>` +
-    `<span class="crumb-ep">${epStr}</span>`;
+    `<span class="crumb-ep" title="Click to copy URL  C" style="cursor:pointer">${epStr}</span>`;
   crumb.classList.remove("hidden");
+  crumb.querySelector(".crumb-ep")?.addEventListener("click", copyEpisodeURL);
 }
 
 /* ── Frame counter jump ──────────────────────────────────── */
@@ -1793,6 +1836,11 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   loadDatasets().then(() => loadHashState());
+
+  // Pause playback when tab becomes hidden
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && state.playing) stopPlayback();
+  });
 
   el("sidebar-toggle").addEventListener("click", toggleSidebar);
   el("dark-mode-btn").addEventListener("click", toggleDarkMode);
