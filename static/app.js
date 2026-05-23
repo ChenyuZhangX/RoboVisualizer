@@ -775,21 +775,21 @@ async function copyEpisodeURL() {
   const url = location.origin + location.pathname + "#" + params.toString();
   try {
     await navigator.clipboard.writeText(url);
-    showCopyToast();
+    showCopyToast("✓ URL copied to clipboard");
   } catch (_) {
     prompt("Copy this URL:", url);
   }
 }
 
-function showCopyToast() {
+function showCopyToast(msg = "Copied to clipboard") {
   let toast = document.getElementById("copy-toast");
   if (!toast) {
     toast = document.createElement("div");
     toast.id = "copy-toast";
     toast.className = "copy-toast";
-    toast.textContent = "URL copied to clipboard";
     document.body.appendChild(toast);
   }
+  toast.textContent = msg;
   toast.classList.remove("hidden", "fade-out");
   clearTimeout(toast._t);
   toast._t = setTimeout(() => toast.classList.add("fade-out"), 1800);
@@ -1581,7 +1581,10 @@ function startPlayback() {
       if (ts - fpsLast >= 1000) {
         const badge = el("fps-badge");
         if (badge) {
-          badge.textContent = `${fpsBucket} fps`;
+          const targetFps = (state.episode.fps || 10) * state.speed;
+          const diff = fpsBucket - Math.round(targetFps);
+          const lagStr = diff < -2 ? ` ⚠${diff}` : "";
+          badge.textContent = `${fpsBucket}/${Math.round(targetFps)} fps${lagStr}`;
           badge.classList.remove("hidden");
         }
         fpsBucket = 0;
@@ -1693,6 +1696,12 @@ document.addEventListener("DOMContentLoaded", () => {
       e.preventDefault();
       el("search-input").focus();
       el("search-input").select();
+      return;
+    }
+
+    if (e.ctrlKey && e.key === "s") {
+      e.preventDefault();
+      exportFrame();
       return;
     }
 
