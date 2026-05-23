@@ -45,7 +45,7 @@ def read_episodes_cached(base: Path) -> list[dict]:
     return _EPISODES_CACHE[key]
 
 import pyarrow.parquet as pq
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -168,6 +168,11 @@ def list_datasets():
     for d in sorted(DATA_DIR.iterdir()):
         if d.is_dir() and is_valid_dataset(d):
             info = read_info_cached(d)
+            # Compute total frames from cached episodes if available (fast)
+            total_frames: Optional[int] = None
+            if str(d) in _EPISODES_CACHE:
+                eps = _EPISODES_CACHE[str(d)]
+                total_frames = sum(ep.get("length", 0) for ep in eps)
             results.append({
                 "name": d.name,
                 "path": d.name,
@@ -175,6 +180,7 @@ def list_datasets():
                 "total_tasks": info.get("total_tasks", 0),
                 "robot_type": info.get("robot_type", "unknown"),
                 "fps": info.get("fps", 10),
+                "total_frames": total_frames,
             })
     return results
 
@@ -224,6 +230,33 @@ def list_tasks(dataset: str):
 
     # drop tasks with no local episodes
     return [t for t in sorted(tasks.values(), key=lambda x: x["task_index"]) if t["episodes"]]
+
+
+@app.get("/api/datasets/{dataset}/stats")
+def get_dataset_stats(dataset: str):
+    """Aggregate statistics for a dataset: total frames, episode length distribution."""
+    base = get_dataset_path(dataset)
+    info = read_info_cached(base)
+    episodes = read_episodes_cached(base)
+
+    lengths = [ep.get("length", 0) for ep in episodes if ep.get("length", 0) > 0]
+    if not lengths:
+        return {"total_frames": 0, "episode_count": 0, "length_min": 0,
+                "length_max": 0, "length_mean": 0.0, "length_p50": 0}
+
+    lengths_sorted = sorted(lengths)
+    n = len(lengths_sorted)
+    total = sum(lengths_sorted)
+    p50 = lengths_sorted[n // 2]
+    return {
+        "total_frames": total,
+        "episode_count": n,
+        "length_min": lengths_sorted[0],
+        "length_max": lengths_sorted[-1],
+        "length_mean": round(total / n, 1),
+        "length_p50": p50,
+        "fps": info.get("fps", 10),
+    }
 
 
 @app.get("/api/datasets/{dataset}/norm_stats")
@@ -297,7 +330,7 @@ def get_episode(dataset: str, episode_index: int):
 
 
 @app.get("/api/datasets/{dataset}/episodes/{episode_index}/frame/{frame_index}")
-def get_frame(dataset: str, episode_index: int, frame_index: int):
+def get_frame(dataset: str, episode_index: int, frame_index: int, response: Response):
     base = get_dataset_path(dataset)
     info = read_info_cached(base)
 
@@ -347,6 +380,8 @@ def get_frame(dataset: str, episode_index: int, frame_index: int):
                 except Exception:
                     pass
 
+    # Frames are immutable; cache for 1 hour in browser, 5 min in CDN
+    response.headers["Cache-Control"] = "max-age=3600, stale-while-revalidate=300"
     return result
 
 

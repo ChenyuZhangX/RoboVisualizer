@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LeRobot Visualizer</title>
-  <link rel="stylesheet" href="/style.css?v=29" />
+  <link rel="stylesheet" href="/style.css?v=30" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -45,10 +45,10 @@
           </button>
         </div>
         <!-- Search -->
-        <div id="sidebar-search">
+        <div id="sidebar-search" role="search" aria-label="Search episodes">
           <div class="search-wrap">
             <svg class="search-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input type="text" id="search-input" placeholder="Filter tasks…" autocomplete="off" spellcheck="false" aria-label="Search tasks" role="searchbox" />
+            <input type="text" id="search-input" placeholder="Filter tasks… (use >Nf or <Nf to filter by length)" autocomplete="off" spellcheck="false" aria-label="Search tasks and filter by length" role="searchbox" title="Type to filter tasks. Use &gt;Nf or &lt;Nf to filter by frame count (e.g. &gt;200f shows only episodes with &gt;200 frames)" />
             <button id="search-clear" class="search-clear hidden" title="Clear">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
@@ -90,7 +90,7 @@
                 <button id="btn-frame-values" class="icon-btn-sm active" title="Toggle frame values panel  V">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
                 </button>
-                <button id="btn-export" class="icon-btn-sm" title="Export current frame as PNG">
+                <button id="btn-export" class="icon-btn-sm" title="Export current frame as PNG  Ctrl+S" aria-label="Export current frame as PNG">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 </button>
               </div>
@@ -220,18 +220,21 @@
         <tr><td><kbd>Space</kbd></td><td>Play / Pause</td></tr>
         <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Step 1 frame</td></tr>
         <tr><td><kbd>⇧←</kbd> <kbd>⇧→</kbd></td><td>Step 10 frames</td></tr>
+        <tr><td><kbd>PgUp</kbd> <kbd>PgDn</kbd></td><td>Step 50 frames (⇧ = 100)</td></tr>
         <tr><td><kbd>Alt</kbd>+<kbd>←</kbd> <kbd>→</kbd></td><td>Navigate frame history</td></tr>
         <tr><td><kbd>Ctrl</kbd>+<kbd>J</kbd></td><td>Jump to specific frame</td></tr>
         <tr><td><kbd>R</kbd> / <kbd>Home</kbd></td><td>Rewind to start</td></tr>
         <tr><td><kbd>Z</kbd></td><td>Rewind and play from start</td></tr>
         <tr><td><kbd>End</kbd></td><td>Jump to last frame</td></tr>
         <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>Prev / Next episode</td></tr>
+        <tr><td><kbd>⇧[</kbd> <kbd>⇧]</kbd></td><td>First / Last episode</td></tr>
         <tr><td><kbd>←</kbd> <kbd>→</kbd> (lightbox)</td><td>Prev / next camera</td></tr>
         <tr><td><kbd>Ctrl</kbd>+click ep</td><td>Compare overlay</td></tr>
-        <tr><td><kbd>G</kbd> / <kbd>Ctrl</kbd>+<kbd>K</kbd></td><td>Focus search</td></tr>
+        <tr><td><kbd>/</kbd> / <kbd>G</kbd> / <kbd>Ctrl</kbd>+<kbd>K</kbd></td><td>Focus search</td></tr>
         <tr><td><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>Toggle dark mode</td></tr>
         <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Export frame as PNG</td></tr>
         <tr><td><kbd>B</kbd></td><td>Toggle sidebar</td></tr>
+        <tr><td><kbd>A</kbd></td><td>Scroll sidebar to current episode</td></tr>
         <tr><td><kbd>+</kbd> / <kbd>−</kbd></td><td>Speed up / slow down</td></tr>
         <tr><td><kbd>L</kbd></td><td>Toggle loop</td></tr>
         <tr><td><kbd>H</kbd> / <kbd>⇧H</kbd></td><td>Toggle state / action histogram</td></tr>
@@ -241,8 +244,10 @@
         <tr><td><kbd>N</kbd></td><td>Toggle normalization</td></tr>
         <tr><td><kbd>I</kbd></td><td>Toggle episode info strip</td></tr>
         <tr><td><kbd>C</kbd></td><td>Copy episode URL</td></tr>
+        <tr><td><kbd>Ctrl</kbd>+<kbd>⇧C</kbd></td><td>Copy current frame values as JSON</td></tr>
         <tr><td><kbd>X</kbd></td><td>Export episode as CSV</td></tr>
         <tr><td><kbd>J</kbd></td><td>Export episode as JSON</td></tr>
+        <tr><td><kbd>Q</kbd></td><td>Copy current frame timestamp</td></tr>
         <tr><td><kbd>W</kbd></td><td>Export frame timestamps</td></tr>
         <tr><td><kbd>F</kbd></td><td>Fullscreen camera / lightbox</td></tr>
         <tr><td><kbd>M</kbd></td><td>Mirror mode: hide labels (for recordings)</td></tr>
@@ -270,6 +275,6 @@
     </button>
   </div>
 
-  <script src="/app.js?v=29"></script>
+  <script src="/app.js?v=30"></script>
 </body>
 </html>

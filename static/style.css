@@ -216,6 +216,11 @@ body {
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
+.search-count[data-empty] {
+  color: var(--text-3);
+  background: var(--bg-3);
+  font-style: italic;
+}
 
 .sidebar-footer {
   padding: 6px 14px;
@@ -393,6 +398,8 @@ mark.search-hl {
 }
 .ep-item:hover { background: var(--bg-3); color: var(--text); }
 .ep-item:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; border-radius: 2px; }
+.task-header:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; border-radius: 3px; }
+.ds-header:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; border-radius: 3px; }
 .ep-item.active {
   background: var(--blue-lt);
   color: var(--blue-dk);
@@ -535,7 +542,10 @@ html.dark .error-msg { background: #3b0f0f; }
   padding: 7px 12px;
   border-radius: 0 var(--radius) var(--radius) 0;
   line-height: 1.4;
+  cursor: pointer;
+  transition: background var(--transition);
 }
+#task-label:hover { background: rgba(59,130,246,.12); }
 
 #viewer-actions {
   display: flex;
@@ -755,6 +765,14 @@ html.dark .norm-badge { background: #0d2e1f; border-color: #166534; }
   padding: 1px 5px;
   flex-shrink: 0;
 }
+.task-avg-len {
+  font-size: 9px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+  flex-shrink: 0;
+  opacity: .7;
+}
 
 /* ── Episode info strip ───────────────────────────────────── */
 .ep-info-strip {
@@ -815,6 +833,8 @@ html.dark .norm-badge { background: #0d2e1f; border-color: #166534; }
 }
 .copy-toast.fade-out { opacity: 0; transform: translateX(-50%) translateY(8px); }
 .copy-toast.hidden { display: none; }
+.copy-toast[data-type="success"] { background: #15803d; }
+.copy-toast[data-type="error"]   { background: #b91c1c; }
 @keyframes toast-slide-up {
   from { opacity: 0; transform: translateX(-50%) translateY(10px); }
   to   { opacity: 1; transform: translateX(-50%) translateY(0); }
@@ -1447,3 +1467,64 @@ textarea:focus {
   .ep-info-strip { display: flex !important; }
   #ep-info-strip.hidden { display: flex !important; }
 }
+
+/* ── Frame values panel header ─────────────────────────────── */
+.fv-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+.fv-panel-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  color: var(--text-3);
+}
+.fv-copy-all-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 7px;
+  font-size: 10px;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: color var(--transition), border-color var(--transition), background var(--transition);
+}
+.fv-copy-all-btn:hover {
+  color: var(--text);
+  border-color: var(--blue);
+  background: var(--blue-lt);
+}
+
+/* ── Search: filter hint placeholder (smaller font) ─────────── */
+#search-input::placeholder { font-size: 10.5px; }
+
+/* ── Custom thin scrollbars (Chrome/Safari/Edge) ─────────────── */
+#sidebar::-webkit-scrollbar,
+#viewer-scroll::-webkit-scrollbar { width: 5px; }
+#sidebar::-webkit-scrollbar-track,
+#viewer-scroll::-webkit-scrollbar-track { background: transparent; }
+#sidebar::-webkit-scrollbar-thumb,
+#viewer-scroll::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+#sidebar::-webkit-scrollbar-thumb:hover,
+#viewer-scroll::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
+
+/* ── Task header: left accent on active task's group ───────────── */
+.task-group:has(.ep-item.active) > .task-header {
+  border-left: 2px solid var(--blue);
+  padding-left: 26px;
+}
+
+/* ── ds-header transition ────────────────────────────────────── */
+.ds-header { transition: background var(--transition); }
+
+/* ── Dataset subtitle fade ───────────────────────────────────── */
+.ds-subtitle { transition: color var(--transition); }
