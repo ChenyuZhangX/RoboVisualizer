@@ -457,6 +457,9 @@ html.dark .error-msg { background: #3b0f0f; }
 #cameras.cams-1 { grid-template-columns: 1fr; max-width: 480px; }
 #cameras.cams-2 { grid-template-columns: repeat(2, 1fr); }
 #cameras.cams-3 { grid-template-columns: repeat(3, 1fr); }
+#cameras.cams-4 { grid-template-columns: repeat(2, 1fr); }
+#cameras.cams-5 { grid-template-columns: repeat(3, 1fr); }
+#cameras.cams-6 { grid-template-columns: repeat(3, 1fr); }
 
 .cam-slot {
   aspect-ratio: 4 / 3;

@@ -39,6 +39,7 @@ const state = {
   compareEpisode: null,
   compareDataset: null,
   compareEpIndex: null,
+  normalizeEnabled: true,
 };
 
 /* ── Utility helpers ─────────────────────────────────────── */
@@ -66,7 +67,10 @@ function applyDark(isDark, save = true) {
   document.documentElement.classList.toggle("dark", isDark);
   el("dark-mode-btn").querySelector(".icon-moon").classList.toggle("hidden", isDark);
   el("dark-mode-btn").querySelector(".icon-sun").classList.toggle("hidden", !isDark);
-  if (save) localStorage.setItem("darkMode", isDark ? "1" : "0");
+  if (save) {
+    localStorage.setItem("darkMode", isDark ? "1" : "0");
+    if (state.episode) buildCharts(state.episode);
+  }
 }
 
 function toggleDarkMode() {
@@ -163,6 +167,16 @@ function normalizeMeanStd(ns) {
   return {
     mean: mean.map((m, d) => normalizeValue(m, q01[d], q99[d])),
     std:  std.map((s, d) => q99[d] === q01[d] ? 0 : 2 * s / (q99[d] - q01[d])),
+  };
+}
+
+/* ── Chart color theme (respects dark mode) ─────────────── */
+function chartColors() {
+  const dark = document.documentElement.classList.contains("dark");
+  return {
+    tick:   dark ? "#64748B" : "#94A3B8",
+    grid:   dark ? "rgba(51,65,85,.35)" : "rgba(226,232,240,.5)",
+    border: dark ? "rgba(51,65,85,.7)"  : "rgba(226,232,240,.8)",
   };
 }
 
@@ -486,24 +500,22 @@ function clearCompare() {
   if (state.episode) buildCharts(state.episode);
 }
 
+const MAX_CAMS = 6;
+
 /* ── Camera grid ─────────────────────────────────────────── */
 function buildCameraGrid(ep) {
   const cameras = el("cameras");
-  const count = Math.min(ep.has_images ? ep.image_keys.length : 0, 3) || 0;
-  cameras.className = `cams-${Math.max(count, 1)}`;
+  const count = Math.min(ep.has_images ? ep.image_keys.length : 0, MAX_CAMS) || 0;
+  cameras.className = count > 0 ? `cams-${count}` : "";
   cameras.innerHTML = "";
-  for (let i = 0; i < 3; i++) {
+  if (count === 0) return;
+  for (let i = 0; i < count; i++) {
     const slot = document.createElement("div");
     slot.className = "cam-slot";
     slot.id = `cam-${i}`;
-    if (i >= count && count > 0) {
-      slot.classList.add("hidden");
-    } else {
-      slot.innerHTML = `<div class="cam-placeholder"><span>No camera</span></div>`;
-    }
+    slot.innerHTML = `<div class="cam-placeholder"><span>No camera</span></div>`;
     cameras.appendChild(slot);
   }
-  if (count === 0) { cameras.innerHTML = ""; cameras.className = ""; }
 }
 
 function resetCam(i) {
@@ -562,8 +574,7 @@ function renderFrameData(keys, frames) {
 async function updateImages() {
   const ep = state.episode;
   if (!ep?.has_images) return;
-  const keys = ep.image_keys.slice(0, 3);
-  for (let i = keys.length; i < 3; i++) resetCam(i);
+  const keys = ep.image_keys.slice(0, MAX_CAMS);
 
   const f = state.frame;
   if (state.frameCache.has(f)) {
@@ -586,7 +597,7 @@ async function updateImages() {
 function exportFrame() {
   if (!state.episode?.has_images) return;
   const imgs = [];
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < MAX_CAMS; i++) {
     const img = el(`cam-${i}`)?.querySelector("img");
     if (img?.src) imgs.push({ img, label: img.alt });
   }
@@ -636,7 +647,7 @@ function exportFrame() {
 /* ── Charts ─────────────────────────────────────────────── */
 function buildCharts(ep) {
   if (!ep) return;
-  const ns = state.normStats;
+  const ns = state.normalizeEnabled ? state.normStats : null;
   const { data: stateData,  normalized: sNorm } = normalizeData(ep.state,   ns?.state);
   const { data: actionData, normalized: aNorm } = normalizeData(ep.actions, ns?.action);
 
@@ -658,7 +669,7 @@ function buildCharts(ep) {
 function rebuildChartsFor(type) {
   const ep = state.episode;
   if (!ep) return;
-  const ns = state.normStats;
+  const ns = state.normalizeEnabled ? state.normStats : null;
   const nsKey = type;
   const raw   = type === "state" ? ep.state   : ep.actions;
   const names = type === "state" ? ep.state_names : ep.action_names;
@@ -668,6 +679,13 @@ function rebuildChartsFor(type) {
   const cmpData = cmpRaw ? normalizeData(cmpRaw, ns?.[nsKey]).data : null;
   const nsNorm  = normalized ? normalizeMeanStd(ns?.[nsKey]) : null;
   state[`${type}Charts`] = buildChartCard(type, normData, names, normalized, ep, cmpData, nsNorm);
+}
+
+function toggleNormalize() {
+  state.normalizeEnabled = !state.normalizeEnabled;
+  el("btn-normalize")?.classList.toggle("active", state.normalizeEnabled);
+  el("btn-normalize")?.setAttribute("aria-pressed", state.normalizeEnabled);
+  if (state.episode) buildCharts(state.episode);
 }
 
 function toggleExpand(type) {
@@ -805,13 +823,14 @@ function makeChart(canvasId, labels, data2d, names, normalized, dims,
           borderWidth: 1.5, pointRadius: 0, tension: 0.2, borderDash: [4, 3],
         }));
 
+  const cc = chartColors();
   const yConfig = normalized
     ? { min: -1.05, max: 1.05,
-        ticks: { maxTicksLimit: isMini ? 3 : 5, font: { size: 9 }, color: "#94A3B8",
+        ticks: { maxTicksLimit: isMini ? 3 : 5, font: { size: 9 }, color: cc.tick,
                  callback: v => v.toFixed(1) },
-        grid: { color: "rgba(226,232,240,.5)" }, border: { color: "rgba(226,232,240,.8)" } }
-    : { ticks: { maxTicksLimit: isMini ? 3 : 5, font: { size: 9 }, color: "#94A3B8" },
-        grid: { color: "rgba(226,232,240,.5)" }, border: { color: "rgba(226,232,240,.8)" } };
+        grid: { color: cc.grid }, border: { color: cc.border } }
+    : { ticks: { maxTicksLimit: isMini ? 3 : 5, font: { size: 9 }, color: cc.tick },
+        grid: { color: cc.grid }, border: { color: cc.border } };
 
   const chart = new Chart(ctx, {
     type: "line",
@@ -841,8 +860,8 @@ function makeChart(canvasId, labels, data2d, names, normalized, dims,
       },
       scales: {
         x: {
-          ticks: { maxTicksLimit: isMini ? 4 : 8, font: { size: 9 }, color: "#94A3B8" },
-          grid: { color: "rgba(226,232,240,.5)" }, border: { color: "rgba(226,232,240,.8)" },
+          ticks: { maxTicksLimit: isMini ? 4 : 8, font: { size: 9 }, color: cc.tick },
+          grid: { color: cc.grid }, border: { color: cc.border },
         },
         y: yConfig,
       },
@@ -893,6 +912,7 @@ function makeHistChart(canvasId, data2d, names, dims, dimIndex = null) {
           borderColor: PALETTE[d % PALETTE.length], borderWidth: 1, _edges: edges };
       });
 
+  const cc = chartColors();
   return new Chart(ctx, {
     type: "bar",
     data: { labels: datasets[0]._edges, datasets },
@@ -900,7 +920,7 @@ function makeHistChart(canvasId, data2d, names, dims, dimIndex = null) {
       animation: false, responsive: true, maintainAspectRatio: false,
       plugins: {
         legend: { display: !isMini && dims <= 6,
-          labels: { font: { size: 9 }, boxWidth: 10, padding: 6 } },
+          labels: { font: { size: 9 }, boxWidth: 10, padding: 6, color: cc.tick } },
         tooltip: {
           callbacks: {
             title: items => `≈${items[0].label}`,
@@ -910,10 +930,10 @@ function makeHistChart(canvasId, data2d, names, dims, dimIndex = null) {
         },
       },
       scales: {
-        x: { ticks: { maxTicksLimit: 6, font: { size: 9 }, color: "#94A3B8" },
-             grid: { display: false }, border: { color: "rgba(226,232,240,.8)" } },
-        y: { ticks: { maxTicksLimit: 4, font: { size: 9 }, color: "#94A3B8" },
-             grid: { color: "rgba(226,232,240,.5)" }, border: { color: "rgba(226,232,240,.8)" } },
+        x: { ticks: { maxTicksLimit: 6, font: { size: 9 }, color: cc.tick },
+             grid: { display: false }, border: { color: cc.border } },
+        y: { ticks: { maxTicksLimit: 4, font: { size: 9 }, color: cc.tick },
+             grid: { color: cc.grid }, border: { color: cc.border } },
       },
     },
   });
@@ -1381,6 +1401,7 @@ document.addEventListener("DOMContentLoaded", () => {
   el("btn-next-ep").addEventListener("click", nextEpisode);
   el("btn-export").addEventListener("click", exportFrame);
   el("btn-frame-values").addEventListener("click", toggleFrameValuesPanel);
+  el("btn-normalize")?.addEventListener("click", toggleNormalize);
 
   el("speed-select").addEventListener("change", e => {
     state.speed = parseFloat(e.target.value);
@@ -1480,6 +1501,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.key === "v" || e.key === "V") {
       e.preventDefault();
       toggleFrameValuesPanel();
+      return;
+    }
+    if (e.key === "n" || e.key === "N") {
+      e.preventDefault();
+      toggleNormalize();
       return;
     }
 

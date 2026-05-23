@@ -97,6 +97,13 @@ def health():
     }
 
 
+@app.post("/api/cache/clear")
+def clear_cache():
+    count = len(_TABLE_CACHE)
+    _TABLE_CACHE.clear()
+    return {"cleared": count}
+
+
 @app.get("/api/datasets")
 def list_datasets():
     if not DATA_DIR.exists():
