@@ -320,7 +320,7 @@ function buildDatasetNode(ds) {
           children.querySelector(".task-group")?.classList.add("open");
         }
       } catch (e) {
-        children.innerHTML = `<div class="error-msg">${e.message}</div>`;
+        children.innerHTML = `<div class="error-msg">Failed to load tasks: ${e.message}</div>`;
       }
     }
   });
@@ -428,8 +428,10 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
   el("welcome").classList.add("hidden");
   el("viewer").classList.remove("hidden");
   el("task-label").textContent = taskText;
-  el("ep-info-strip").innerHTML = `<span class="spinner"></span>`;
+  el("ep-info-strip").innerHTML = `<span class="spinner"></span><span style="color:var(--text-3)"> Loading…</span>`;
   el("ep-info-strip").classList.remove("hidden");
+  el("charts-area").style.opacity = "0.4";
+  el("charts-area").style.pointerEvents = "none";
 
   updatePrevNextButtons();
 
@@ -448,11 +450,16 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
     updateImages();
     updateTopbarBreadcrumb();
     saveHashState();
+    document.title = `ep_${String(epIndex).padStart(6, "0")} • ${dsPath} • LeRobot Visualizer`;
+    el("charts-area").style.opacity = "";
+    el("charts-area").style.pointerEvents = "";
   } catch (e) {
     el("task-label").innerHTML =
       `<span style="color:var(--amber-dk)">Load failed:</span>` +
       `<span style="font-weight:400;color:var(--text-2);margin-left:6px">${e.message}</span>`;
     el("ep-info-strip").classList.add("hidden");
+    el("charts-area").style.opacity = "";
+    el("charts-area").style.pointerEvents = "";
     state.episode = null;
   } finally {
     if (_loadingEpKey === key) _loadingEpKey = null;
@@ -527,8 +534,9 @@ async function selectCompareEpisode(dsPath, epIndex, clickedEl) {
     );
     buildCharts(state.episode);
     el("compare-banner").classList.remove("hidden");
+    const cmpDs = dsPath !== state.activeDataset ? ` (${dsPath})` : "";
     el("compare-label").textContent =
-      `Comparing ep_${String(epIndex).padStart(6, "0")} (dashed)`;
+      `Comparing ep_${String(epIndex).padStart(6, "0")}${cmpDs} — dashed overlay`;
   } catch (_) {
     state.compareEpisode = null;
   }
@@ -645,7 +653,14 @@ async function updateImages() {
         state.frameCache.set(f, frames);
         renderFrameData(keys, frames);
       }
-    } catch (_) {}
+    } catch (e) {
+      if (state.frame === f) {
+        keys.forEach((_, i) => {
+          const slot = el(`cam-${i}`);
+          if (slot) slot.innerHTML = `<div class="cam-placeholder"><span style="font-size:10px;color:var(--text-3)">Failed</span></div>`;
+        });
+      }
+    }
   }
   prefetchFrames();
 }
@@ -1376,9 +1391,16 @@ function showTimeDimTooltip(x, y, html) {
     document.body.appendChild(tt);
   }
   tt.innerHTML = html;
-  tt.style.left = (x + 14) + "px";
-  tt.style.top  = (y - 10) + "px";
   tt.classList.remove("hidden");
+  // Defer positioning until next frame so width is calculated
+  requestAnimationFrame(() => {
+    const w = tt.offsetWidth, h = tt.offsetHeight;
+    let px = x + 14, py = y - 10;
+    if (px + w > window.innerWidth - 8) px = x - w - 8;
+    if (py + h > window.innerHeight - 8) py = y + 14;
+    tt.style.left = Math.max(0, px) + "px";
+    tt.style.top = Math.max(0, py) + "px";
+  });
 }
 
 function hideTimeDimTooltip() {
