@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js
+   LeRobot Visualizer — app.js  v9
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -16,56 +16,39 @@ const PALETTE_CMP = [
 
 /* ── Application state ───────────────────────────────────── */
 const state = {
-  // current episode
   episode: null,
   normStats: null,
   frame: 0,
-  // playback
   playing: false,
   looping: false,
   speed: 1.0,
   rafId: null,
   lastTick: null,
-  // charts
   stateCharts: [],
   actionCharts: [],
   stateExpanded: false,
   actionExpanded: false,
   histState: false,
   histAction: false,
-  // navigation
   activeDataset: null,
   activeEpIndex: null,
-  episodeList: [],          // flat [{dsPath, epIndex, taskText, el}] across all open datasets
+  episodeList: [],        // [{dsPath, epIndex, taskText, el}]
   currentEpListIdx: -1,
-  // frame cache
   frameCache: new Map(),
   prefetchPending: new Set(),
-  // comparison
   compareEpisode: null,
   compareDataset: null,
   compareEpIndex: null,
 };
 
 /* ── Utility helpers ─────────────────────────────────────── */
-
-/** @param {string} id @returns {HTMLElement} */
 const el = id => document.getElementById(id);
 
-/**
- * Debounce a function.
- * @param {Function} fn
- * @param {number} ms
- */
 function debounce(fn, ms) {
   let t;
   return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
 }
 
-/**
- * Fetch JSON from API endpoint.
- * @param {string} path
- */
 async function apiFetch(path) {
   const r = await fetch(path);
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
@@ -76,8 +59,7 @@ async function apiFetch(path) {
 function initDarkMode() {
   const stored = localStorage.getItem("darkMode");
   const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  const isDark = stored !== null ? stored === "1" : prefersDark;
-  applyDark(isDark, false);
+  applyDark(stored !== null ? stored === "1" : prefersDark, false);
 }
 
 function applyDark(isDark, save = true) {
@@ -91,32 +73,25 @@ function toggleDarkMode() {
   applyDark(!document.documentElement.classList.contains("dark"));
 }
 
-/* ── Sidebar collapse ────────────────────────────────────── */
+/* ── Sidebar ─────────────────────────────────────────────── */
 function toggleSidebar() {
   el("main").classList.toggle("sidebar-collapsed");
 }
 
 /* ── Normalization helpers ───────────────────────────────── */
-
-/** Clip-then-scale a single value to [-1, 1] using Q01/Q99. */
 function normalizeValue(v, q01, q99) {
   if (q99 === q01) return 0;
   return 2 * (Math.max(q01, Math.min(q99, v)) - q01) / (q99 - q01) - 1;
 }
 
-/**
- * Normalize a 2-D data array using norm stats.
- * @returns {{data: number[][], normalized: boolean}}
- */
 function normalizeData(data2d, ns) {
   if (!ns) return { data: data2d, normalized: false };
-  const normed = data2d.map(row =>
-    row.map((v, d) => normalizeValue(v, ns.q01[d], ns.q99[d]))
-  );
-  return { data: normed, normalized: true };
+  return {
+    data: data2d.map(row => row.map((v, d) => normalizeValue(v, ns.q01[d], ns.q99[d]))),
+    normalized: true,
+  };
 }
 
-/** Map raw mean/std into normalized [-1,1] space. */
 function normalizeMeanStd(ns) {
   if (!ns?.mean || !ns?.std) return null;
   const { mean, std, q01, q99 } = ns;
@@ -127,8 +102,6 @@ function normalizeMeanStd(ns) {
 }
 
 /* ── Chart.js plugins ────────────────────────────────────── */
-
-/** Draws a vertical red dashed cursor at the current frame. */
 const cursorPlugin = {
   id: "cursor",
   afterDraw(chart) {
@@ -149,7 +122,6 @@ const cursorPlugin = {
   },
 };
 
-/** Draws a semi-transparent mean ± std band behind datasets. */
 const stdBandPlugin = {
   id: "stdBand",
   beforeDatasetsDraw(chart) {
@@ -161,10 +133,8 @@ const stdBandPlugin = {
     const yLow  = scales.y.getPixelForValue(band.mean - band.std);
     ctx.save();
     ctx.fillStyle = "rgba(148,163,184,0.13)";
-    ctx.fillRect(
-      chartArea.left, Math.min(yHigh, yLow),
-      chartArea.right - chartArea.left, Math.abs(yLow - yHigh)
-    );
+    ctx.fillRect(chartArea.left, Math.min(yHigh, yLow),
+      chartArea.right - chartArea.left, Math.abs(yLow - yHigh));
     const yMean = scales.y.getPixelForValue(band.mean);
     ctx.beginPath();
     ctx.moveTo(chartArea.left, yMean);
@@ -180,16 +150,12 @@ const stdBandPlugin = {
 Chart.register(cursorPlugin, stdBandPlugin);
 
 /* ── Frame navigation ────────────────────────────────────── */
-
-/**
- * Set the current frame and refresh all dependents.
- * @param {number} f
- */
 function setFrame(f) {
   if (!state.episode) return;
   state.frame = Math.max(0, Math.min(f, state.episode.length - 1));
   updateScrubber();
   updateChartCursor();
+  updateTimeDimCursor();
   updateImages();
 }
 
@@ -253,6 +219,10 @@ function buildDatasetNode(ds) {
         for (const task of tasks) {
           children.appendChild(buildTaskNode(ds.path, task, allLengths));
         }
+        // Auto-expand when only one task
+        if (tasks.length === 1) {
+          children.querySelector(".task-group")?.classList.add("open");
+        }
       } catch (e) {
         children.innerHTML = `<div class="error-msg">${e.message}</div>`;
       }
@@ -272,6 +242,7 @@ function buildTaskNode(dsPath, task, allLengths = []) {
     <div class="task-header">
       <svg class="task-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
       <span class="task-name">${shortTask}</span>
+      <span class="ep-count">${task.episodes.length}</span>
     </div>
     <div class="task-eps"></div>`;
 
@@ -297,7 +268,6 @@ function buildTaskNode(dsPath, task, allLengths = []) {
       }
     });
 
-    // Register in global episode list for prev/next navigation
     state.episodeList.push({ dsPath, epIndex: ep.episode_index, taskText: task.task, el: item });
     epsContainer.appendChild(item);
   }
@@ -332,15 +302,12 @@ function applySearch(query) {
 async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
   document.querySelectorAll(".ep-item.active").forEach(e => e.classList.remove("active"));
   clickedEl?.classList.add("active");
-
   stopPlayback();
 
-  // update episodeList cursor
   state.currentEpListIdx = state.episodeList.findIndex(
     e => e.dsPath === dsPath && e.epIndex === epIndex
   );
 
-  // fetch norm_stats if dataset changed
   if (dsPath !== state.activeDataset) {
     state.normStats = null;
     try {
@@ -358,6 +325,8 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
   el("welcome").classList.add("hidden");
   el("viewer").classList.remove("hidden");
   el("task-label").textContent = taskText;
+  el("ep-info-strip").innerHTML = `<span class="spinner"></span>`;
+  el("ep-info-strip").classList.remove("hidden");
 
   updatePrevNextButtons();
 
@@ -365,33 +334,50 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
     const ep = await apiFetch(`/api/datasets/${encodeURIComponent(dsPath)}/episodes/${epIndex}`);
     state.episode = ep;
     state.frame = 0;
+    updateEpInfoStrip(ep);
     buildCharts(ep);
     buildCorrelationHeatmap(ep);
+    buildTimeDimHeatmap(ep);
     buildCameraGrid(ep);
     setupControls(ep);
     updateScrubber();
     updateImages();
   } catch (e) {
     el("task-label").textContent = `Error: ${e.message}`;
+    el("ep-info-strip").classList.add("hidden");
   }
 }
 
-/** Navigate to the previous episode in the global list. */
+function updateEpInfoStrip(ep) {
+  const strip = el("ep-info-strip");
+  if (!strip) return;
+  const dur = ep.timestamps?.length
+    ? ep.timestamps[ep.timestamps.length - 1].toFixed(1) + "s"
+    : "—";
+  const sDims = ep.state?.[0]?.length ?? 0;
+  const aDims = ep.actions?.[0]?.length ?? 0;
+  strip.innerHTML =
+    `<span class="info-chip">${ep.fps} fps</span>` +
+    `<span class="info-chip">${ep.length} frames</span>` +
+    `<span class="info-chip">${dur}</span>` +
+    `<span class="info-chip">state ${sDims}D</span>` +
+    `<span class="info-chip">action ${aDims}D</span>`;
+}
+
 function prevEpisode() {
   const idx = state.currentEpListIdx;
   if (idx <= 0) return;
   const { dsPath, epIndex, taskText, el: itemEl } = state.episodeList[idx - 1];
   selectEpisode(dsPath, epIndex, taskText, itemEl);
-  itemEl.scrollIntoView({ block: "nearest" });
+  itemEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
-/** Navigate to the next episode in the global list. */
 function nextEpisode() {
   const idx = state.currentEpListIdx;
   if (idx < 0 || idx >= state.episodeList.length - 1) return;
   const { dsPath, epIndex, taskText, el: itemEl } = state.episodeList[idx + 1];
   selectEpisode(dsPath, epIndex, taskText, itemEl);
-  itemEl.scrollIntoView({ block: "nearest" });
+  itemEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
 function updatePrevNextButtons() {
@@ -448,10 +434,7 @@ function buildCameraGrid(ep) {
     }
     cameras.appendChild(slot);
   }
-  if (count === 0) {
-    cameras.innerHTML = "";
-    cameras.className = "";
-  }
+  if (count === 0) { cameras.innerHTML = ""; cameras.className = ""; }
 }
 
 function resetCam(i) {
@@ -472,7 +455,6 @@ function prefetchFrames() {
       .then(data => { state.frameCache.set(f, data); state.prefetchPending.delete(f); })
       .catch(() => state.prefetchPending.delete(f));
   }
-  // evict stale entries
   for (const k of state.frameCache.keys()) {
     if (k < state.frame - 2) state.frameCache.delete(k);
   }
@@ -511,7 +493,6 @@ function renderFrameData(keys, frames) {
 async function updateImages() {
   const ep = state.episode;
   if (!ep?.has_images) return;
-
   const keys = ep.image_keys.slice(0, 3);
   for (let i = keys.length; i < 3; i++) resetCam(i);
 
@@ -532,12 +513,9 @@ async function updateImages() {
   prefetchFrames();
 }
 
-/* ── Export current frame as PNG ────────────────────────── */
+/* ── Export current frame as PNG ─────────────────────────── */
 function exportFrame() {
-  const f = state.frame;
   if (!state.episode?.has_images) return;
-
-  // Collect visible camera images
   const imgs = [];
   for (let i = 0; i < 3; i++) {
     const img = el(`cam-${i}`)?.querySelector("img");
@@ -546,9 +524,8 @@ function exportFrame() {
   if (!imgs.length) return;
 
   const W = 480, H = Math.round(W * 3 / 4);
-  const cols = imgs.length;
   const canvas = document.createElement("canvas");
-  canvas.width = cols * W;
+  canvas.width = imgs.length * W;
   canvas.height = H + 28;
   const ctx = canvas.getContext("2d");
   ctx.fillStyle = "#0F172A";
@@ -571,13 +548,13 @@ function exportFrame() {
         ctx.font = "10px system-ui, sans-serif";
         ctx.textAlign = "right";
         ctx.fillText(
-          `ep_${String(state.activeEpIndex).padStart(6,"0")}  frame ${f}`,
+          `ep_${String(state.activeEpIndex).padStart(6,"0")}  frame ${state.frame}`,
           canvas.width - 8, H + 18
         );
         canvas.toBlob(blob => {
           const a = document.createElement("a");
           a.href = URL.createObjectURL(blob);
-          a.download = `frame_${String(state.activeEpIndex).padStart(6,"0")}_${String(f).padStart(4,"0")}.png`;
+          a.download = `frame_${String(state.activeEpIndex).padStart(6,"0")}_${String(state.frame).padStart(4,"0")}.png`;
           a.click();
           URL.revokeObjectURL(a.href);
         });
@@ -605,6 +582,36 @@ function buildCharts(ep) {
   state.actionCharts = buildChartCard("action", actionData, ep.action_names, aNorm, ep, cmpAction, nsAction);
 }
 
+/**
+ * Rebuild charts for one type using current state. Eliminates duplicated
+ * boilerplate from toggleExpand and toggleHistogram.
+ */
+function rebuildChartsFor(type) {
+  const ep = state.episode;
+  if (!ep) return;
+  const ns = state.normStats;
+  const nsKey = type;
+  const raw   = type === "state" ? ep.state   : ep.actions;
+  const names = type === "state" ? ep.state_names : ep.action_names;
+  const { data: normData, normalized } = normalizeData(raw, ns?.[nsKey]);
+  const cmp = state.compareEpisode;
+  const cmpRaw  = cmp ? (type === "state" ? cmp.state : cmp.actions) : null;
+  const cmpData = cmpRaw ? normalizeData(cmpRaw, ns?.[nsKey]).data : null;
+  const nsNorm  = normalized ? normalizeMeanStd(ns?.[nsKey]) : null;
+  state[`${type}Charts`] = buildChartCard(type, normData, names, normalized, ep, cmpData, nsNorm);
+}
+
+function toggleExpand(type) {
+  state[`${type}Expanded`] = !state[`${type}Expanded`];
+  rebuildChartsFor(type);
+}
+
+function toggleHistogram(type) {
+  const key = `hist${type[0].toUpperCase() + type.slice(1)}`;
+  state[key] = !state[key];
+  rebuildChartsFor(type);
+}
+
 function buildChartCard(type, data2d, names, normalized, ep, cmpData2d = null, normBand = null) {
   const expanded = state[`${type}Expanded`];
   const isHist   = state[`hist${type[0].toUpperCase() + type.slice(1)}`];
@@ -618,14 +625,13 @@ function buildChartCard(type, data2d, names, normalized, ep, cmpData2d = null, n
   const labels = ep.state.map((_, i) => i);
   const dims = data2d[0]?.length ?? 0;
 
-  // destroy previous charts
-  (state[`${type}Charts`] ?? []).forEach(c => c.destroy());
+  (state[`${type}Charts`] ?? []).forEach(c => c?.destroy());
 
-  // update title badge
   const badge = normalized
     ? `<span class="norm-badge">normalized [−1, 1]</span>` : "";
   if (titleEl) {
-    titleEl.innerHTML = (type === "state" ? "State" : "Action") +
+    titleEl.innerHTML =
+      (type === "state" ? "State" : "Action") +
       `<span style="color:var(--text-3);font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;margin-left:4px;">(${dims}D)</span>` +
       (badge ? " " + badge : "");
   }
@@ -733,7 +739,12 @@ function makeChart(canvasId, labels, data2d, names, normalized, dims,
         tooltip: {
           enabled: true,
           callbacks: {
-            title: items => `Frame ${items[0].label}`,
+            title: items => {
+              const ts = state.episode?.timestamps;
+              const f = parseInt(items[0].label, 10);
+              const tsStr = ts?.[f] != null ? `  (${ts[f].toFixed(3)}s)` : "";
+              return `Frame ${f}${tsStr}`;
+            },
             label: item => ` ${item.dataset.label}: ${item.raw.toFixed(4)}`,
           },
           bodyFont: { size: 11 }, padding: 6,
@@ -778,28 +789,25 @@ function makeHistChart(canvasId, data2d, names, dims, dimIndex = null) {
   if (!canvas) return null;
   const ctx = canvas.getContext("2d");
   const isMini = dimIndex !== null;
-  const N_BINS = 20;
 
   const datasets = isMini
     ? (() => {
-        const { edges, counts } = computeBins(data2d.map(r => r[dimIndex]), N_BINS);
+        const { edges, counts } = computeBins(data2d.map(r => r[dimIndex]));
         return [{ label: names[dimIndex] ?? `dim_${dimIndex}`,
           data: counts, backgroundColor: PALETTE[dimIndex % PALETTE.length] + "99",
           borderColor: PALETTE[dimIndex % PALETTE.length], borderWidth: 1,
           _edges: edges }];
       })()
     : Array.from({ length: dims }, (_, d) => {
-        const { edges, counts } = computeBins(data2d.map(r => r[d]), N_BINS);
+        const { edges, counts } = computeBins(data2d.map(r => r[d]));
         return { label: names[d] ?? `dim_${d}`,
           data: counts, backgroundColor: PALETTE[d % PALETTE.length] + "66",
           borderColor: PALETTE[d % PALETTE.length], borderWidth: 1, _edges: edges };
       });
 
-  const labels = datasets[0]._edges;
-
   return new Chart(ctx, {
     type: "bar",
-    data: { labels, datasets },
+    data: { labels: datasets[0]._edges, datasets },
     options: {
       animation: false, responsive: true, maintainAspectRatio: false,
       plugins: {
@@ -823,42 +831,9 @@ function makeHistChart(canvasId, data2d, names, dims, dimIndex = null) {
   });
 }
 
-function toggleHistogram(type) {
-  const key = `hist${type[0].toUpperCase() + type.slice(1)}`;
-  state[key] = !state[key];
-  if (!state.episode) return;
-  const ep = state.episode;
-  const ns = state.normStats;
-  const nsKey = type === "state" ? "state" : "action";
-  const raw   = type === "state" ? ep.state : ep.actions;
-  const names = type === "state" ? ep.state_names : ep.action_names;
-  const { data: normData, normalized } = normalizeData(raw, ns?.[nsKey]);
-  const cmp = state.compareEpisode;
-  const cmpRaw = cmp ? (type === "state" ? cmp.state : cmp.actions) : null;
-  const cmpData = cmpRaw ? normalizeData(cmpRaw, ns?.[nsKey]).data : null;
-  const nsNorm = normalized ? normalizeMeanStd(ns?.[nsKey]) : null;
-  state[`${type}Charts`] = buildChartCard(type, normData, names, normalized, ep, cmpData, nsNorm);
-}
-
 function updateChartCursor() {
   state.stateCharts.forEach(c => c?.update("none"));
   state.actionCharts.forEach(c => c?.update("none"));
-}
-
-function toggleExpand(type) {
-  state[`${type}Expanded`] = !state[`${type}Expanded`];
-  if (!state.episode) return;
-  const ep = state.episode;
-  const ns = state.normStats;
-  const nsKey = type === "state" ? "state" : "action";
-  const raw   = type === "state" ? ep.state : ep.actions;
-  const names = type === "state" ? ep.state_names : ep.action_names;
-  const { data: normData, normalized } = normalizeData(raw, ns?.[nsKey]);
-  const cmp = state.compareEpisode;
-  const cmpRaw = cmp ? (type === "state" ? cmp.state : cmp.actions) : null;
-  const cmpData = cmpRaw ? normalizeData(cmpRaw, ns?.[nsKey]).data : null;
-  const nsNorm = normalized ? normalizeMeanStd(ns?.[nsKey]) : null;
-  state[`${type}Charts`] = buildChartCard(type, normData, names, normalized, ep, cmpData, nsNorm);
 }
 
 /* ── Correlation heatmap ─────────────────────────────────── */
@@ -938,6 +913,133 @@ function buildCorrelationHeatmap(ep) {
   if (!section.dataset.open) body.classList.add("corr-collapsed");
 }
 
+/* ── Time × Dimension heatmap ────────────────────────────── */
+const TIMEDIM_CELL_H = 18;   // pixels per dimension row
+const TIMEDIM_LABEL_W = 60;  // left label column width
+
+function buildTimeDimHeatmap(ep) {
+  const card = el("timedim-card");
+  const body = el("timedim-body");
+  if (!card || !body) return;
+
+  if (!ep?.actions?.length || ep.actions[0].length < 1) {
+    card.classList.add("hidden"); return;
+  }
+
+  const dims = ep.actions[0].length;
+  const frames = ep.length;
+  const rawNames = ep.action_names ?? [];
+  const labels = Array.from({ length: dims }, (_, d) => {
+    const n = rawNames[d] ?? `a${d}`;
+    return n.length > 9 ? n.slice(0, 8) + "…" : n;
+  });
+
+  // Pre-compute min/max per dimension for scaling
+  const dimMin = Array(dims).fill(Infinity);
+  const dimMax = Array(dims).fill(-Infinity);
+  for (const row of ep.actions) {
+    for (let d = 0; d < dims; d++) {
+      if (row[d] < dimMin[d]) dimMin[d] = row[d];
+      if (row[d] > dimMax[d]) dimMax[d] = row[d];
+    }
+  }
+
+  const CANVAS_W = Math.min(frames, 900);
+  const CANVAS_H = dims * TIMEDIM_CELL_H;
+  const TOTAL_W  = TIMEDIM_LABEL_W + CANVAS_W;
+
+  body.innerHTML = "";
+  const wrap = document.createElement("div");
+  wrap.className = "timedim-wrap";
+  body.appendChild(wrap);
+
+  const canvas = document.createElement("canvas");
+  canvas.width  = TOTAL_W;
+  canvas.height = CANVAS_H;
+  canvas.style.cssText = `width:${TOTAL_W}px;height:${CANVAS_H}px;cursor:crosshair;`;
+  canvas.id = "timedim-canvas";
+  wrap.appendChild(canvas);
+
+  const ctx = canvas.getContext("2d");
+  const cellW = CANVAS_W / frames;
+
+  for (let d = 0; d < dims; d++) {
+    const lo = dimMin[d], hi = dimMax[d], range = hi - lo || 1;
+    const y0 = d * TIMEDIM_CELL_H;
+
+    for (let f = 0; f < frames; f++) {
+      const t = (ep.actions[f][d] - lo) / range;  // 0…1
+      const r = Math.round(Math.min(255, t * 510));
+      const b = Math.round(Math.min(255, (1 - t) * 510));
+      const g = Math.round(120 * (1 - Math.abs(t - 0.5) * 2));
+      ctx.fillStyle = `rgb(${r},${g},${b})`;
+      ctx.fillRect(TIMEDIM_LABEL_W + f * cellW, y0, Math.ceil(cellW), TIMEDIM_CELL_H - 1);
+    }
+
+    ctx.font = "9px -apple-system, sans-serif";
+    ctx.fillStyle = "#64748B";
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    ctx.fillText(labels[d], TIMEDIM_LABEL_W - 4, y0 + TIMEDIM_CELL_H / 2);
+  }
+
+  // Click to seek
+  canvas.addEventListener("click", e => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = TOTAL_W / rect.width;
+    const px = (e.clientX - rect.left) * scaleX - TIMEDIM_LABEL_W;
+    if (px < 0) return;
+    const f = Math.min(Math.floor(px / cellW), frames - 1);
+    setFrame(f);
+  });
+
+  card.classList.remove("hidden");
+  if (!card.dataset.open) body.classList.add("timedim-collapsed");
+}
+
+function updateTimeDimCursor() {
+  const canvas = el("timedim-canvas");
+  if (!canvas || !state.episode) return;
+
+  const ep = state.episode;
+  const dims = ep.actions[0]?.length ?? 0;
+  const frames = ep.length;
+  const CANVAS_W = Math.min(frames, 900);
+  const TOTAL_W  = TIMEDIM_LABEL_W + CANVAS_W;
+  const CANVAS_H = dims * TIMEDIM_CELL_H;
+
+  const ctx = canvas.getContext("2d");
+  // Redraw cursor overlay using a separate canvas layer approach is complex;
+  // instead we overlay a thin vertical line with clearRect trick.
+  // We store the last cursor x and restore the heatmap column on each move.
+  const cellW = CANVAS_W / frames;
+  const cursorX = TIMEDIM_LABEL_W + state.frame * cellW;
+
+  // Draw cursor line
+  if (canvas._prevCursorX != null) {
+    // Restore a thin strip — already baked into the static heatmap so just redraw cursor
+    // Actually: draw a semi-transparent overlay rect for cursor
+  }
+  canvas._prevCursorX = cursorX;
+
+  // Use an overlay canvas approach: draw cursor on a separate <canvas> layered on top
+  let overlay = el("timedim-overlay");
+  if (!overlay) {
+    overlay = document.createElement("canvas");
+    overlay.id = "timedim-overlay";
+    overlay.width  = TOTAL_W;
+    overlay.height = CANVAS_H;
+    overlay.style.cssText = `position:absolute;top:0;left:0;width:${TOTAL_W}px;height:${CANVAS_H}px;pointer-events:none;`;
+    canvas.parentElement.style.position = "relative";
+    canvas.parentElement.appendChild(overlay);
+  }
+
+  const oc = overlay.getContext("2d");
+  oc.clearRect(0, 0, TOTAL_W, CANVAS_H);
+  oc.fillStyle = "rgba(255,255,255,0.55)";
+  oc.fillRect(cursorX, 0, Math.max(2, cellW), CANVAS_H);
+}
+
 /* ── Playback ────────────────────────────────────────────── */
 function setupControls(ep) {
   el("scrubber").max = ep.length - 1;
@@ -949,7 +1051,11 @@ function updateScrubber() {
   const ep = state.episode;
   if (!ep) return;
   el("scrubber").value = state.frame;
-  el("frame-counter").textContent = `${state.frame} / ${ep.length - 1}`;
+  const ts = ep.timestamps;
+  const tsCur = ts?.[state.frame]?.toFixed(2) ?? null;
+  const tsEnd = ts?.[ep.length - 1]?.toFixed(2) ?? null;
+  const tsStr = tsCur !== null ? `  •  ${tsCur}s / ${tsEnd}s` : "";
+  el("frame-counter").textContent = `${state.frame} / ${ep.length - 1}${tsStr}`;
 }
 
 function stopPlayback() {
@@ -1024,14 +1130,21 @@ document.addEventListener("DOMContentLoaded", () => {
   el("compare-clear").addEventListener("click", clearCompare);
 
   el("corr-close").addEventListener("click", () => {
-    const section = el("corr-section");
     const body = el("corr-body");
     const nowCollapsed = body.classList.toggle("corr-collapsed");
-    section.dataset.open = nowCollapsed ? "" : "1";
+    el("corr-section").dataset.open = nowCollapsed ? "" : "1";
     el("corr-close").classList.toggle("active", !nowCollapsed);
   });
 
-  // Search with debounce + clear button
+  el("timedim-toggle").addEventListener("click", () => {
+    const card = el("timedim-card");
+    const body = el("timedim-body");
+    const nowCollapsed = body.classList.toggle("timedim-collapsed");
+    card.dataset.open = nowCollapsed ? "" : "1";
+    el("timedim-toggle").classList.toggle("active", !nowCollapsed);
+  });
+
+  // Search
   el("search-input").addEventListener("input", e => {
     applySearchDebounced(e.target.value);
   });
@@ -1046,7 +1159,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const tag = e.target.tagName;
     const inInput = ["INPUT", "TEXTAREA", "SELECT"].includes(tag);
 
-    // ? to open shortcuts modal (works even in inputs if modal not open)
     if (e.key === "?" && !inInput) {
       e.preventDefault();
       el("shortcuts-modal").classList.toggle("hidden");
@@ -1054,6 +1166,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (inInput) return;
+
+    if (e.key === "b" || e.key === "B") {
+      e.preventDefault(); toggleSidebar(); return;
+    }
+
     if (!state.episode && !["[", "]"].includes(e.key)) return;
 
     switch (e.key) {

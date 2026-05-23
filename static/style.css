@@ -599,11 +599,44 @@ html.dark .norm-badge { background: #0d2e1f; border-color: #166534; }
 }
 .mini-chart-wrap { height: 72px; position: relative; }
 
-/* Correlation heatmap */
+/* ── Task header episode count ────────────────────────────── */
+.ep-count {
+  font-size: 9.5px;
+  color: var(--text-3);
+  background: var(--bg-3);
+  border-radius: 8px;
+  padding: 1px 5px;
+  flex-shrink: 0;
+}
+
+/* ── Episode info strip ───────────────────────────────────── */
+.ep-info-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+.info-chip {
+  font-size: 10.5px;
+  color: var(--text-2);
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+
+/* ── Correlation heatmap ──────────────────────────────────── */
 #corr-section { margin-bottom: 10px; }
 #corr-body { overflow-x: auto; padding-top: 4px; }
 #corr-body.corr-collapsed { display: none; }
 #corr-canvas { display: block; }
+
+/* ── Time × Dimension heatmap ─────────────────────────────── */
+#timedim-card { margin-bottom: 10px; }
+#timedim-body { overflow-x: auto; padding-top: 4px; }
+#timedim-body.timedim-collapsed { display: none; }
+.timedim-wrap { position: relative; display: inline-block; }
 
 /* ── Playback Controls ────────────────────────────────────── */
 #controls {
