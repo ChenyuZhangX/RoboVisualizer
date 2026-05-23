@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v24
+   LeRobot Visualizer — app.js  v25
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -117,7 +117,7 @@ function initSidebarState() {
 }
 
 /* ── URL hash state (bookmarkable links) ─────────────────── */
-const _saveHashDebounced = debounce(_doSaveHash, 400);
+const _saveHashDebounced = debounce(_doSaveHash, 600);
 
 function _doSaveHash() {
   if (!state.activeDataset || state.activeEpIndex == null) return;
@@ -304,7 +304,10 @@ async function loadDatasets() {
   try {
     const datasets = await apiFetch("/api/datasets");
     if (!datasets.length) {
-      tree.innerHTML = `<div class="loading-msg">No datasets found in ./data/</div>`;
+      tree.innerHTML = `<div style="padding:12px;color:var(--text-3);font-size:11px;text-align:center;">
+        No datasets found in <code style="background:var(--bg-3);padding:2px 4px;border-radius:3px">./data/</code><br>
+        <span style="font-size:10px;margin-top:4px;display:block">Create dataset folders with <code>meta/</code> and <code>data/</code> subdirectories</span>
+      </div>`;
       updateSidebarFooter(0, 0);
       return;
     }
@@ -544,6 +547,7 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
   state.activeDataset = dsPath;
   state.activeEpIndex = epIndex;
   state.frameCache.clear();
+  // Note: don't clear prefetchPending — requests are in-flight; they'll self-discard on frame change check
   state.prefetchPending.clear();
 
   if (state.compareDataset === dsPath && state.compareEpIndex === epIndex) clearCompare();
@@ -564,6 +568,9 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
     const ep = await apiFetch(`/api/datasets/${encodeURIComponent(dsPath)}/episodes/${epIndex}`);
     state.episode = ep;
     state.frame = 0;
+    // Clear any prior error messages
+    el("task-label").innerHTML = "";
+    el("task-label").title = "";
     updateEpInfoStrip(ep);
     // Update normalize btn tooltip based on stats availability
     const hasNormStats = !!state.normStats;
@@ -588,6 +595,10 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
       : `ep_${String(epIndex).padStart(6, "0")} • ${dsPath} • LeRobot Visualizer`;
     el("charts-area").style.opacity = "";
     el("charts-area").style.pointerEvents = "";
+    // Enable export buttons now that episode is loaded
+    el("btn-export").disabled = false;
+    el("btn-csv").disabled = false;
+    el("btn-frame-values").disabled = false;
   } catch (e) {
     const retryBtn = `<button onclick="selectEpisode(${JSON.stringify(dsPath)},${epIndex},${JSON.stringify(taskText)},document.querySelector('.ep-item.active'))" style="margin-left:10px;background:var(--bg-3);border:1px solid var(--border);border-radius:4px;padding:1px 8px;font-size:11px;cursor:pointer;color:var(--text-2)">Retry</button>`;
     el("task-label").innerHTML =
@@ -1082,10 +1093,10 @@ function buildChartCard(type, data2d, names, normalized, ep, cmpData2d = null, n
     const mainChart = makeChart(`${type}-chart`, labels, data2d, names, normalized, dims, null, cmpData2d, null);
     charts.push(mainChart);
     // Compact legend below chart — click to toggle series visibility
-    if (dims > 0 && dims <= 12) {
+    if (dims > 0 && dims <= 20) {
       const legendDiv = document.createElement("div");
       legendDiv.className = "chart-legend";
-      const maxShow = 10;
+      const maxShow = 20;
       for (let d = 0; d < Math.min(dims, maxShow); d++) {
         const item = document.createElement("span");
         item.className = "legend-item";
@@ -1645,10 +1656,10 @@ function updateTopbarBreadcrumb() {
 function initFrameCounterJump() {
   const counter = el("frame-counter");
   if (!counter) return;
-  counter.title = "Click to jump to frame";
+  counter.title = "Click to jump to frame (or press Ctrl+J)";
   counter.style.cursor = "pointer";
   counter.addEventListener("click", () => {
-    if (!state.episode) return;
+    if (!state.episode || state.playing) return;
     const current = state.frame;
     const max = state.episode.length - 1;
     // Create inline input
@@ -1663,7 +1674,12 @@ function initFrameCounterJump() {
     input.select();
 
     const commit = () => {
-      const f = Math.max(0, Math.min(parseInt(input.value, 10) || 0, max));
+      const parsed = parseInt(input.value, 10);
+      if (isNaN(parsed)) {
+        input.replaceWith(counter);
+        return;
+      }
+      const f = clamp(parsed, 0, max);
       input.replaceWith(counter);
       stopPlayback();
       setFrame(f);
@@ -1755,7 +1771,7 @@ function buildFrameValuesPanel(ep) {
   if (sDims) makeChips(ep.state, sDims, ep.state_names, "s");
   if (aDims) makeChips(ep.actions, aDims, ep.action_names, "a");
 
-  panel.classList.remove("hidden");
+  panel.classList.remove("hidden", "fv-collapsed");
   updateFrameValues();
 }
 
@@ -1803,7 +1819,7 @@ function updateScrubber() {
   const tsCurRaw = ts?.[state.frame] ?? null;
   const tsEndRaw = ts?.[ep.length - 1] ?? null;
   const fmt = v => v >= 60 ? formatDuration(v) : v.toFixed(2) + "s";
-  const tsStr = tsCurRaw !== null ? `  •  ${fmt(tsCurRaw)} / ${fmt(tsEndRaw)}` : "";
+  const tsStr = (tsCurRaw !== null && tsEndRaw !== null && tsEndRaw > 0.1) ? `  •  ${fmt(tsCurRaw)} / ${fmt(tsEndRaw)}` : "";
   el("frame-counter").textContent = `${state.frame} / ${ep.length - 1}${tsStr}`;
   const titleStr = tsCurRaw != null ? `${fmt(tsCurRaw)} (frame ${state.frame})` : `frame ${state.frame}`;
   scrubber.title = titleStr;
@@ -1931,10 +1947,19 @@ document.addEventListener("DOMContentLoaded", () => {
   el("btn-csv")?.addEventListener("click", exportCSV);
   el("btn-copy-url")?.addEventListener("click", copyEpisodeURL);
 
+  // Disable export buttons initially
+  el("btn-export").disabled = true;
+  el("btn-csv").disabled = true;
+  el("btn-frame-values").disabled = true;
+
   el("speed-select").addEventListener("change", e => {
     state.speed = parseFloat(e.target.value);
     localStorage.setItem("speed", state.speed);
-    if (state.playing) { stopPlayback(); startPlayback(); }
+    if (state.playing) {
+      stopPlayback();
+      startPlayback();
+      showCopyToast(`Speed: ${state.speed}×`);
+    }
   });
 
   el("scrubber").addEventListener("input", e => {
@@ -2081,6 +2106,11 @@ document.addEventListener("DOMContentLoaded", () => {
       exportCSV();
       return;
     }
+    if (modKey && e.key === "j") {
+      e.preventDefault();
+      if (state.episode && !state.playing) el("frame-counter").click();
+      return;
+    }
     if (e.key === "f" || e.key === "F") {
       if (!el("cam-lightbox").classList.contains("hidden")) {
         e.preventDefault();
@@ -2096,6 +2126,14 @@ document.addEventListener("DOMContentLoaded", () => {
           else slot.requestFullscreen?.();
         }
       }
+      return;
+    }
+    if (e.key === "m" || e.key === "M") {
+      e.preventDefault();
+      el("task-label").classList.toggle("hidden");
+      el("ep-info-strip").classList.toggle("hidden");
+      el("compare-banner").classList.toggle("hidden");
+      showCopyToast(el("task-label").classList.contains("hidden") ? "Labels hidden" : "Labels shown");
       return;
     }
 
@@ -2171,6 +2209,13 @@ document.addEventListener("DOMContentLoaded", () => {
       el("sidebar-toggle").setAttribute("aria-pressed", "true");
     }
   });
+
+  // Also listen for explicit window resize to auto-expand if narrowing-then-widening
+  window.addEventListener("resize", () => {
+    const isNarrow = window.innerWidth < SIDEBAR_BREAKPOINT;
+    const isCollapsed = el("main").classList.contains("sidebar-collapsed");
+    // Don't auto-expand; user should control. Just ensure consistency with media query.
+  }, { passive: true });
 
   // Search input: Escape clears and blurs
   el("search-input").addEventListener("keydown", e => {

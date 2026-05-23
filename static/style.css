@@ -929,7 +929,8 @@ html.dark #speed-select { background: var(--bg-2); }
   transition: background var(--transition);
 }
 .legend-item[data-dim]:hover { background: var(--bg-3); }
-.legend-item.legend-hidden { opacity: .4; text-decoration: line-through; }
+.legend-item { transition: opacity var(--transition), text-decoration-color var(--transition); }
+.legend-item.legend-hidden { opacity: .4; text-decoration: line-through; text-decoration-color: var(--text-3); }
 .legend-dot {
   width: 8px; height: 8px;
   border-radius: 50%;
@@ -1200,12 +1201,25 @@ html.dark #viewer-footer {
 .fv-chip:hover { border-color: var(--blue); background: var(--blue-lt); }
 
 /* ── Mobile / narrow viewport ───────────────────────────────── */
-@media (max-width: 720px) {
-  :root { --sidebar-w: 240px; }
-  #cameras.cams-3,
+@media (max-width: 920px) {
+  #cameras.cams-4,
   #cameras.cams-5,
   #cameras.cams-6 { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 720px) {
+  :root { --sidebar-w: 240px; }
+  #cameras.cams-2,
+  #cameras.cams-3,
+  #cameras.cams-4,
+  #cameras.cams-5,
+  #cameras.cams-6 { grid-template-columns: 1fr; }
   .ep-len { display: none; }
+}
+
+@media (max-width: 480px) {
+  .cam-label { font-size: 9px; padding: 1px 4px; }
+  .chart-title-text { font-size: 9.5px; }
 }
 
 /* ── Chart canvas interactive cursor ───────────────────────── */
@@ -1234,3 +1248,16 @@ html.dark #viewer-footer {
 
 /* ── Speed select hover ──────────────────────────────────────── */
 #speed-select { cursor: pointer; }
+#speed-select:focus { border-color: var(--blue); box-shadow: 0 0 0 2px rgba(59,130,246,.2); }
+
+#scrubber { accent-color: var(--blue); }
+#scrubber:focus { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+/* ── Input elements focus styling ────────────────────────── */
+input[type="text"]:focus,
+input[type="number"]:focus,
+textarea:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px rgba(59,130,246,.2);
+  outline: none;
+}
