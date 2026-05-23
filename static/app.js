@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v34
+   LeRobot Visualizer — app.js  v35
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -159,22 +159,28 @@ function updateRecentSection() {
   for (const r of state.recentEpisodes) {
     const item = document.createElement("div");
     item.className = "recent-item";
+    item.tabIndex = 0;
+    item.setAttribute("role", "option");
+    item.setAttribute("aria-label", `Recent: ${r.dsPath} episode ${r.epIndex}${r.taskText ? ` - ${r.taskText}` : ""}`);
     const epStr = `ep_${String(r.epIndex).padStart(6, "0")}`;
     const shortTask = r.taskText?.length > 48 ? r.taskText.slice(0, 45) + "…" : (r.taskText ?? "");
     item.innerHTML =
       `<span class="recent-ep">${epStr}</span>` +
       `<span class="recent-task">${escapeHTML(shortTask)}</span>`;
     item.title = `${r.dsPath} › ${epStr}` + (r.taskText ? `\n${r.taskText}` : "");
-    item.addEventListener("click", () => {
+    const handleSelect = () => {
       const entry = state.episodeList.find(e => e.dsPath === r.dsPath && e.epIndex === r.epIndex);
       if (entry) {
         entry.el.closest(".task-group")?.classList.add("open");
         entry.el.closest(".ds-node")?.classList.add("open");
         selectEpisode(r.dsPath, r.epIndex, r.taskText, entry.el);
       } else {
-        // Entry not in current episode list — just load by path
         selectEpisode(r.dsPath, r.epIndex, r.taskText, null);
       }
+    };
+    item.addEventListener("click", handleSelect);
+    item.addEventListener("keydown", e => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleSelect(); }
     });
     list.appendChild(item);
   }
@@ -494,13 +500,17 @@ function updateSidebarFooter(numDatasets, totalEps, datasets = []) {
     footer = document.createElement("div");
     footer.id = "sidebar-footer";
     footer.className = "sidebar-footer";
+    footer.setAttribute("role", "status");
+    footer.setAttribute("aria-live", "polite");
     el("sidebar")?.appendChild(footer);
   }
   if (numDatasets > 0) {
     const knownFrames = datasets.reduce((s, d) => d.total_frames != null ? s + d.total_frames : s, 0);
-    const framesHint = knownFrames > 0 ? ` · ${knownFrames.toLocaleString()}f` : "";
-    footer.textContent = `${numDatasets} dataset${numDatasets > 1 ? "s" : ""} · ${totalEps} episodes${framesHint}`;
-    footer.title = datasets.map(d => `${d.name}: ${d.total_episodes} eps${d.total_frames != null ? ` · ${d.total_frames.toLocaleString()} frames` : ""}`).join("\n");
+    const framesHint = knownFrames > 0 ? ` · ${(knownFrames / 1e6).toFixed(1)}M f` : "";
+    const taskCount = datasets.reduce((s, d) => s + d.total_tasks, 0);
+    const taskHint = taskCount > 0 && taskCount > 1 ? ` · ${taskCount} tasks` : "";
+    footer.textContent = `${numDatasets} dataset${numDatasets > 1 ? "s" : ""} · ${totalEps} ep${totalEps !== 1 ? "s" : ""}${taskHint}${framesHint}`;
+    footer.title = datasets.map(d => `${d.name}: ${d.total_episodes} eps${d.total_frames != null ? ` · ${(d.total_frames / 1e6).toFixed(1)}M f` : ""}`).join("\n");
   } else {
     footer.textContent = "";
   }

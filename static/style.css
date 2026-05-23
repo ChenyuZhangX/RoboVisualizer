@@ -226,13 +226,15 @@ body {
 }
 
 .sidebar-footer {
-  padding: 6px 14px;
+  padding: 7px 14px;
   font-size: 10px;
   color: var(--text-3);
   border-top: 1px solid var(--border);
   flex-shrink: 0;
   margin-top: auto;
   font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  transition: color var(--transition), border-color var(--transition);
 }
 
 mark.search-hl {
