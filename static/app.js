@@ -156,6 +156,7 @@ function setFrame(f) {
   updateScrubber();
   updateChartCursor();
   updateTimeDimCursor();
+  updateFrameValues();
   updateImages();
 }
 
@@ -338,6 +339,7 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
     buildCharts(ep);
     buildCorrelationHeatmap(ep);
     buildTimeDimHeatmap(ep);
+    buildFrameValuesPanel(ep);
     buildCameraGrid(ep);
     setupControls(ep);
     updateScrubber();
@@ -983,15 +985,44 @@ function buildTimeDimHeatmap(ep) {
     ctx.fillText(labels[d], TIMEDIM_LABEL_W - 4, y0 + TIMEDIM_CELL_H / 2);
   }
 
-  // Click to seek
-  canvas.addEventListener("click", e => {
+  // Drag and click to seek + hover tooltip
+  const getFrameFromPointer = e => {
     const rect = canvas.getBoundingClientRect();
-    const scaleX = TOTAL_W / rect.width;
-    const px = (e.clientX - rect.left) * scaleX - TIMEDIM_LABEL_W;
+    const px = (e.clientX - rect.left) * (TOTAL_W / rect.width) - TIMEDIM_LABEL_W;
+    return { f: Math.min(Math.max(0, Math.floor(px / cellW)), frames - 1), px };
+  };
+  const getDimFromPointer = e => {
+    const rect = canvas.getBoundingClientRect();
+    const py = (e.clientY - rect.top) * (canvas.height / rect.height);
+    return Math.floor(py / TIMEDIM_CELL_H);
+  };
+
+  let dragging = false;
+  canvas.addEventListener("pointerdown", e => {
+    const { f, px } = getFrameFromPointer(e);
     if (px < 0) return;
-    const f = Math.min(Math.floor(px / cellW), frames - 1);
+    dragging = true;
+    canvas.setPointerCapture(e.pointerId);
     setFrame(f);
   });
+  canvas.addEventListener("pointermove", e => {
+    const { f, px } = getFrameFromPointer(e);
+    if (dragging && px >= 0) setFrame(f);
+    // Tooltip
+    if (px < 0) { hideTimeDimTooltip(); return; }
+    const d = getDimFromPointer(e);
+    if (d >= 0 && d < dims && ep.actions[f]) {
+      const val = ep.actions[f][d]?.toFixed(4) ?? "—";
+      const ts = ep.timestamps?.[f];
+      const tsStr = ts != null ? ` • ${ts.toFixed(3)}s` : "";
+      showTimeDimTooltip(e.clientX, e.clientY,
+        `<b>${labels[d]}</b>  ${val}<br><span style="color:#94A3B8">frame ${f}${tsStr}</span>`);
+    } else {
+      hideTimeDimTooltip();
+    }
+  });
+  canvas.addEventListener("pointerup", () => { dragging = false; });
+  canvas.addEventListener("pointerleave", () => { dragging = false; hideTimeDimTooltip(); });
 
   card.classList.remove("hidden");
   if (!card.dataset.open) body.classList.add("timedim-collapsed");
@@ -1038,6 +1069,101 @@ function updateTimeDimCursor() {
   oc.clearRect(0, 0, TOTAL_W, CANVAS_H);
   oc.fillStyle = "rgba(255,255,255,0.55)";
   oc.fillRect(cursorX, 0, Math.max(2, cellW), CANVAS_H);
+}
+
+/* ── Frame values panel toggle ───────────────────────────── */
+function toggleFrameValuesPanel() {
+  const panel = el("frame-values-panel");
+  if (!panel) return;
+  const hidden = panel.classList.toggle("fv-collapsed");
+  el("btn-frame-values")?.classList.toggle("active", !hidden);
+}
+
+/* ── TimeDim tooltip ─────────────────────────────────────── */
+function showTimeDimTooltip(x, y, html) {
+  let tt = document.getElementById("timedim-tooltip");
+  if (!tt) {
+    tt = document.createElement("div");
+    tt.id = "timedim-tooltip";
+    tt.className = "timedim-tooltip";
+    document.body.appendChild(tt);
+  }
+  tt.innerHTML = html;
+  tt.style.left = (x + 14) + "px";
+  tt.style.top  = (y - 10) + "px";
+  tt.classList.remove("hidden");
+}
+
+function hideTimeDimTooltip() {
+  document.getElementById("timedim-tooltip")?.classList.add("hidden");
+}
+
+/* ── Frame values panel ──────────────────────────────────── */
+function buildFrameValuesPanel(ep) {
+  const panel = el("frame-values-panel");
+  if (!panel) return;
+
+  const sDims = ep.state?.[0]?.length ?? 0;
+  const aDims = ep.actions?.[0]?.length ?? 0;
+
+  if (!sDims && !aDims) { panel.classList.add("hidden"); return; }
+
+  panel.innerHTML = "";
+
+  if (sDims) {
+    const section = document.createElement("div");
+    section.className = "fv-section";
+    section.innerHTML = `<div class="fv-label">State</div><div class="fv-grid" id="fv-state-grid"></div>`;
+    panel.appendChild(section);
+    const grid = section.querySelector("#fv-state-grid");
+    for (let d = 0; d < sDims; d++) {
+      const chip = document.createElement("div");
+      chip.className = "fv-chip";
+      chip.id = `fv-s-${d}`;
+      chip.innerHTML = `<span class="fv-dim" style="color:${PALETTE[d % PALETTE.length]}">${ep.state_names[d] ?? `s${d}`}</span><span class="fv-val" id="fv-sv-${d}">—</span>`;
+      grid.appendChild(chip);
+    }
+  }
+
+  if (aDims) {
+    const section = document.createElement("div");
+    section.className = "fv-section";
+    section.innerHTML = `<div class="fv-label">Action</div><div class="fv-grid" id="fv-action-grid"></div>`;
+    panel.appendChild(section);
+    const grid = section.querySelector("#fv-action-grid");
+    for (let d = 0; d < aDims; d++) {
+      const chip = document.createElement("div");
+      chip.className = "fv-chip";
+      chip.id = `fv-a-${d}`;
+      chip.innerHTML = `<span class="fv-dim" style="color:${PALETTE[d % PALETTE.length]}">${ep.action_names[d] ?? `a${d}`}</span><span class="fv-val" id="fv-av-${d}">—</span>`;
+      grid.appendChild(chip);
+    }
+  }
+
+  panel.classList.remove("hidden");
+  updateFrameValues();
+}
+
+function updateFrameValues() {
+  const ep = state.episode;
+  if (!ep) return;
+  const f = state.frame;
+
+  const sRow = ep.state?.[f];
+  if (sRow) {
+    sRow.forEach((v, d) => {
+      const span = document.getElementById(`fv-sv-${d}`);
+      if (span) span.textContent = v.toFixed(4);
+    });
+  }
+
+  const aRow = ep.actions?.[f];
+  if (aRow) {
+    aRow.forEach((v, d) => {
+      const span = document.getElementById(`fv-av-${d}`);
+      if (span) span.textContent = v.toFixed(4);
+    });
+  }
 }
 
 /* ── Playback ────────────────────────────────────────────── */
@@ -1112,6 +1238,7 @@ document.addEventListener("DOMContentLoaded", () => {
   el("btn-prev-ep").addEventListener("click", prevEpisode);
   el("btn-next-ep").addEventListener("click", nextEpisode);
   el("btn-export").addEventListener("click", exportFrame);
+  el("btn-frame-values").addEventListener("click", toggleFrameValuesPanel);
 
   el("speed-select").addEventListener("change", e => {
     state.speed = parseFloat(e.target.value);
@@ -1172,6 +1299,23 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (!state.episode && !["[", "]"].includes(e.key)) return;
+
+    if (e.key === "l" || e.key === "L") {
+      e.preventDefault();
+      state.looping = !state.looping;
+      el("btn-loop").classList.toggle("active", state.looping);
+      return;
+    }
+    if (e.key === "h" || e.key === "H") {
+      e.preventDefault();
+      toggleHistogram(e.shiftKey ? "action" : "state");
+      return;
+    }
+    if (e.key === "v" || e.key === "V") {
+      e.preventDefault();
+      toggleFrameValuesPanel();
+      return;
+    }
 
     switch (e.key) {
       case " ":
