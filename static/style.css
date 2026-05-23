@@ -138,7 +138,8 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transition: width var(--transition), min-width var(--transition);
+  transition: width .2s ease, min-width .2s ease, border-right .2s ease;
+  will-change: width;
 }
 
 #main.sidebar-collapsed #sidebar {
@@ -264,11 +265,12 @@ mark.search-hl {
   gap: 6px;
   padding: 3px 14px;
   cursor: pointer;
-  transition: background var(--transition);
+  transition: background var(--transition), padding-left var(--transition);
   border-radius: 0;
   overflow: hidden;
 }
-.recent-item:hover { background: var(--bg-3); }
+.recent-item:hover { background: var(--bg-3); padding-left: 16px; }
+.recent-item:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
 .recent-ep {
   font-size: 10.5px;
   font-family: ui-monospace, monospace;
@@ -964,10 +966,12 @@ html.dark .norm-badge { background: #0d2e1f; border-color: #166534; }
   cursor: pointer;
   outline: none;
   flex-shrink: 0;
-  transition: border-color var(--transition);
+  transition: border-color var(--transition), color var(--transition), background var(--transition);
 }
 #speed-select:focus, #speed-select:hover { border-color: var(--blue); color: var(--text); }
+#speed-select:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
 html.dark #speed-select { background: var(--bg-2); }
+html.dark #speed-select:hover, html.dark #speed-select:focus { background: var(--bg-3); }
 
 #scrubber {
   flex: 1;
@@ -1131,7 +1135,8 @@ html.dark .info-chip-orange { color: #FCD34D; background: #3d2a0a; border-color:
   justify-content: center;
   z-index: 100;
   backdrop-filter: blur(2px);
-  animation: modal-fade-in .15s ease;
+  animation: modal-fade-in .2s ease-out;
+  will-change: opacity;
 }
 html.dark .modal-overlay { background: rgba(0,0,0,.6); }
 
@@ -1149,10 +1154,11 @@ html.dark .modal-overlay { background: rgba(0,0,0,.6); }
   min-width: 280px;
   max-height: 90vh;
   overflow-y: auto;
-  animation: modal-scale-in .15s ease;
+  animation: modal-scale-in .2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  will-change: transform;
 }
 @keyframes modal-scale-in {
-  from { transform: scale(.96); opacity: 0; }
+  from { transform: scale(.92); opacity: 0; }
   to   { transform: scale(1); opacity: 1; }
 }
 
@@ -1188,6 +1194,22 @@ kbd {
   color: var(--text);
   line-height: 1.5;
 }
+
+/* ── Frame jump input ────────────────────────────────────────── */
+.frame-jump-input {
+  background: var(--bg);
+  border: 1px solid var(--blue);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 11.5px;
+  color: var(--text);
+  outline: none;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  transition: box-shadow .12s ease;
+}
+.frame-jump-input:focus { box-shadow: 0 0 0 2px rgba(59,130,246,.2); }
+html.dark .frame-jump-input { background: var(--bg-2); }
 
 /* ── Custom scrollbars ────────────────────────────────────── */
 #viewer-scroll::-webkit-scrollbar,
