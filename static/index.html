@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LeRobot Visualizer</title>
-  <link rel="stylesheet" href="/style.css?v=21" />
+  <link rel="stylesheet" href="/style.css?v=22" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -35,6 +35,9 @@
       <aside id="sidebar">
         <div id="sidebar-header">
           <span class="sidebar-title">Datasets</span>
+          <button id="collapse-all-btn" class="icon-btn-sm" title="Collapse all tasks" onclick="collapseAllTasks()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="10" y1="14" x2="21" y2="3"/><line x1="3" y1="21" x2="14" y2="10"/></svg>
+          </button>
           <button id="refresh-btn" class="icon-btn-sm" title="Refresh" onclick="loadDatasets()">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
@@ -238,12 +241,19 @@
 
   <!-- Camera lightbox -->
   <div id="cam-lightbox" class="modal-overlay hidden">
+    <button class="lightbox-nav lightbox-prev" onclick="lightboxNavigate(-1)" title="Previous camera (←)" aria-label="Previous camera">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
     <div class="lightbox-box">
       <img id="lightbox-img" alt="" />
       <div id="lightbox-label"></div>
+      <div id="lightbox-counter" class="lightbox-counter"></div>
     </div>
+    <button class="lightbox-nav lightbox-next" onclick="lightboxNavigate(1)" title="Next camera (→)" aria-label="Next camera">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+    </button>
   </div>
 
-  <script src="/app.js?v=21"></script>
+  <script src="/app.js?v=22"></script>
 </body>
 </html>

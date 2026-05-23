@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v21
+   LeRobot Visualizer — app.js  v22
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -282,6 +282,11 @@ function lengthClass(len, sortedLengths) {
   if (pct < 0.60) return "len-medium";
   if (pct < 0.80) return "len-med-long";
   return "len-long";
+}
+
+/* ── Sidebar utilities ───────────────────────────────────── */
+function collapseAllTasks() {
+  document.querySelectorAll(".task-group.open").forEach(g => g.classList.remove("open"));
 }
 
 /* ── Sidebar dataset tree ────────────────────────────────── */
@@ -684,6 +689,16 @@ function openLightbox(src, label, camIdx = -1) {
   el("lightbox-label").textContent = label;
   el("cam-lightbox").classList.remove("hidden");
   el("cam-lightbox").dataset.camIdx = camIdx;
+
+  // Update camera counter and nav visibility
+  const keys = state.episode?.image_keys?.slice(0, MAX_CAMS) ?? [];
+  const total = keys.length;
+  const counter = el("lightbox-counter");
+  if (counter) counter.textContent = total > 1 ? `${camIdx + 1} / ${total}` : "";
+  const showNav = total > 1;
+  document.querySelectorAll(".lightbox-nav").forEach(btn => {
+    btn.style.display = showNav ? "" : "none";
+  });
 }
 
 function lightboxNavigate(delta) {
@@ -1592,6 +1607,17 @@ function hideTimeDimTooltip() {
   document.getElementById("timedim-tooltip")?.classList.add("hidden");
 }
 
+/* ── Episode per-dim statistics ─────────────────────────── */
+function dimMinMax(data2d, d) {
+  let min = Infinity, max = -Infinity;
+  for (const row of data2d) {
+    const v = row[d];
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+  return { min, max };
+}
+
 /* ── Frame values panel ──────────────────────────────────── */
 function buildFrameValuesPanel(ep) {
   const panel = el("frame-values-panel");
@@ -1604,35 +1630,26 @@ function buildFrameValuesPanel(ep) {
 
   panel.innerHTML = "";
 
-  if (sDims) {
+  const makeChips = (data2d, dims, names, prefix) => {
     const section = document.createElement("div");
     section.className = "fv-section";
-    section.innerHTML = `<div class="fv-label">State</div><div class="fv-grid" id="fv-state-grid"></div>`;
+    const labelText = prefix === "s" ? "State" : "Action";
+    section.innerHTML = `<div class="fv-label">${labelText}</div><div class="fv-grid" id="fv-${prefix}-grid"></div>`;
     panel.appendChild(section);
-    const grid = section.querySelector("#fv-state-grid");
-    for (let d = 0; d < sDims; d++) {
+    const grid = section.querySelector(`#fv-${prefix}-grid`);
+    for (let d = 0; d < dims; d++) {
+      const { min, max } = dimMinMax(data2d, d);
       const chip = document.createElement("div");
       chip.className = "fv-chip";
-      chip.id = `fv-s-${d}`;
-      chip.innerHTML = `<span class="fv-dim" style="color:${PALETTE[d % PALETTE.length]}">${ep.state_names[d] ?? `s${d}`}</span><span class="fv-val" id="fv-sv-${d}">—</span>`;
+      chip.id = `fv-${prefix}-${d}`;
+      chip.title = `min: ${min.toFixed(4)}  max: ${max.toFixed(4)}`;
+      chip.innerHTML = `<span class="fv-dim" style="color:${PALETTE[d % PALETTE.length]}">${names[d] ?? `${prefix}${d}`}</span><span class="fv-val" id="fv-${prefix}v-${d}">—</span>`;
       grid.appendChild(chip);
     }
-  }
+  };
 
-  if (aDims) {
-    const section = document.createElement("div");
-    section.className = "fv-section";
-    section.innerHTML = `<div class="fv-label">Action</div><div class="fv-grid" id="fv-action-grid"></div>`;
-    panel.appendChild(section);
-    const grid = section.querySelector("#fv-action-grid");
-    for (let d = 0; d < aDims; d++) {
-      const chip = document.createElement("div");
-      chip.className = "fv-chip";
-      chip.id = `fv-a-${d}`;
-      chip.innerHTML = `<span class="fv-dim" style="color:${PALETTE[d % PALETTE.length]}">${ep.action_names[d] ?? `a${d}`}</span><span class="fv-val" id="fv-av-${d}">—</span>`;
-      grid.appendChild(chip);
-    }
-  }
+  if (sDims) makeChips(ep.state, sDims, ep.state_names, "s");
+  if (aDims) makeChips(ep.actions, aDims, ep.action_names, "a");
 
   panel.classList.remove("hidden");
   updateFrameValues();

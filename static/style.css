@@ -1091,3 +1091,37 @@ html.dark #viewer-footer {
   color: rgba(255,255,255,.7);
   background: rgba(0,0,0,.55);
 }
+
+.lightbox-counter {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  font-size: 11px;
+  color: rgba(255,255,255,.6);
+  background: rgba(0,0,0,.4);
+  border-radius: 10px;
+  padding: 2px 8px;
+  pointer-events: none;
+}
+
+/* Lightbox navigation arrows */
+.lightbox-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(0,0,0,.45);
+  border: none;
+  color: rgba(255,255,255,.85);
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 10;
+  transition: background .15s, color .15s;
+}
+.lightbox-nav:hover { background: rgba(0,0,0,.7); color: #fff; }
+.lightbox-prev { left: 12px; }
+.lightbox-next { right: 12px; }
