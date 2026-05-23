@@ -72,6 +72,7 @@ function applyDark(isDark, save = true) {
     if (state.episode) {
       buildCharts(state.episode);
       if (!el("timedim-card").classList.contains("hidden")) buildTimeDimHeatmap(state.episode);
+      if (!el("corr-section").classList.contains("hidden")) buildCorrelationHeatmap(state.episode);
     }
   }
 }
@@ -375,6 +376,15 @@ function buildTaskNode(dsPath, task, allLengths = []) {
 /* ── Search / filter ─────────────────────────────────────── */
 const applySearchDebounced = debounce(applySearch, SEARCH_DEBOUNCE_MS);
 
+function highlightText(text, query) {
+  if (!query) return text;
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return text;
+  return text.slice(0, idx) +
+    `<mark class="search-hl">${text.slice(idx, idx + query.length)}</mark>` +
+    highlightText(text.slice(idx + query.length), query);
+}
+
 function applySearch(query) {
   const q = query.trim().toLowerCase();
   el("search-clear").classList.toggle("hidden", !q);
@@ -383,6 +393,12 @@ function applySearch(query) {
     const matches = !q || group.dataset.task?.includes(q);
     group.classList.toggle("search-hidden", !matches);
     if (matches && q) group.classList.add("open");
+
+    const nameEl = group.querySelector(".task-name");
+    if (nameEl) {
+      const orig = group.dataset.taskOrig ?? (group.dataset.taskOrig = nameEl.textContent);
+      nameEl.innerHTML = q && matches ? highlightText(orig, query.trim()) : orig;
+    }
   });
 
   document.querySelectorAll(".ds-node").forEach(node => {
@@ -390,7 +406,12 @@ function applySearch(query) {
     if (!children) return;
     const total   = children.querySelectorAll(".task-group").length;
     const visible = children.querySelectorAll(".task-group:not(.search-hidden)").length;
-    if (total > 0) node.style.display = visible ? "" : "none";
+    if (total > 0) {
+      node.style.display = visible ? "" : "none";
+      if (q && visible && !node.classList.contains("open")) {
+        node.querySelector(".ds-header")?.click();
+      }
+    }
   });
 }
 
@@ -502,7 +523,6 @@ function prevEpisode() {
   if (idx <= 0) return;
   const { dsPath, epIndex, taskText, el: itemEl } = state.episodeList[idx - 1];
   selectEpisode(dsPath, epIndex, taskText, itemEl);
-  itemEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
 function nextEpisode() {
@@ -510,7 +530,6 @@ function nextEpisode() {
   if (idx < 0 || idx >= state.episodeList.length - 1) return;
   const { dsPath, epIndex, taskText, el: itemEl } = state.episodeList[idx + 1];
   selectEpisode(dsPath, epIndex, taskText, itemEl);
-  itemEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
 function updatePrevNextButtons() {
@@ -817,7 +836,10 @@ function toggleNormalize() {
   state.normalizeEnabled = !state.normalizeEnabled;
   el("btn-normalize")?.classList.toggle("active", state.normalizeEnabled);
   el("btn-normalize")?.setAttribute("aria-pressed", state.normalizeEnabled);
-  if (state.episode) buildCharts(state.episode);
+  if (state.episode) {
+    buildCharts(state.episode);
+    updateFrameValues();
+  }
 }
 
 function toggleExpand(type) {
@@ -1138,8 +1160,9 @@ function buildCorrelationHeatmap(ep) {
     }
   }
 
+  const isDark = document.documentElement.classList.contains("dark");
   ctx.font = "9px -apple-system, sans-serif";
-  ctx.fillStyle = "#64748B";
+  ctx.fillStyle = isDark ? "#94A3B8" : "#64748B";
   ctx.textAlign = "right";
   for (let i = 0; i < dims; i++) {
     ctx.fillText(labels[i], LABEL_W - 4, TOP_H + i * CELL + CELL / 2);
@@ -1148,6 +1171,32 @@ function buildCorrelationHeatmap(ep) {
   for (let j = 0; j < dims; j++) {
     ctx.fillText(labels[j], LABEL_W + j * CELL + CELL / 2, TOP_H / 2);
   }
+
+  // Pre-compute all pearson values for tooltip
+  const corrMatrix = Array.from({ length: dims }, (_, i) =>
+    Array.from({ length: dims }, (_, j) => pearson(cols[i], cols[j]))
+  );
+
+  const rawLabels = Array.from({ length: dims }, (_, d) => rawNames[d] ?? `a${d}`);
+
+  canvas.addEventListener("mousemove", e => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = W / rect.width, scaleY = H / rect.height;
+    const cx = (e.clientX - rect.left) * scaleX, cy = (e.clientY - rect.top) * scaleY;
+    const j = Math.floor((cx - LABEL_W) / CELL);
+    const i = Math.floor((cy - TOP_H) / CELL);
+    if (i >= 0 && i < dims && j >= 0 && j < dims) {
+      const r = corrMatrix[i][j];
+      const strength = Math.abs(r) < 0.3 ? "weak" : Math.abs(r) < 0.7 ? "moderate" : "strong";
+      const dir = r >= 0 ? "positive" : "negative";
+      showTimeDimTooltip(e.clientX, e.clientY,
+        `<b>${rawLabels[j]}</b> ↔ <b>${rawLabels[i]}</b><br>` +
+        `r = ${r.toFixed(4)} <span style="color:#94A3B8">(${strength} ${dir})</span>`);
+    } else {
+      hideTimeDimTooltip();
+    }
+  });
+  canvas.addEventListener("mouseleave", hideTimeDimTooltip);
 
   section.classList.remove("hidden");
   if (!section.dataset.open) body.classList.add("corr-collapsed");
@@ -1457,12 +1506,18 @@ function updateFrameValues() {
   const ep = state.episode;
   if (!ep) return;
   const f = state.frame;
+  const ns = state.normalizeEnabled ? state.normStats : null;
+
+  const applyNorm = (v, nsKey, d) => {
+    if (!ns?.[nsKey]?.q01 || !ns?.[nsKey]?.q99) return v;
+    return normalizeValue(v, ns[nsKey].q01[d], ns[nsKey].q99[d]);
+  };
 
   const sRow = ep.state?.[f];
   if (sRow) {
     sRow.forEach((v, d) => {
       const span = document.getElementById(`fv-sv-${d}`);
-      if (span) span.textContent = v.toFixed(4);
+      if (span) span.textContent = applyNorm(v, "state", d).toFixed(4);
     });
   }
 
@@ -1470,7 +1525,7 @@ function updateFrameValues() {
   if (aRow) {
     aRow.forEach((v, d) => {
       const span = document.getElementById(`fv-av-${d}`);
-      if (span) span.textContent = v.toFixed(4);
+      if (span) span.textContent = applyNorm(v, "action", d).toFixed(4);
     });
   }
 }
@@ -1595,6 +1650,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const nowCollapsed = body.classList.toggle("corr-collapsed");
     el("corr-section").dataset.open = nowCollapsed ? "" : "1";
     el("corr-close").classList.toggle("active", !nowCollapsed);
+    if (!nowCollapsed && state.episode) buildCorrelationHeatmap(state.episode);
   });
 
   el("timedim-toggle").addEventListener("click", () => {
@@ -1633,7 +1689,7 @@ document.addEventListener("DOMContentLoaded", () => {
       e.preventDefault(); toggleSidebar(); return;
     }
 
-    if (e.key === "g" || e.key === "G") {
+    if (e.key === "g" || e.key === "G" || (e.ctrlKey && e.key === "k")) {
       e.preventDefault();
       el("search-input").focus();
       el("search-input").select();

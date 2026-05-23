@@ -10,6 +10,7 @@ from typing import Optional
 import pyarrow.parquet as pq
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from PIL import Image
@@ -33,6 +34,7 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=512)
 
 # ── Parquet table cache (LRU, max 24 tables) ─────────────────────────────────
 _TABLE_CACHE: OrderedDict = OrderedDict()
