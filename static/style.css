@@ -642,6 +642,25 @@ html.dark .norm-badge { background: #0d2e1f; border-color: #166534; }
 #timedim-body.timedim-collapsed { display: none; }
 .timedim-wrap { position: relative; display: inline-block; }
 
+/* ── Copy toast notification ──────────────────────────────── */
+.copy-toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--text);
+  color: var(--bg);
+  font-size: 12.5px;
+  padding: 7px 16px;
+  border-radius: 20px;
+  z-index: 300;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity .4s ease;
+}
+.copy-toast.fade-out { opacity: 0; }
+.copy-toast.hidden { display: none; }
+
 /* ── TimeDim tooltip ──────────────────────────────────────── */
 .timedim-tooltip {
   position: fixed;

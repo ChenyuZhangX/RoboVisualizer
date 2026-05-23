@@ -81,6 +81,15 @@ function toggleDarkMode() {
 function toggleSidebar() {
   const collapsed = el("main").classList.toggle("sidebar-collapsed");
   el("sidebar-toggle").setAttribute("aria-pressed", collapsed);
+  localStorage.setItem("sidebarCollapsed", collapsed ? "1" : "0");
+}
+
+function initSidebarState() {
+  const stored = localStorage.getItem("sidebarCollapsed");
+  if (stored === "1") {
+    el("main").classList.add("sidebar-collapsed");
+    el("sidebar-toggle").setAttribute("aria-pressed", "true");
+  }
 }
 
 /* ── URL hash state (bookmarkable links) ─────────────────── */
@@ -263,6 +272,10 @@ async function loadDatasets() {
     }
     tree.innerHTML = "";
     for (const ds of datasets) tree.appendChild(buildDatasetNode(ds));
+    // Auto-open when there's only one dataset
+    if (datasets.length === 1) {
+      tree.querySelector(".ds-header")?.click();
+    }
   } catch (e) {
     tree.innerHTML = `<div class="error-msg">Failed: ${e.message}</div>`;
   }
@@ -642,6 +655,63 @@ function exportFrame() {
     };
     tmp.src = img.src;
   });
+}
+
+/* ── Export episode as CSV ───────────────────────────────── */
+function exportCSV() {
+  const ep = state.episode;
+  if (!ep) return;
+
+  const sNames = ep.state_names ?? ep.state?.[0]?.map((_, i) => `state_${i}`) ?? [];
+  const aNames = ep.action_names ?? ep.actions?.[0]?.map((_, i) => `action_${i}`) ?? [];
+
+  const headerParts = ["timestamp", ...sNames.map(n => `state.${n}`), ...aNames.map(n => `action.${n}`)];
+  const rows = [headerParts.join(",")];
+
+  for (let f = 0; f < ep.length; f++) {
+    const ts = ep.timestamps?.[f]?.toFixed(6) ?? f;
+    const sRow = ep.state?.[f]?.join(",") ?? "";
+    const aRow = ep.actions?.[f]?.join(",") ?? "";
+    rows.push([ts, sRow, aRow].filter(x => x !== "").join(","));
+  }
+
+  const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `ep_${String(state.activeEpIndex).padStart(6,"0")}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* ── Copy episode URL to clipboard ───────────────────────── */
+async function copyEpisodeURL() {
+  if (!state.activeDataset || state.activeEpIndex == null) return;
+  const params = new URLSearchParams({
+    ds: state.activeDataset,
+    ep: state.activeEpIndex,
+    f:  state.frame,
+  });
+  const url = location.origin + location.pathname + "#" + params.toString();
+  try {
+    await navigator.clipboard.writeText(url);
+    showCopyToast();
+  } catch (_) {
+    prompt("Copy this URL:", url);
+  }
+}
+
+function showCopyToast() {
+  let toast = document.getElementById("copy-toast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "copy-toast";
+    toast.className = "copy-toast";
+    toast.textContent = "URL copied to clipboard";
+    document.body.appendChild(toast);
+  }
+  toast.classList.remove("hidden", "fade-out");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => toast.classList.add("fade-out"), 1800);
 }
 
 /* ── Charts ─────────────────────────────────────────────── */
@@ -1342,6 +1412,10 @@ function updateScrubber() {
   const tsEnd = ts?.[ep.length - 1]?.toFixed(2) ?? null;
   const tsStr = tsCur !== null ? `  •  ${tsCur}s / ${tsEnd}s` : "";
   el("frame-counter").textContent = `${state.frame} / ${ep.length - 1}${tsStr}`;
+  // Fill the scrubber track to show playback progress
+  const pct = ep.length > 1 ? (state.frame / (ep.length - 1)) * 100 : 0;
+  el("scrubber").style.background =
+    `linear-gradient(to right, var(--blue) ${pct}%, var(--border) ${pct}%)`;
 }
 
 function stopPlayback() {
@@ -1382,6 +1456,7 @@ function startPlayback() {
 /* ── Event wiring ────────────────────────────────────────── */
 document.addEventListener("DOMContentLoaded", () => {
   initDarkMode();
+  initSidebarState();
   initFrameCounterJump();
   loadDatasets().then(() => loadHashState());
 
@@ -1402,6 +1477,8 @@ document.addEventListener("DOMContentLoaded", () => {
   el("btn-export").addEventListener("click", exportFrame);
   el("btn-frame-values").addEventListener("click", toggleFrameValuesPanel);
   el("btn-normalize")?.addEventListener("click", toggleNormalize);
+  el("btn-csv")?.addEventListener("click", exportCSV);
+  el("btn-copy-url")?.addEventListener("click", copyEpisodeURL);
 
   el("speed-select").addEventListener("change", e => {
     state.speed = parseFloat(e.target.value);
@@ -1506,6 +1583,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.key === "n" || e.key === "N") {
       e.preventDefault();
       toggleNormalize();
+      return;
+    }
+    if (e.key === "c" || e.key === "C") {
+      e.preventDefault();
+      copyEpisodeURL();
       return;
     }
 

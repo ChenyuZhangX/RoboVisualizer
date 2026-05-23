@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LeRobot Visualizer</title>
-  <link rel="stylesheet" href="/style.css?v=12" />
+  <link rel="stylesheet" href="/style.css?v=13" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -69,6 +69,12 @@
           <div id="viewer-header">
             <div id="task-label"></div>
             <div id="viewer-actions">
+              <button id="btn-copy-url" class="icon-btn-sm" title="Copy episode URL  C" aria-label="Copy episode URL">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+              </button>
+              <button id="btn-csv" class="icon-btn-sm" title="Export episode as CSV" aria-label="Export CSV">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+              </button>
               <button id="btn-normalize" class="icon-btn-sm active" title="Toggle normalization  N" aria-label="Toggle normalization" aria-pressed="true">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="12" x2="2" y2="12"/><polyline points="16 6 22 12 16 18"/><polyline points="8 6 2 12 8 18"/></svg>
               </button>
@@ -210,6 +216,7 @@
         <tr><td><kbd>L</kbd></td><td>Toggle loop</td></tr>
         <tr><td><kbd>H</kbd> / <kbd>⇧H</kbd></td><td>Toggle state / action histogram</td></tr>
         <tr><td><kbd>N</kbd></td><td>Toggle normalization</td></tr>
+        <tr><td><kbd>C</kbd></td><td>Copy episode URL</td></tr>
         <tr><td><kbd>V</kbd></td><td>Toggle frame values panel</td></tr>
         <tr><td><kbd>Esc</kbd></td><td>Close / clear comparison</td></tr>
         <tr><td><kbd>?</kbd></td><td>This dialog</td></tr>
@@ -226,6 +233,6 @@
     </div>
   </div>
 
-  <script src="/app.js?v=12"></script>
+  <script src="/app.js?v=13"></script>
 </body>
 </html>
