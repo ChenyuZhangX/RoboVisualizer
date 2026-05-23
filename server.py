@@ -7,6 +7,17 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Optional
 
+# ── Info.json cache (small dict, no eviction needed) ─────────────────────────
+_INFO_CACHE: dict[str, dict] = {}
+
+
+def read_info_cached(base: Path) -> dict:
+    """Read and cache meta/info.json for a dataset directory."""
+    key = str(base)
+    if key not in _INFO_CACHE:
+        _INFO_CACHE[key] = json.loads((base / "meta" / "info.json").read_text())
+    return _INFO_CACHE[key]
+
 import pyarrow.parquet as pq
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -114,6 +125,7 @@ def health():
 def clear_cache():
     count = len(_TABLE_CACHE)
     _TABLE_CACHE.clear()
+    _INFO_CACHE.clear()
     return {"cleared": count}
 
 
@@ -124,7 +136,7 @@ def list_datasets():
     results = []
     for d in sorted(DATA_DIR.iterdir()):
         if d.is_dir() and is_valid_dataset(d):
-            info = json.loads((d / "meta" / "info.json").read_text())
+            info = read_info_cached(d)
             results.append({
                 "name": d.name,
                 "path": d.name,
@@ -139,7 +151,7 @@ def list_datasets():
 @app.get("/api/datasets/{dataset}/meta")
 def get_dataset_meta(dataset: str):
     base = get_dataset_path(dataset)
-    info = json.loads((base / "meta" / "info.json").read_text())
+    info = read_info_cached(base)
     return {
         "name": dataset,
         "total_episodes": info.get("total_episodes", 0),
@@ -164,7 +176,7 @@ def list_tasks(dataset: str):
             t = json.loads(line)
             tasks[t["task_index"]] = {"task_index": t["task_index"], "task": t["task"], "episodes": []}
 
-    info = json.loads((base / "meta" / "info.json").read_text())
+    info = read_info_cached(base)
     chunks_size = info.get("chunks_size", 1000)
 
     for line in episodes_file.read_text().splitlines():
@@ -200,7 +212,7 @@ def get_norm_stats(dataset: str):
 @app.get("/api/datasets/{dataset}/episodes/{episode_index}")
 def get_episode(dataset: str, episode_index: int):
     base = get_dataset_path(dataset)
-    info = json.loads((base / "meta" / "info.json").read_text())
+    info = read_info_cached(base)
 
     chunk = episode_index // info.get("chunks_size", 1000)
     parquet_path = base / "data" / f"chunk-{chunk:03d}" / f"episode_{episode_index:06d}.parquet"
@@ -253,13 +265,15 @@ def get_episode(dataset: str, episode_index: int):
         "image_keys": all_visual_keys,
         "has_images": len(all_visual_keys) > 0,
         "video_keys": video_keys,
+        "robot_type": info.get("robot_type", "unknown"),
+        "dataset": dataset,
     }
 
 
 @app.get("/api/datasets/{dataset}/episodes/{episode_index}/frame/{frame_index}")
 def get_frame(dataset: str, episode_index: int, frame_index: int):
     base = get_dataset_path(dataset)
-    info = json.loads((base / "meta" / "info.json").read_text())
+    info = read_info_cached(base)
 
     chunk = episode_index // info.get("chunks_size", 1000)
     parquet_path = base / "data" / f"chunk-{chunk:03d}" / f"episode_{episode_index:06d}.parquet"

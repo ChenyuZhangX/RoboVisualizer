@@ -275,6 +275,7 @@ mark.search-hl {
 }
 .task-header:hover { background: var(--bg-3); }
 .task-group.search-hidden { display: none; }
+.ep-item.ep-search-hidden { display: none; }
 
 .task-chevron {
   flex-shrink: 0;
@@ -919,12 +920,27 @@ html.dark #speed-select { background: var(--bg-2); }
 }
 html.dark .fps-badge { background: #0d2e1f; border-color: #166534; }
 
-/* ── Info chip variant ────────────────────────────────────── */
+/* ── Info chip variants ───────────────────────────────────── */
 .info-chip-blue {
   color: var(--blue-dk);
   background: var(--blue-lt);
-  border-color: var(--blue);
+  border-color: rgba(59,130,246,.4);
 }
+html.dark .info-chip-blue { color: #93c5fd; }
+
+.info-chip-green {
+  color: #065F46;
+  background: #ECFDF5;
+  border-color: rgba(16,185,129,.4);
+}
+html.dark .info-chip-green { color: #6EE7B7; background: #0d2e1f; border-color: rgba(16,185,129,.3); }
+
+.info-chip-orange {
+  color: #92400E;
+  background: #FFFBEB;
+  border-color: rgba(245,158,11,.4);
+}
+html.dark .info-chip-orange { color: #FCD34D; background: #3d2a0a; border-color: rgba(245,158,11,.3); }
 
 /* ── Frame jump input ─────────────────────────────────────── */
 .frame-count { cursor: pointer; }

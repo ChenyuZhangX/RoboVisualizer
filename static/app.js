@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v9
+   LeRobot Visualizer — app.js  v19
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -54,6 +54,18 @@ async function apiFetch(path) {
   const r = await fetch(path);
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
   return r.json();
+}
+
+function formatDuration(secs) {
+  if (secs < 60) return secs.toFixed(1) + "s";
+  const m = Math.floor(secs / 60);
+  const s = (secs % 60).toFixed(1).padStart(4, "0");
+  return `${m}:${s}`;
+}
+
+function escapeHTML(str) {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 /* ── Dark mode ───────────────────────────────────────────── */
@@ -288,8 +300,10 @@ async function loadDatasets() {
 function buildDatasetNode(ds) {
   const node = document.createElement("div");
   node.className = "ds-node";
+  const robotStr = ds.robot_type && ds.robot_type !== "unknown" ? ` • ${ds.robot_type}` : "";
+  const metaTitle = `${ds.name}${robotStr} • ${ds.total_episodes} episodes • ${ds.fps} fps`;
   node.innerHTML = `
-    <div class="ds-header">
+    <div class="ds-header" title="${metaTitle}">
       <svg class="ds-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
       <svg class="ds-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
       <span class="ds-name">${ds.name}</span>
@@ -390,14 +404,25 @@ function applySearch(query) {
   el("search-clear").classList.toggle("hidden", !q);
 
   document.querySelectorAll(".task-group").forEach(group => {
-    const matches = !q || group.dataset.task?.includes(q);
-    group.classList.toggle("search-hidden", !matches);
-    if (matches && q) group.classList.add("open");
+    const taskMatches = !q || group.dataset.task?.includes(q);
+
+    // Also check if any ep-item label matches (episode index search)
+    let anyEpMatch = false;
+    group.querySelectorAll(".ep-item").forEach(item => {
+      const epLabel = item.querySelector("span:nth-child(2)")?.textContent ?? "";
+      const epMatches = taskMatches || epLabel.toLowerCase().includes(q);
+      item.classList.toggle("ep-search-hidden", q && !epMatches);
+      if (!q || epMatches) anyEpMatch = true;
+    });
+
+    const groupVisible = taskMatches || anyEpMatch;
+    group.classList.toggle("search-hidden", !groupVisible);
+    if (groupVisible && q) group.classList.add("open");
 
     const nameEl = group.querySelector(".task-name");
     if (nameEl) {
       const orig = group.dataset.taskOrig ?? (group.dataset.taskOrig = nameEl.textContent);
-      nameEl.innerHTML = q && matches ? highlightText(orig, query.trim()) : orig;
+      nameEl.innerHTML = q && taskMatches ? highlightText(orig, query.trim()) : orig;
     }
   });
 
@@ -471,7 +496,10 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
     updateImages();
     updateTopbarBreadcrumb();
     saveHashState();
-    document.title = `ep_${String(epIndex).padStart(6, "0")} • ${dsPath} • LeRobot Visualizer`;
+    const taskShort = taskText?.length > 48 ? taskText.slice(0, 45) + "…" : taskText;
+    document.title = taskShort
+      ? `ep_${String(epIndex).padStart(6, "0")} — ${taskShort} • LeRobot Visualizer`
+      : `ep_${String(epIndex).padStart(6, "0")} • ${dsPath} • LeRobot Visualizer`;
     el("charts-area").style.opacity = "";
     el("charts-area").style.pointerEvents = "";
   } catch (e) {
@@ -490,16 +518,15 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
 function updateEpInfoStrip(ep) {
   const strip = el("ep-info-strip");
   if (!strip) return;
-  const dur = ep.timestamps?.length
-    ? ep.timestamps[ep.timestamps.length - 1].toFixed(1) + "s"
-    : "—";
+
+  const lastTs = ep.timestamps?.[ep.timestamps.length - 1] ?? null;
+  const dur = lastTs !== null ? formatDuration(lastTs) : "—";
   const sDims = ep.state?.[0]?.length ?? 0;
   const aDims = ep.actions?.[0]?.length ?? 0;
+  const nCams = ep.image_keys?.length ?? 0;
+  const hasVideo = (ep.video_keys?.length ?? 0) > 0;
 
-  // Task context: N of M episodes
-  const taskEps = state.episodeList.filter(
-    e => e.dsPath === state.activeDataset && e.taskText === state.episode?.task
-  );
+  // Task context: position within task
   const currentEntry = state.episodeList[state.currentEpListIdx];
   const samTaskEps = state.episodeList.filter(
     e => e.dsPath === currentEntry?.dsPath && e.taskText === currentEntry?.taskText
@@ -511,25 +538,30 @@ function updateEpInfoStrip(ep) {
 
   strip.innerHTML =
     (taskCtx ? `<span class="info-chip info-chip-blue">${taskCtx}</span>` : "") +
+    (ep.robot_type && ep.robot_type !== "unknown"
+      ? `<span class="info-chip info-chip-orange">${escapeHTML(ep.robot_type)}</span>` : "") +
     `<span class="info-chip">${ep.fps} fps</span>` +
     `<span class="info-chip">${ep.length} frames</span>` +
     `<span class="info-chip">${dur}</span>` +
-    `<span class="info-chip">state ${sDims}D</span>` +
-    `<span class="info-chip">action ${aDims}D</span>`;
+    (nCams > 0 ? `<span class="info-chip info-chip-green">${nCams} cam${nCams > 1 ? "s" : ""}${hasVideo ? " (video)" : ""}</span>` : "") +
+    (sDims ? `<span class="info-chip">state ${sDims}D</span>` : "") +
+    (aDims ? `<span class="info-chip">action ${aDims}D</span>` : "");
 }
 
 function prevEpisode() {
   const idx = state.currentEpListIdx;
   if (idx <= 0) return;
-  const { dsPath, epIndex, taskText, el: itemEl } = state.episodeList[idx - 1];
-  selectEpisode(dsPath, epIndex, taskText, itemEl);
+  const entry = state.episodeList[idx - 1];
+  entry.el.closest(".task-group")?.classList.add("open");
+  selectEpisode(entry.dsPath, entry.epIndex, entry.taskText, entry.el);
 }
 
 function nextEpisode() {
   const idx = state.currentEpListIdx;
   if (idx < 0 || idx >= state.episodeList.length - 1) return;
-  const { dsPath, epIndex, taskText, el: itemEl } = state.episodeList[idx + 1];
-  selectEpisode(dsPath, epIndex, taskText, itemEl);
+  const entry = state.episodeList[idx + 1];
+  entry.el.closest(".task-group")?.classList.add("open");
+  selectEpisode(entry.dsPath, entry.epIndex, entry.taskText, entry.el);
 }
 
 function updatePrevNextButtons() {
@@ -1603,11 +1635,26 @@ function startPlayback() {
   state.rafId = requestAnimationFrame(tick);
 }
 
+/* ── Restore saved playback preferences ──────────────────── */
+function initPlaybackPreferences() {
+  const savedSpeed = parseFloat(localStorage.getItem("speed") || "1");
+  const validSpeeds = [0.25, 0.5, 1, 2, 4];
+  if (validSpeeds.includes(savedSpeed)) {
+    state.speed = savedSpeed;
+    el("speed-select").value = savedSpeed;
+  }
+  const savedLoop = localStorage.getItem("loop") === "1";
+  state.looping = savedLoop;
+  el("btn-loop").classList.toggle("active", savedLoop);
+  el("btn-loop").setAttribute("aria-pressed", savedLoop);
+}
+
 /* ── Event wiring ────────────────────────────────────────── */
 document.addEventListener("DOMContentLoaded", () => {
   initDarkMode();
   initSidebarState();
   initFrameCounterJump();
+  initPlaybackPreferences();
   loadDatasets().then(() => loadHashState());
 
   el("sidebar-toggle").addEventListener("click", toggleSidebar);
@@ -1621,6 +1668,7 @@ document.addEventListener("DOMContentLoaded", () => {
     state.looping = !state.looping;
     el("btn-loop").classList.toggle("active", state.looping);
     el("btn-loop").setAttribute("aria-pressed", state.looping);
+    localStorage.setItem("loop", state.looping ? "1" : "0");
   });
   el("btn-prev-ep").addEventListener("click", prevEpisode);
   el("btn-next-ep").addEventListener("click", nextEpisode);
@@ -1632,6 +1680,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   el("speed-select").addEventListener("change", e => {
     state.speed = parseFloat(e.target.value);
+    localStorage.setItem("speed", state.speed);
     if (state.playing) { stopPlayback(); startPlayback(); }
   });
 
@@ -1750,9 +1799,17 @@ document.addEventListener("DOMContentLoaded", () => {
       el("corr-close")?.click();
       return;
     }
-    if (e.key === "v" || e.key === "V") {
+    if (e.key === "v" || e.key === "V" || e.key === "p" || e.key === "P") {
       e.preventDefault();
       toggleFrameValuesPanel();
+      return;
+    }
+
+    // 0–9: jump to 0%, 10%, …, 90% of episode
+    if (e.key >= "0" && e.key <= "9" && state.episode) {
+      e.preventDefault();
+      stopPlayback();
+      setFrame(Math.round(parseInt(e.key) / 10 * (state.episode.length - 1)));
       return;
     }
     if (e.key === "n" || e.key === "N") {
