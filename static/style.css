@@ -845,6 +845,27 @@ html.dark #speed-select { background: var(--bg-2); }
 .crumb-ds  { color: var(--text-2); max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
 .crumb-ep  { color: var(--blue); font-weight: 600; }
 
+/* ── FPS badge ────────────────────────────────────────────── */
+.fps-badge {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--green);
+  background: #ECFDF5;
+  border: 1px solid #A7F3D0;
+  border-radius: 4px;
+  padding: 1px 5px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+html.dark .fps-badge { background: #0d2e1f; border-color: #166534; }
+
+/* ── Info chip variant ────────────────────────────────────── */
+.info-chip-blue {
+  color: var(--blue-dk);
+  background: var(--blue-lt);
+  border-color: var(--blue);
+}
+
 /* ── Frame jump input ─────────────────────────────────────── */
 .frame-count { cursor: pointer; }
 .frame-count:hover { color: var(--blue); }

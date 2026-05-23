@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LeRobot Visualizer</title>
-  <link rel="stylesheet" href="/style.css?v=13" />
+  <link rel="stylesheet" href="/style.css?v=14" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -189,6 +189,7 @@
               <option value="4">4×</option>
             </select>
             <input type="range" id="scrubber" min="0" value="0" step="1" aria-label="Frame scrubber" />
+            <span id="fps-badge" class="fps-badge hidden" aria-live="off"></span>
             <span id="frame-counter" class="frame-count" role="status" aria-label="Frame position">0 / 0</span>
             <button id="btn-shortcuts" class="ctrl-btn" title="Keyboard shortcuts  ?">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/></svg>
@@ -210,6 +211,7 @@
         <tr><td><kbd>R</kbd> / <kbd>Home</kbd></td><td>Rewind to start</td></tr>
         <tr><td><kbd>End</kbd></td><td>Jump to last frame</td></tr>
         <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>Prev / Next episode</td></tr>
+        <tr><td><kbd>←</kbd> <kbd>→</kbd> (lightbox)</td><td>Prev / next camera</td></tr>
         <tr><td><kbd>Ctrl</kbd>+click ep</td><td>Compare overlay</td></tr>
         <tr><td><kbd>B</kbd></td><td>Toggle sidebar</td></tr>
         <tr><td><kbd>+</kbd> / <kbd>−</kbd></td><td>Speed up / slow down</td></tr>
@@ -233,6 +235,6 @@
     </div>
   </div>
 
-  <script src="/app.js?v=13"></script>
+  <script src="/app.js?v=14"></script>
 </body>
 </html>

@@ -332,7 +332,7 @@ function buildTaskNode(dsPath, task, allLengths = []) {
   group.dataset.task = task.task.toLowerCase();
 
   group.innerHTML = `
-    <div class="task-header">
+    <div class="task-header" title="${task.task.replace(/"/g, '&quot;')}">
       <svg class="task-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
       <span class="task-name">${shortTask}</span>
       <span class="ep-count">${task.episodes.length}</span>
@@ -452,7 +452,22 @@ function updateEpInfoStrip(ep) {
     : "—";
   const sDims = ep.state?.[0]?.length ?? 0;
   const aDims = ep.actions?.[0]?.length ?? 0;
+
+  // Task context: N of M episodes
+  const taskEps = state.episodeList.filter(
+    e => e.dsPath === state.activeDataset && e.taskText === state.episode?.task
+  );
+  const currentEntry = state.episodeList[state.currentEpListIdx];
+  const samTaskEps = state.episodeList.filter(
+    e => e.dsPath === currentEntry?.dsPath && e.taskText === currentEntry?.taskText
+  );
+  const posInTask = samTaskEps.findIndex(e => e.epIndex === state.activeEpIndex);
+  const taskCtx = samTaskEps.length > 1 && posInTask >= 0
+    ? `ep ${posInTask + 1} / ${samTaskEps.length}`
+    : null;
+
   strip.innerHTML =
+    (taskCtx ? `<span class="info-chip info-chip-blue">${taskCtx}</span>` : "") +
     `<span class="info-chip">${ep.fps} fps</span>` +
     `<span class="info-chip">${ep.length} frames</span>` +
     `<span class="info-chip">${dur}</span>` +
@@ -555,10 +570,24 @@ function prefetchFrames() {
 }
 
 /* ── Camera rendering ────────────────────────────────────── */
-function openLightbox(src, label) {
+function openLightbox(src, label, camIdx = -1) {
   el("lightbox-img").src = src;
   el("lightbox-label").textContent = label;
   el("cam-lightbox").classList.remove("hidden");
+  el("cam-lightbox").dataset.camIdx = camIdx;
+}
+
+function lightboxNavigate(delta) {
+  const overlay = el("cam-lightbox");
+  if (overlay.classList.contains("hidden")) return;
+  const ep = state.episode;
+  if (!ep?.has_images) return;
+  const keys = ep.image_keys.slice(0, MAX_CAMS);
+  const cur = parseInt(overlay.dataset.camIdx ?? "-1", 10);
+  const next = (cur + delta + keys.length) % keys.length;
+  const slot = el(`cam-${next}`);
+  const img = slot?.querySelector("img");
+  if (img) openLightbox(img.src, keys[next].replace(/_/g, " "), next);
 }
 
 function renderFrameData(keys, frames) {
@@ -580,7 +609,7 @@ function renderFrameData(keys, frames) {
       slot.appendChild(lbl);
     }
     img.src = src;
-    slot.onclick = () => openLightbox(src, key.replace(/_/g, " "));
+    slot.onclick = () => openLightbox(src, key.replace(/_/g, " "), i);
   });
 }
 
@@ -1204,7 +1233,16 @@ function buildTimeDimHeatmap(ep) {
   if (!card.dataset.open) body.classList.add("timedim-collapsed");
 }
 
+let _timeDimRafPending = false;
+
 function updateTimeDimCursor() {
+  if (_timeDimRafPending) return;
+  _timeDimRafPending = true;
+  requestAnimationFrame(_doUpdateTimeDimCursor);
+}
+
+function _doUpdateTimeDimCursor() {
+  _timeDimRafPending = false;
   const canvas = el("timedim-canvas");
   if (!canvas || !state.episode) return;
 
@@ -1425,6 +1463,7 @@ function stopPlayback() {
   state.lastTick = null;
   el("play-icon")?.classList.remove("hidden");
   el("pause-icon")?.classList.add("hidden");
+  el("fps-badge")?.classList.add("hidden");
 }
 
 function startPlayback() {
@@ -1434,12 +1473,23 @@ function startPlayback() {
   el("pause-icon").classList.remove("hidden");
 
   const interval = 1000 / ((state.episode.fps || 10) * state.speed);
+  let fpsBucket = 0, fpsLast = 0;
 
   function tick(ts) {
     if (!state.playing) return;
-    if (!state.lastTick) state.lastTick = ts;
+    if (!state.lastTick) { state.lastTick = ts; fpsLast = ts; }
     if (ts - state.lastTick >= interval) {
       state.lastTick = ts;
+      fpsBucket++;
+      if (ts - fpsLast >= 1000) {
+        const badge = el("fps-badge");
+        if (badge) {
+          badge.textContent = `${fpsBucket} fps`;
+          badge.classList.remove("hidden");
+        }
+        fpsBucket = 0;
+        fpsLast = ts;
+      }
       const next = state.frame + 1;
       if (next >= state.episode.length) {
         if (state.looping) setFrame(0);
@@ -1598,13 +1648,21 @@ document.addEventListener("DOMContentLoaded", () => {
         break;
       case "ArrowLeft":
         e.preventDefault();
-        stopPlayback();
-        setFrame(state.frame - (e.shiftKey ? 10 : 1));
+        if (!el("cam-lightbox").classList.contains("hidden")) {
+          lightboxNavigate(-1);
+        } else {
+          stopPlayback();
+          setFrame(state.frame - (e.shiftKey ? 10 : 1));
+        }
         break;
       case "ArrowRight":
         e.preventDefault();
-        stopPlayback();
-        setFrame(state.frame + (e.shiftKey ? 10 : 1));
+        if (!el("cam-lightbox").classList.contains("hidden")) {
+          lightboxNavigate(1);
+        } else {
+          stopPlayback();
+          setFrame(state.frame + (e.shiftKey ? 10 : 1));
+        }
         break;
       case "r": case "R": case "Home":
         e.preventDefault();
