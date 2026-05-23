@@ -75,7 +75,72 @@ function toggleDarkMode() {
 
 /* ── Sidebar ─────────────────────────────────────────────── */
 function toggleSidebar() {
-  el("main").classList.toggle("sidebar-collapsed");
+  const collapsed = el("main").classList.toggle("sidebar-collapsed");
+  el("sidebar-toggle").setAttribute("aria-pressed", collapsed);
+}
+
+/* ── URL hash state (bookmarkable links) ─────────────────── */
+const _saveHashDebounced = debounce(_doSaveHash, 400);
+
+function _doSaveHash() {
+  if (!state.activeDataset || state.activeEpIndex == null) return;
+  const params = new URLSearchParams({
+    ds: state.activeDataset,
+    ep: state.activeEpIndex,
+    f:  state.frame,
+  });
+  history.replaceState(null, "", "#" + params.toString());
+}
+
+function saveHashState() { _saveHashDebounced(); }
+
+async function loadHashState() {
+  const hash = location.hash.slice(1);
+  if (!hash) return;
+  try {
+    const params = new URLSearchParams(hash);
+    const ds  = params.get("ds");
+    const ep  = params.get("ep");
+    const f   = params.get("f");
+    if (!ds || ep == null) return;
+    // Wait for episode list to be populated (sidebar must be open & dataset loaded)
+    // We trigger the dataset tree to load the specific dataset
+    const datasets = await apiFetch("/api/datasets");
+    const dsInfo = datasets.find(d => d.path === ds || d.name === ds);
+    if (!dsInfo) return;
+
+    // Open the dataset node and load tasks
+    const tasks = await apiFetch(`/api/datasets/${encodeURIComponent(ds)}/tasks`);
+    const allLengths = tasks.flatMap(t => t.episodes.map(e => e.length)).sort((a, b) => a - b);
+
+    // Build nodes silently so episodeList is populated
+    const tree = el("dataset-tree");
+    if (!tree.children.length || tree.querySelector(".loading-msg")) {
+      tree.innerHTML = "";
+      for (const d2 of datasets) tree.appendChild(buildDatasetNode(d2));
+    }
+
+    // Click the matching dataset node to load its tasks
+    const dsNode = Array.from(tree.querySelectorAll(".ds-node")).find(n => {
+      const nameEl = n.querySelector(".ds-name");
+      return nameEl?.textContent === dsInfo.name;
+    });
+    if (dsNode && !dsNode.classList.contains("open")) {
+      dsNode.querySelector(".ds-header").click();
+      await new Promise(r => setTimeout(r, 300));
+    }
+
+    // Find the episode element in the list
+    const epIndex = parseInt(ep, 10);
+    const epEntry = state.episodeList.find(e => e.dsPath === ds && e.epIndex === epIndex);
+    if (!epEntry) return;
+
+    // Open the task group containing this episode
+    epEntry.el.closest(".task-group")?.classList.add("open");
+    await selectEpisode(ds, epIndex, epEntry.taskText, epEntry.el);
+    if (f != null) setFrame(parseInt(f, 10));
+    epEntry.el.scrollIntoView({ block: "nearest" });
+  } catch (_) {}
 }
 
 /* ── Normalization helpers ───────────────────────────────── */
@@ -344,6 +409,8 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
     setupControls(ep);
     updateScrubber();
     updateImages();
+    updateTopbarBreadcrumb();
+    saveHashState();
   } catch (e) {
     el("task-label").textContent = `Error: ${e.message}`;
     el("ep-info-strip").classList.add("hidden");
@@ -667,6 +734,25 @@ function buildChartCard(type, data2d, names, normalized, ep, cmpData2d = null, n
   } else if (!expanded) {
     body.innerHTML = `<div class="chart-wrap"><canvas id="${type}-chart"></canvas></div>`;
     charts.push(makeChart(`${type}-chart`, labels, data2d, names, normalized, dims, null, cmpData2d, null));
+    // Compact legend below chart
+    if (dims > 0 && dims <= 12) {
+      const legendDiv = document.createElement("div");
+      legendDiv.className = "chart-legend";
+      const maxShow = 10;
+      for (let d = 0; d < Math.min(dims, maxShow); d++) {
+        const item = document.createElement("span");
+        item.className = "legend-item";
+        item.innerHTML = `<span class="legend-dot" style="background:${PALETTE[d % PALETTE.length]}"></span>${names[d] ?? `dim_${d}`}`;
+        legendDiv.appendChild(item);
+      }
+      if (dims > maxShow) {
+        const more = document.createElement("span");
+        more.className = "legend-item legend-more";
+        more.textContent = `+${dims - maxShow} more`;
+        legendDiv.appendChild(more);
+      }
+      body.appendChild(legendDiv);
+    }
   } else {
     body.innerHTML = `<div class="chart-grid" id="${type}-grid"></div>`;
     const grid = el(`${type}-grid`);
@@ -1071,6 +1157,60 @@ function updateTimeDimCursor() {
   oc.fillRect(cursorX, 0, Math.max(2, cellW), CANVAS_H);
 }
 
+/* ── Topbar breadcrumb ───────────────────────────────────── */
+function updateTopbarBreadcrumb() {
+  const crumb = el("topbar-ep-info");
+  if (!crumb) return;
+  if (!state.activeDataset || state.activeEpIndex == null) {
+    crumb.textContent = "";
+    crumb.classList.add("hidden");
+    return;
+  }
+  const epStr = `ep_${String(state.activeEpIndex).padStart(6, "0")}`;
+  crumb.innerHTML =
+    `<span class="crumb-sep">›</span>` +
+    `<span class="crumb-ds">${state.activeDataset}</span>` +
+    `<span class="crumb-sep">›</span>` +
+    `<span class="crumb-ep">${epStr}</span>`;
+  crumb.classList.remove("hidden");
+}
+
+/* ── Frame counter jump ──────────────────────────────────── */
+function initFrameCounterJump() {
+  const counter = el("frame-counter");
+  if (!counter) return;
+  counter.title = "Click to jump to frame";
+  counter.style.cursor = "pointer";
+  counter.addEventListener("click", () => {
+    if (!state.episode) return;
+    const current = state.frame;
+    const max = state.episode.length - 1;
+    // Create inline input
+    const input = document.createElement("input");
+    input.type = "number";
+    input.min = 0;
+    input.max = max;
+    input.value = current;
+    input.className = "frame-jump-input";
+    input.style.cssText = `width:${Math.max(60, counter.offsetWidth)}px;`;
+    counter.replaceWith(input);
+    input.select();
+
+    const commit = () => {
+      const f = Math.max(0, Math.min(parseInt(input.value, 10) || 0, max));
+      input.replaceWith(counter);
+      stopPlayback();
+      setFrame(f);
+      saveHashState();
+    };
+    input.addEventListener("keydown", e => {
+      if (e.key === "Enter") { e.preventDefault(); commit(); }
+      if (e.key === "Escape") { input.replaceWith(counter); }
+    });
+    input.addEventListener("blur", commit);
+  });
+}
+
 /* ── Frame values panel toggle ───────────────────────────── */
 function toggleFrameValuesPanel() {
   const panel = el("frame-values-panel");
@@ -1222,7 +1362,8 @@ function startPlayback() {
 /* ── Event wiring ────────────────────────────────────────── */
 document.addEventListener("DOMContentLoaded", () => {
   initDarkMode();
-  loadDatasets();
+  initFrameCounterJump();
+  loadDatasets().then(() => loadHashState());
 
   el("sidebar-toggle").addEventListener("click", toggleSidebar);
   el("dark-mode-btn").addEventListener("click", toggleDarkMode);
@@ -1234,6 +1375,7 @@ document.addEventListener("DOMContentLoaded", () => {
   el("btn-loop").addEventListener("click", () => {
     state.looping = !state.looping;
     el("btn-loop").classList.toggle("active", state.looping);
+    el("btn-loop").setAttribute("aria-pressed", state.looping);
   });
   el("btn-prev-ep").addEventListener("click", prevEpisode);
   el("btn-next-ep").addEventListener("click", nextEpisode);
@@ -1246,7 +1388,9 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   el("scrubber").addEventListener("input", e => {
-    stopPlayback(); setFrame(parseInt(e.target.value, 10));
+    stopPlayback();
+    setFrame(parseInt(e.target.value, 10));
+    saveHashState();
   });
 
   el("expand-state").addEventListener("click",  () => toggleExpand("state"));
@@ -1300,6 +1444,28 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (!state.episode && !["[", "]"].includes(e.key)) return;
 
+    if (e.key === "+" || e.key === "=") {
+      e.preventDefault();
+      const speeds = [0.25, 0.5, 1, 2, 4];
+      const cur = speeds.indexOf(state.speed);
+      if (cur < speeds.length - 1) {
+        state.speed = speeds[cur + 1];
+        el("speed-select").value = state.speed;
+        if (state.playing) { stopPlayback(); startPlayback(); }
+      }
+      return;
+    }
+    if (e.key === "-" || e.key === "_") {
+      e.preventDefault();
+      const speeds = [0.25, 0.5, 1, 2, 4];
+      const cur = speeds.indexOf(state.speed);
+      if (cur > 0) {
+        state.speed = speeds[cur - 1];
+        el("speed-select").value = state.speed;
+        if (state.playing) { stopPlayback(); startPlayback(); }
+      }
+      return;
+    }
     if (e.key === "l" || e.key === "L") {
       e.preventDefault();
       state.looping = !state.looping;

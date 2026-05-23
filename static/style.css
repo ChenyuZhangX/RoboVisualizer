@@ -785,6 +785,59 @@ html.dark #speed-select { background: var(--bg-2); }
   text-align: right;
 }
 
+/* ── Chart legend ─────────────────────────────────────────── */
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px solid var(--border);
+}
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.legend-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.legend-more { color: var(--text-3); }
+
+/* ── Topbar episode breadcrumb ────────────────────────────── */
+.topbar-ep-info {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.crumb-sep { color: var(--text-3); }
+.crumb-ds  { color: var(--text-2); max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
+.crumb-ep  { color: var(--blue); font-weight: 600; }
+
+/* ── Frame jump input ─────────────────────────────────────── */
+.frame-count { cursor: pointer; }
+.frame-count:hover { color: var(--blue); }
+.frame-jump-input {
+  background: var(--bg);
+  border: 1px solid var(--blue);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 11.5px;
+  color: var(--text);
+  outline: none;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
 /* ── Scrollbar ────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }

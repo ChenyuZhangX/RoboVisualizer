@@ -86,6 +86,17 @@ def extract_video_frame(video_path: Path, frame_index: int) -> str | None:
 
 # ── API ──────────────────────────────────────────────────────────────────────
 
+@app.get("/api/health")
+def health():
+    return {
+        "status": "ok",
+        "data_dir": str(DATA_DIR),
+        "data_dir_exists": DATA_DIR.exists(),
+        "video_support": _HAS_CV2,
+        "cache_size": len(_TABLE_CACHE),
+    }
+
+
 @app.get("/api/datasets")
 def list_datasets():
     if not DATA_DIR.exists():
