@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v20
+   LeRobot Visualizer — app.js  v21
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -308,8 +308,11 @@ async function loadDatasets() {
 function buildDatasetNode(ds) {
   const node = document.createElement("div");
   node.className = "ds-node";
-  const robotStr = ds.robot_type && ds.robot_type !== "unknown" ? ` • ${ds.robot_type}` : "";
+  const robotStr = ds.robot_type && ds.robot_type !== "unknown" ? ` • ${escapeHTML(ds.robot_type)}` : "";
   const metaTitle = `${ds.name}${robotStr} • ${ds.total_episodes} episodes • ${ds.fps} fps`;
+  const subtitleParts = [`${ds.fps} fps`];
+  if (ds.robot_type && ds.robot_type !== "unknown") subtitleParts.push(escapeHTML(ds.robot_type));
+  if (ds.total_tasks > 1) subtitleParts.push(`${ds.total_tasks} tasks`);
   node.innerHTML = `
     <div class="ds-header" title="${metaTitle}">
       <svg class="ds-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
@@ -317,6 +320,7 @@ function buildDatasetNode(ds) {
       <span class="ds-name">${ds.name}</span>
       <span class="ds-badge">${ds.total_episodes} ep</span>
     </div>
+    <div class="ds-subtitle">${subtitleParts.join(" · ")}</div>
     <div class="ds-children">
       <div class="loading-msg"><span class="spinner"></span></div>
     </div>`;
@@ -379,11 +383,20 @@ function buildTaskNode(dsPath, task, allLengths = []) {
       <span>ep_${String(ep.episode_index).padStart(6, "0")}</span>
       <span class="ep-len ${cls}">${ep.length}f</span>`;
 
-    item.addEventListener("click", e => {
-      if (e.ctrlKey || e.metaKey) {
-        selectCompareEpisode(dsPath, ep.episode_index, item);
-      } else {
-        selectEpisode(dsPath, ep.episode_index, task.task, item);
+    item.tabIndex = 0;
+    item.setAttribute("role", "option");
+    item.setAttribute("aria-label", `Episode ${ep.episode_index}, ${ep.length} frames`);
+
+    const handleActivate = (ctrlKey = false) => {
+      if (ctrlKey) selectCompareEpisode(dsPath, ep.episode_index, item);
+      else selectEpisode(dsPath, ep.episode_index, task.task, item);
+    };
+
+    item.addEventListener("click", e => handleActivate(e.ctrlKey || e.metaKey));
+    item.addEventListener("keydown", e => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        handleActivate(e.ctrlKey || e.metaKey);
       }
     });
 
@@ -1053,12 +1066,21 @@ function makeChart(canvasId, labels, data2d, names, normalized, dims,
         }));
 
   const cc = chartColors();
+  const fmtTick = v => {
+    const a = Math.abs(v);
+    if (a === 0) return "0";
+    if (a >= 1000) return (v / 1000).toFixed(1) + "k";
+    if (a >= 1)    return v.toFixed(2).replace(/\.?0+$/, "");
+    if (a >= 0.01) return v.toFixed(3).replace(/\.?0+$/, "");
+    return v.toExponential(1);
+  };
   const yConfig = normalized
     ? { min: -1.05, max: 1.05,
         ticks: { maxTicksLimit: isMini ? 3 : 5, font: { size: 9 }, color: cc.tick,
                  callback: v => v.toFixed(1) },
         grid: { color: cc.grid }, border: { color: cc.border } }
-    : { ticks: { maxTicksLimit: isMini ? 3 : 5, font: { size: 9 }, color: cc.tick },
+    : { ticks: { maxTicksLimit: isMini ? 3 : 5, font: { size: 9 }, color: cc.tick,
+                 callback: fmtTick },
         grid: { color: cc.grid }, border: { color: cc.border } };
 
   const chart = new Chart(ctx, {
@@ -1078,10 +1100,21 @@ function makeChart(canvasId, labels, data2d, names, normalized, dims,
             title: items => {
               const ts = state.episode?.timestamps;
               const f = parseInt(items[0].label, 10);
-              const tsStr = ts?.[f] != null ? `  (${ts[f].toFixed(3)}s)` : "";
+              const t = ts?.[f] ?? null;
+              const tsStr = t != null
+                ? `  (${t >= 60 ? formatDuration(t) : t.toFixed(3) + "s"})`
+                : "";
               return `Frame ${f}${tsStr}`;
             },
-            label: item => ` ${item.dataset.label}: ${item.raw.toFixed(4)}`,
+            label: item => {
+              const v = item.raw;
+              const a = Math.abs(v);
+              const fmt = a === 0 ? "0"
+                : a >= 1    ? v.toFixed(4)
+                : a >= 0.01 ? v.toFixed(5)
+                : v.toExponential(3);
+              return ` ${item.dataset.label}: ${fmt}`;
+            },
           },
           bodyFont: { size: 11 }, padding: 6,
         },
@@ -1721,12 +1754,27 @@ function initPlaybackPreferences() {
   el("btn-loop").setAttribute("aria-pressed", savedLoop);
 }
 
+/* ── Platform detection ──────────────────────────────────── */
+const IS_MAC = /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent);
+const MOD_KEY = IS_MAC ? "⌘" : "Ctrl";
+
 /* ── Event wiring ────────────────────────────────────────── */
 document.addEventListener("DOMContentLoaded", () => {
   initDarkMode();
   initSidebarState();
   initFrameCounterJump();
   initPlaybackPreferences();
+
+  // Update welcome hint modifier key for platform
+  const hint = document.querySelector(".welcome-hint");
+  if (hint) hint.innerHTML = hint.innerHTML.replace(/Ctrl/g, MOD_KEY);
+
+  // Update topbar shortcuts hint
+  const ctrlClickHint = document.querySelector("#shortcuts-modal td kbd");
+  document.querySelectorAll("#shortcuts-modal kbd").forEach(kbd => {
+    if (kbd.textContent === "Ctrl") kbd.textContent = MOD_KEY;
+  });
+
   loadDatasets().then(() => loadHashState());
 
   el("sidebar-toggle").addEventListener("click", toggleSidebar);
@@ -1813,14 +1861,15 @@ document.addEventListener("DOMContentLoaded", () => {
       e.preventDefault(); toggleSidebar(); return;
     }
 
-    if (e.key === "g" || e.key === "G" || (e.ctrlKey && e.key === "k")) {
+    const modKey = e.ctrlKey || e.metaKey;
+    if (e.key === "g" || e.key === "G" || (modKey && e.key === "k")) {
       e.preventDefault();
       el("search-input").focus();
       el("search-input").select();
       return;
     }
 
-    if (e.ctrlKey && e.key === "s") {
+    if (modKey && e.key === "s") {
       e.preventDefault();
       exportFrame();
       return;
