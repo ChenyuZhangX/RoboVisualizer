@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v25
+   LeRobot Visualizer — app.js  v26
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -139,7 +139,8 @@ async function loadHashState() {
     const params = new URLSearchParams(hash);
     const ds  = params.get("ds");
     const ep  = params.get("ep");
-    const f   = params.get("f");
+    let f     = params.get("f");
+    const t   = params.get("t");  // time offset HH:MM:SS
     if (!ds || ep == null) return;
     // Wait for episode list to be populated (sidebar must be open & dataset loaded)
     // We trigger the dataset tree to load the specific dataset
@@ -183,7 +184,23 @@ async function loadHashState() {
       el("btn-normalize")?.setAttribute("aria-pressed", state.normalizeEnabled);
     }
     await selectEpisode(ds, epIndex, epEntry.taskText, epEntry.el);
-    if (f != null) setFrame(parseInt(f, 10));
+    // Parse frame: prefer 't' (time), fallback to 'f' (frame index)
+    if (t) {
+      // Parse HH:MM:SS or MM:SS or just seconds
+      const parts = t.split(":").map(parseFloat);
+      let seconds = 0;
+      if (parts.length === 3) seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
+      else if (parts.length === 2) seconds = parts[0] * 60 + parts[1];
+      else seconds = parts[0];
+      // Convert seconds to frame index
+      const ep = state.episode;
+      if (ep?.timestamps?.length) {
+        const frameIdx = ep.timestamps.findIndex(ts => ts >= seconds);
+        if (frameIdx >= 0) setFrame(frameIdx);
+      }
+    } else if (f != null) {
+      setFrame(parseInt(f, 10));
+    }
     epEntry.el.scrollIntoView({ block: "nearest" });
   } catch (_) {}
 }
@@ -460,25 +477,34 @@ function applySearch(query) {
   el("search-clear").classList.toggle("hidden", !q);
 
   document.querySelectorAll(".task-group").forEach(group => {
-    const taskMatches = !q || group.dataset.task?.includes(q);
+    const taskMatches = !q || (group.dataset.task?.includes(q) ?? false);
 
     // Also check if any ep-item label matches (episode index search)
     let anyEpMatch = false;
-    group.querySelectorAll(".ep-item").forEach(item => {
+    const items = group.querySelectorAll(".ep-item");
+    for (const item of items) {
       const epLabel = item.querySelector("span:nth-child(2)")?.textContent ?? "";
       const epMatches = taskMatches || epLabel.toLowerCase().includes(q);
-      item.classList.toggle("ep-search-hidden", q && !epMatches);
-      if (!q || epMatches) anyEpMatch = true;
-    });
+      const isHidden = q && !epMatches;
+      if (item.classList.toggle("ep-search-hidden", isHidden) !== isHidden) {
+        // Class actually changed; item became visible
+        if (!isHidden) anyEpMatch = true;
+      } else if (!isHidden) {
+        anyEpMatch = true;
+      }
+    }
 
     const groupVisible = taskMatches || anyEpMatch;
+    const wasHidden = group.classList.contains("search-hidden");
     group.classList.toggle("search-hidden", !groupVisible);
-    if (groupVisible && q) group.classList.add("open");
+    if (groupVisible && q && !group.classList.contains("open")) {
+      group.classList.add("open");
+    }
 
     const nameEl = group.querySelector(".task-name");
     if (nameEl) {
       const orig = group.dataset.taskOrig ?? (group.dataset.taskOrig = nameEl.textContent);
-      nameEl.innerHTML = q && taskMatches ? highlightText(orig, query.trim()) : orig;
+      nameEl.innerHTML = (q && taskMatches) ? highlightText(orig, query.trim()) : orig;
     }
   });
 
@@ -741,9 +767,16 @@ function prefetchFrames() {
   for (let f = state.frame + 1; f <= end; f++) {
     if (state.frameCache.has(f) || state.prefetchPending.has(f)) continue;
     state.prefetchPending.add(f);
-    apiFetch(`/api/datasets/${encodeURIComponent(ds)}/episodes/${epIdx}/frame/${f}`)
-      .then(data => { state.frameCache.set(f, data); state.prefetchPending.delete(f); })
-      .catch(() => state.prefetchPending.delete(f));
+    const frameNo = f;  // capture for closure
+    apiFetch(`/api/datasets/${encodeURIComponent(ds)}/episodes/${epIdx}/frame/${frameNo}`)
+      .then(data => {
+        // Verify we haven't switched episodes before caching
+        if (state.activeEpIndex === epIdx) {
+          state.frameCache.set(frameNo, data);
+        }
+        state.prefetchPending.delete(frameNo);
+      })
+      .catch(() => state.prefetchPending.delete(frameNo));
   }
   for (const k of state.frameCache.keys()) {
     if (k < state.frame - 2) state.frameCache.delete(k);
@@ -813,9 +846,13 @@ function renderFrameData(keys, frames) {
   });
 }
 
+let _lastImageUpdateFrame = -1;
+
 async function updateImages() {
   const ep = state.episode;
   if (!ep?.has_images) return;
+  if (_lastImageUpdateFrame === state.frame && state.frameCache.has(state.frame)) return;
+  _lastImageUpdateFrame = state.frame;
   const keys = ep.image_keys.slice(0, MAX_CAMS);
 
   const f = state.frame;
@@ -912,6 +949,23 @@ function exportFrame() {
   });
 }
 
+/* ── Export episode timestamps ───────────────────────────– */
+function exportTimestamps() {
+  const ep = state.episode;
+  if (!ep?.timestamps?.length) return;
+  const lines = ep.timestamps.map((t, i) => `${i}\t${t.toFixed(6)}`);
+  const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${state.activeDataset}__ep${String(state.activeEpIndex).padStart(6,"0")}_timestamps.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  showCopyToast("✓ Timestamps exported");
+}
+
 /* ── Export episode as CSV ───────────────────────────────── */
 function exportCSV() {
   const ep = state.episode;
@@ -944,12 +998,20 @@ function exportCSV() {
 /* ── Copy episode URL to clipboard ───────────────────────── */
 async function copyEpisodeURL() {
   if (!state.activeDataset || state.activeEpIndex == null) return;
+  const ep = state.episode;
+  const ts = ep?.timestamps?.[state.frame];
   const params = new URLSearchParams({
     ds: state.activeDataset,
     ep: state.activeEpIndex,
     f:  state.frame,
     n:  state.normalizeEnabled ? "1" : "0",
   });
+  if (ts != null) {
+    // Format as MM:SS for readability
+    const mins = Math.floor(ts / 60);
+    const secs = Math.floor(ts % 60);
+    params.set("t", `${mins}:${String(secs).padStart(2, "0")}`);
+  }
   const url = location.origin + location.pathname + "#" + params.toString();
   try {
     await navigator.clipboard.writeText(url);
@@ -1318,7 +1380,11 @@ function makeHistChart(canvasId, data2d, names, dims, dimIndex = null) {
   });
 }
 
+let _lastChartUpdateFrame = -1;
+
 function updateChartCursor() {
+  if (_lastChartUpdateFrame === state.frame) return;
+  _lastChartUpdateFrame = state.frame;
   state.stateCharts.forEach(c => c?.update("none"));
   state.actionCharts.forEach(c => c?.update("none"));
 }
@@ -1581,9 +1647,10 @@ function buildTimeDimHeatmap(ep) {
 }
 
 let _timeDimRafPending = false;
+let _lastTimeDimFrame = -1;
 
 function updateTimeDimCursor() {
-  if (_timeDimRafPending) return;
+  if (_timeDimRafPending || _lastTimeDimFrame === state.frame) return;
   _timeDimRafPending = true;
   requestAnimationFrame(_doUpdateTimeDimCursor);
 }
@@ -1592,6 +1659,7 @@ function _doUpdateTimeDimCursor() {
   _timeDimRafPending = false;
   const canvas = el("timedim-canvas");
   if (!canvas || !state.episode) return;
+  _lastTimeDimFrame = state.frame;
 
   const ep = state.episode;
   const dims = ep.actions[0]?.length ?? 0;
@@ -1874,8 +1942,13 @@ function startPlayback() {
       }
       const next = state.frame + 1;
       if (next >= state.episode.length) {
-        if (state.looping) { state.loopCount++; setFrame(0); }
-        else { stopPlayback(); return; }
+        if (state.looping) {
+          state.loopCount++;
+          setFrame(0);
+        } else {
+          stopPlayback();
+          return;
+        }
       } else {
         setFrame(next);
       }
@@ -2104,6 +2177,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.key === "x" || e.key === "X") {
       e.preventDefault();
       exportCSV();
+      return;
+    }
+    if (e.key === "w" || e.key === "W") {
+      e.preventDefault();
+      exportTimestamps();
       return;
     }
     if (modKey && e.key === "j") {

@@ -1261,3 +1261,21 @@ textarea:focus {
   box-shadow: 0 0 0 2px rgba(59,130,246,.2);
   outline: none;
 }
+
+/* ── High-contrast mode support ────────────────────────── */
+@media (prefers-contrast: more) {
+  :root {
+    --text-3: #74868F;
+    --border: #D0D8E0;
+  }
+  html.dark {
+    --text-3: #888888;
+    --border: #404040;
+  }
+}
+
+/* ── Reduced motion support ────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  #fps-badge { animation: none !important; }
+  @keyframes cam-loading-pulse { 0%, 100%, 50% { opacity: 1; } }
+}
