@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v31
+   LeRobot Visualizer — app.js  v32
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -315,6 +315,7 @@ async function loadHashState() {
       setFrame(parseInt(f, 10));
     }
     epEntry.el.scrollIntoView({ block: "nearest" });
+    if (params.get("play") === "1") setTimeout(() => startPlayback(), 200);
   } catch (_) {}
 }
 
@@ -448,7 +449,9 @@ function collapseAllTasks() {
 /* ── Sidebar dataset tree ────────────────────────────────── */
 async function loadDatasets() {
   const tree = el("dataset-tree");
+  const refreshBtn = el("refresh-btn");
   tree.innerHTML = `<div class="loading-msg"><span class="spinner"></span> Loading…</div>`;
+  if (refreshBtn) { refreshBtn.disabled = true; refreshBtn.classList.add("spinning"); }
   try {
     const datasets = await apiFetch("/api/datasets");
     if (!datasets.length) {
@@ -480,6 +483,8 @@ async function loadDatasets() {
   } catch (e) {
     tree.innerHTML = `<div class="error-msg">Failed: ${e.message}</div>`;
     updateSidebarFooter(0, 0);
+  } finally {
+    if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.classList.remove("spinning"); }
   }
 }
 
@@ -569,6 +574,8 @@ function buildDatasetNode(ds) {
 function buildTaskNode(dsPath, task, allLengths = [], fps = 10) {
   const group = document.createElement("div");
   group.className = "task-group";
+  const _tgKey = `tg-${dsPath}-${task.task_index ?? task.task.slice(0, 32)}`;
+  if (localStorage.getItem(_tgKey) === "1") group.classList.add("open");
   const shortTask = task.task.length > 72 ? task.task.slice(0, 72) + "…" : task.task;
   group.dataset.task = task.task.toLowerCase();
   const epLengths = task.episodes.map(e => e.length);
@@ -647,10 +654,11 @@ function buildTaskNode(dsPath, task, allLengths = [], fps = 10) {
 
   header.tabIndex = 0;
   header.setAttribute("role", "button");
-  header.setAttribute("aria-expanded", "false");
+  header.setAttribute("aria-expanded", group.classList.contains("open") ? "true" : "false");
   header.addEventListener("click", () => {
     const open = group.classList.toggle("open");
     header.setAttribute("aria-expanded", open ? "true" : "false");
+    try { localStorage.setItem(_tgKey, open ? "1" : "0"); } catch (_) {}
   });
   header.addEventListener("keydown", e => {
     if (e.key === "Enter" || e.key === " ") {
@@ -1111,6 +1119,7 @@ function prefetchFrames() {
 
 /* ── Camera rendering ────────────────────────────────────── */
 function openLightbox(src, label, camIdx = -1) {
+  _lbResetZoom();
   el("lightbox-img").src = src;
   const ts = state.episode?.timestamps?.[state.frame];
   const tsStr = ts != null
@@ -1139,6 +1148,40 @@ function downloadLightboxFrame() {
   _downloadDataURI(img.src, `${key}_ep${state.activeEpIndex}_f${state.frame}.jpg`);
   showCopyToast(`✓ Saved ${key} frame ${state.frame}`, "success");
 }
+
+/* ── Lightbox zoom ───────────────────────────────────────── */
+let _lbZoom = 1.0;
+
+function _lbSetZoom(z, originX, originY) {
+  _lbZoom = clamp(z, 1, 8);
+  const img = el("lightbox-img");
+  if (!img) return;
+  if (_lbZoom <= 1.001) {
+    _lbZoom = 1;
+    img.style.transform = "";
+    img.style.transformOrigin = "";
+    img.style.cursor = "";
+  } else {
+    img.style.transform = `scale(${_lbZoom.toFixed(2)})`;
+    if (originX != null) img.style.transformOrigin = `${originX.toFixed(1)}% ${originY.toFixed(1)}%`;
+    img.style.cursor = "zoom-out";
+  }
+  let badge = el("lightbox-zoom-badge");
+  if (_lbZoom === 1) {
+    if (badge) badge.classList.add("hidden");
+  } else {
+    if (!badge) {
+      badge = document.createElement("span");
+      badge.id = "lightbox-zoom-badge";
+      badge.className = "lightbox-zoom-badge";
+      el("cam-lightbox")?.appendChild(badge);
+    }
+    badge.textContent = `${_lbZoom.toFixed(1)}×`;
+    badge.classList.remove("hidden");
+  }
+}
+
+function _lbResetZoom() { _lbSetZoom(1); }
 
 function lightboxNavigate(delta) {
   const overlay = el("cam-lightbox");
@@ -1436,6 +1479,7 @@ async function copyEpisodeURL() {
     const secs = Math.floor(ts % 60);
     params.set("t", `${mins}:${String(secs).padStart(2, "0")}`);
   }
+  if (state.playing) params.set("play", "1");
   const url = location.origin + location.pathname + "#" + params.toString();
   try {
     await navigator.clipboard.writeText(url);
@@ -2765,10 +2809,10 @@ document.addEventListener("DOMContentLoaded", () => {
   el("speed-select").addEventListener("change", e => {
     state.speed = parseFloat(e.target.value);
     localStorage.setItem("speed", state.speed);
+    showCopyToast(`Speed: ${state.speed}×`);
     if (state.playing) {
       stopPlayback();
       startPlayback();
-      showCopyToast(`Speed: ${state.speed}×`);
     }
   });
 
@@ -2874,25 +2918,33 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (e.key === "+" || e.key === "=") {
       e.preventDefault();
-      const cur = SPEEDS.indexOf(state.speed);
-      if (cur < SPEEDS.length - 1) {
-        state.speed = SPEEDS[cur + 1];
-        el("speed-select").value = state.speed;
-        localStorage.setItem("speed", state.speed);
-        if (state.playing) { stopPlayback(); startPlayback(); }
-        showCopyToast(`Speed: ${state.speed}×`);
+      if (!el("cam-lightbox").classList.contains("hidden")) {
+        _lbSetZoom(_lbZoom * 1.2);
+      } else {
+        const cur = SPEEDS.indexOf(state.speed);
+        if (cur < SPEEDS.length - 1) {
+          state.speed = SPEEDS[cur + 1];
+          el("speed-select").value = state.speed;
+          localStorage.setItem("speed", state.speed);
+          if (state.playing) { stopPlayback(); startPlayback(); }
+          showCopyToast(`Speed: ${state.speed}×`);
+        }
       }
       return;
     }
     if (e.key === "-" || e.key === "_") {
       e.preventDefault();
-      const cur = SPEEDS.indexOf(state.speed);
-      if (cur > 0) {
-        state.speed = SPEEDS[cur - 1];
-        el("speed-select").value = state.speed;
-        localStorage.setItem("speed", state.speed);
-        if (state.playing) { stopPlayback(); startPlayback(); }
-        showCopyToast(`Speed: ${state.speed}×`);
+      if (!el("cam-lightbox").classList.contains("hidden")) {
+        _lbSetZoom(_lbZoom / 1.2);
+      } else {
+        const cur = SPEEDS.indexOf(state.speed);
+        if (cur > 0) {
+          state.speed = SPEEDS[cur - 1];
+          el("speed-select").value = state.speed;
+          localStorage.setItem("speed", state.speed);
+          if (state.playing) { stopPlayback(); startPlayback(); }
+          showCopyToast(`Speed: ${state.speed}×`);
+        }
       }
       return;
     }
@@ -3022,10 +3074,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (e.key === "m" || e.key === "M") {
       e.preventDefault();
-      el("task-label").classList.toggle("hidden");
+      const hidden = el("task-label").classList.toggle("hidden");
       el("ep-info-strip").classList.toggle("hidden");
       el("compare-banner").classList.toggle("hidden");
-      showCopyToast(el("task-label").classList.contains("hidden") ? "Labels hidden" : "Labels shown");
+      // Also toggle camera labels for cleaner recordings
+      document.querySelectorAll(".cam-label").forEach(lbl => lbl.classList.toggle("hidden", hidden));
+      showCopyToast(hidden ? "Mirror mode on — labels hidden" : "Mirror mode off");
       return;
     }
 
@@ -3113,7 +3167,10 @@ document.addEventListener("DOMContentLoaded", () => {
         if (state.compareEpisode) { e.preventDefault(); clearCompare(); }
         el("shortcuts-modal").classList.add("hidden");
         el("btn-shortcuts").setAttribute("aria-expanded", "false");
-        el("cam-lightbox").classList.add("hidden");
+        if (!el("cam-lightbox").classList.contains("hidden")) {
+          _lbResetZoom();
+          el("cam-lightbox").classList.add("hidden");
+        }
         break;
     }
   });
@@ -3199,6 +3256,37 @@ document.addEventListener("DOMContentLoaded", () => {
         ".ep-item:not(.ep-search-hidden):not(.search-hidden .ep-item)"
       );
       if (first) { first.focus(); first.scrollIntoView({ block: "nearest" }); }
+    }
+  });
+
+  // ── Lightbox wheel zoom ──────────────────────────────────
+  el("cam-lightbox").addEventListener("wheel", e => {
+    if (el("cam-lightbox").classList.contains("hidden")) return;
+    e.preventDefault();
+    const box = el("cam-lightbox").querySelector(".lightbox-box");
+    const rect = box?.getBoundingClientRect() ?? { left: 0, top: 0, width: 1, height: 1 };
+    const ox = ((e.clientX - rect.left) / rect.width) * 100;
+    const oy = ((e.clientY - rect.top) / rect.height) * 100;
+    _lbSetZoom(_lbZoom * (e.deltaY < 0 ? 1.2 : 1 / 1.2), ox, oy);
+  }, { passive: false });
+
+  el("lightbox-img").addEventListener("dblclick", e => {
+    if (_lbZoom > 1) { e.stopPropagation(); _lbResetZoom(); }
+  });
+
+  // ── Respond to browser back/forward (hash navigation) ──
+  window.addEventListener("hashchange", () => {
+    if (!location.hash || location.hash.length <= 1) return;
+    const params = new URLSearchParams(location.hash.slice(1));
+    const ds = params.get("ds");
+    const ep = params.get("ep");
+    if (!ds || ep == null) return;
+    const epIndex = parseInt(ep, 10);
+    if (ds !== state.activeDataset || epIndex !== state.activeEpIndex) {
+      loadHashState();
+    } else {
+      const f = params.get("f");
+      if (f != null) setFrame(parseInt(f, 10));
     }
   });
 });

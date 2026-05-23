@@ -104,6 +104,7 @@ body {
   flex-shrink: 0;
 }
 .icon-btn:hover { color: var(--text); background: var(--bg-3); }
+.icon-btn:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
 
 /* Small icon button (sidebar header) */
 .icon-btn-sm {
@@ -120,6 +121,7 @@ body {
 }
 .icon-btn-sm:hover { color: var(--blue); background: var(--blue-lt); }
 .icon-btn-sm.active { color: var(--blue); background: var(--blue-lt); }
+.icon-btn-sm:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
 
 #main {
   display: flex;
@@ -454,6 +456,10 @@ html.dark .ep-len.len-long      { color: #22C55E; background: #0a2017; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ── Refresh button spinning state ───────────────────────────── */
+#refresh-btn.spinning svg { animation: spin .7s linear infinite; }
+#refresh-btn.spinning { opacity: 0.6; cursor: wait; }
+
 .loading-msg {
   padding: 16px 14px;
   color: var(--text-3);
@@ -674,9 +680,12 @@ html.dark .error-msg { background: #3b0f0f; }
   padding: 10px 14px;
   box-shadow: var(--shadow);
   margin-bottom: 0;
-  transition: box-shadow var(--transition), border-color var(--transition);
+  transition: box-shadow var(--transition), border-color var(--transition), background var(--transition);
 }
 .chart-card:hover { box-shadow: var(--shadow-md); }
+@media (prefers-color-scheme: dark) {
+  .chart-card:hover { background: var(--bg-2); }
+}
 
 .chart-title-bar {
   display: flex;
@@ -940,6 +949,7 @@ html.dark .norm-badge { background: #0d2e1f; border-color: #166534; }
 .ctrl-btn.primary:hover { background: var(--blue-dk); border-color: var(--blue-dk); }
 .ctrl-btn.active { border-color: var(--blue); color: var(--blue); background: var(--blue-lt); }
 .ctrl-btn:active:not(:disabled) { transform: scale(0.93); }
+.ctrl-btn:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
 .ctrl-btn:disabled { opacity: .35; cursor: not-allowed; }
 .ctrl-btn:disabled:hover { border-color: var(--border); color: var(--text-2); background: none; }
 
@@ -968,7 +978,9 @@ html.dark #speed-select { background: var(--bg-2); }
   cursor: pointer;
   outline: none;
   min-width: 60px;
+  transition: background .12s ease;
 }
+#scrubber:hover, #scrubber:focus { background: var(--blue); opacity: .7; }
 #scrubber::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 14px; height: 14px;
@@ -1556,3 +1568,82 @@ textarea:focus {
 
 /* ── Dataset subtitle fade ───────────────────────────────────── */
 .ds-subtitle { transition: color var(--transition); }
+
+/* ── Reduced motion: disable animations for accessibility ────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .copy-toast, .viewer-loader { transition: none !important; }
+}
+
+/* ── Camera loading skeleton animation ───────────────────────── */
+.cam-slot[data-loading] img { opacity: 0.4; }
+@keyframes cam-skeleton-pulse {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.cam-slot[data-loading]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,.08) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: cam-skeleton-pulse 1.5s ease infinite;
+  pointer-events: none;
+  z-index: 2;
+}
+html.dark .cam-slot[data-loading]::before {
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,.05) 50%, transparent 100%);
+  background-size: 200% 100%;
+}
+
+/* ── Chart card: subtle top border accent when active ────────── */
+.chart-card:focus-within {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 1px var(--blue), var(--shadow);
+}
+
+/* ── Correlation matrix font readability ─────────────────────── */
+#corr-body canvas { font-smooth: always; -webkit-font-smoothing: antialiased; }
+
+/* ── Lightbox zoom badge ─────────────────────────────────────── */
+.lightbox-zoom-badge {
+  position: fixed;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,.75);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  padding: 3px 10px;
+  border-radius: 20px;
+  pointer-events: none;
+  z-index: 10001;
+  letter-spacing: .03em;
+}
+.lightbox-zoom-badge.hidden { display: none; }
+
+/* Smooth zoom transitions on lightbox image */
+#lightbox-img { transition: transform 0.12s ease, transform-origin 0.12s ease; }
+
+/* ── Print styles ─────────────────────────────────────────────── */
+@media print {
+  #topbar, #sidebar, #viewer-footer, #viewer-actions,
+  #compare-banner, #frame-values-panel, #shortcuts-modal,
+  #cam-lightbox, .lightbox-dl-btn, .expand-btn, .chart-tool-btn,
+  .copy-toast, #sidebar-footer { display: none !important; }
+  body, html { height: auto; overflow: visible; }
+  #app, #main, #panel { display: block; height: auto; }
+  #viewer { display: block !important; overflow: visible; }
+  #viewer-scroll { overflow: visible; }
+  #cameras, #charts-area { break-inside: avoid; }
+  .cam-slot img { max-width: 100%; height: auto; }
+  .chart-card { break-inside: avoid; border: 1px solid #ccc; margin-bottom: 8px; }
+  #ep-info-strip { display: flex !important; }
+  #task-label { font-size: 11pt; font-weight: 600; margin-bottom: 6px; }
+}
