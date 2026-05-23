@@ -9,6 +9,8 @@ from typing import Optional
 
 # ── Info.json cache (small dict, no eviction needed) ─────────────────────────
 _INFO_CACHE: dict[str, dict] = {}
+_TASKS_CACHE: dict[str, list] = {}   # dataset path → list[task dict]
+_EPISODES_CACHE: dict[str, list] = {}  # dataset path → list[episode dict]
 
 
 def read_info_cached(base: Path) -> dict:
@@ -17,6 +19,30 @@ def read_info_cached(base: Path) -> dict:
     if key not in _INFO_CACHE:
         _INFO_CACHE[key] = json.loads((base / "meta" / "info.json").read_text())
     return _INFO_CACHE[key]
+
+
+def read_tasks_cached(base: Path) -> list[dict]:
+    """Read and cache meta/tasks.jsonl."""
+    key = str(base)
+    if key not in _TASKS_CACHE:
+        tasks = []
+        for line in (base / "meta" / "tasks.jsonl").read_text().splitlines():
+            if line.strip():
+                tasks.append(json.loads(line))
+        _TASKS_CACHE[key] = tasks
+    return _TASKS_CACHE[key]
+
+
+def read_episodes_cached(base: Path) -> list[dict]:
+    """Read and cache meta/episodes.jsonl."""
+    key = str(base)
+    if key not in _EPISODES_CACHE:
+        episodes = []
+        for line in (base / "meta" / "episodes.jsonl").read_text().splitlines():
+            if line.strip():
+                episodes.append(json.loads(line))
+        _EPISODES_CACHE[key] = episodes
+    return _EPISODES_CACHE[key]
 
 import pyarrow.parquet as pq
 from fastapi import FastAPI, HTTPException
@@ -117,7 +143,10 @@ def health():
         "data_dir": str(DATA_DIR),
         "data_dir_exists": DATA_DIR.exists(),
         "video_support": _HAS_CV2,
-        "cache_size": len(_TABLE_CACHE),
+        "cache_parquet": len(_TABLE_CACHE),
+        "cache_info": len(_INFO_CACHE),
+        "cache_tasks": len(_TASKS_CACHE),
+        "cache_episodes": len(_EPISODES_CACHE),
     }
 
 
@@ -126,6 +155,8 @@ def clear_cache():
     count = len(_TABLE_CACHE)
     _TABLE_CACHE.clear()
     _INFO_CACHE.clear()
+    _TASKS_CACHE.clear()
+    _EPISODES_CACHE.clear()
     return {"cleared": count}
 
 
@@ -167,34 +198,29 @@ def get_dataset_meta(dataset: str):
 def list_tasks(dataset: str):
     base = get_dataset_path(dataset)
 
-    tasks_file = base / "meta" / "tasks.jsonl"
-    episodes_file = base / "meta" / "episodes.jsonl"
-
     tasks = {}
-    for line in tasks_file.read_text().splitlines():
-        if line.strip():
-            t = json.loads(line)
-            tasks[t["task_index"]] = {"task_index": t["task_index"], "task": t["task"], "episodes": []}
+    for t in read_tasks_cached(base):
+        tasks[t["task_index"]] = {"task_index": t["task_index"], "task": t["task"], "episodes": []}
 
     info = read_info_cached(base)
     chunks_size = info.get("chunks_size", 1000)
 
-    for line in episodes_file.read_text().splitlines():
-        if line.strip():
-            ep = json.loads(line)
-            ep_idx = ep["episode_index"]
-            chunk = ep_idx // chunks_size
-            parquet = base / "data" / f"chunk-{chunk:03d}" / f"episode_{ep_idx:06d}.parquet"
-            if not parquet.exists():
-                continue
-            task_name = ep["tasks"][0] if ep.get("tasks") else ""
-            for ti, tv in tasks.items():
-                if tv["task"] == task_name:
-                    tv["episodes"].append({
-                        "episode_index": ep_idx,
-                        "length": ep.get("length", 0),
-                    })
-                    break
+    # Build task → name lookup for O(1) matching
+    task_by_name: dict[str, int] = {tv["task"]: ti for ti, tv in tasks.items()}
+
+    for ep in read_episodes_cached(base):
+        ep_idx = ep["episode_index"]
+        chunk = ep_idx // chunks_size
+        parquet = base / "data" / f"chunk-{chunk:03d}" / f"episode_{ep_idx:06d}.parquet"
+        if not parquet.exists():
+            continue
+        task_name = ep["tasks"][0] if ep.get("tasks") else ""
+        ti = task_by_name.get(task_name)
+        if ti is not None:
+            tasks[ti]["episodes"].append({
+                "episode_index": ep_idx,
+                "length": ep.get("length", 0),
+            })
 
     # drop tasks with no local episodes
     return [t for t in sorted(tasks.values(), key=lambda x: x["task_index"]) if t["episodes"]]

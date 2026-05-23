@@ -1150,3 +1150,87 @@ html.dark #viewer-footer {
 .lightbox-nav:hover { background: rgba(0,0,0,.7); color: #fff; }
 .lightbox-prev { left: 12px; }
 .lightbox-next { right: 12px; }
+
+/* ── Camera fullscreen ──────────────────────────────────────── */
+.cam-slot:fullscreen,
+.cam-slot:-webkit-full-screen {
+  background: #000;
+  border-radius: 0;
+  border: none;
+  cursor: zoom-out;
+}
+.cam-slot:fullscreen img,
+.cam-slot:-webkit-full-screen img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* ── Camera image loading transition ───────────────────────── */
+.cam-slot img { transition: opacity .12s ease; }
+
+/* ── FPS badge animation ──────────────────────────────────────── */
+#fps-badge {
+  animation: none;
+}
+#fps-badge:not(.hidden) {
+  animation: badge-pop .15s ease;
+}
+@keyframes badge-pop {
+  from { opacity: 0; transform: scale(.9); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* ── Frame-jump input ───────────────────────────────────────── */
+.frame-jump-input {
+  background: var(--bg);
+  border: 1px solid var(--blue);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  padding: 1px 4px;
+  text-align: center;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(59,130,246,.2);
+}
+
+/* ── Frame values chip hover ────────────────────────────────── */
+.fv-chip { cursor: default; transition: border-color var(--transition), background var(--transition); }
+.fv-chip:hover { border-color: var(--blue); background: var(--blue-lt); }
+
+/* ── Mobile / narrow viewport ───────────────────────────────── */
+@media (max-width: 720px) {
+  :root { --sidebar-w: 240px; }
+  #cameras.cams-3,
+  #cameras.cams-5,
+  #cameras.cams-6 { grid-template-columns: repeat(2, 1fr); }
+  .ep-len { display: none; }
+}
+
+/* ── Chart canvas interactive cursor ───────────────────────── */
+.chart-wrap canvas,
+.mini-chart-wrap canvas { cursor: crosshair; }
+.chart-wrap canvas:active,
+.mini-chart-wrap canvas:active { cursor: col-resize; }
+
+/* ── Camera slot loading pulse ──────────────────────────────── */
+.cam-slot[data-loading] { outline: 2px solid var(--blue); outline-offset: -2px; }
+.cam-slot[data-loading]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(59,130,246,.04);
+  animation: cam-loading-pulse 1s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes cam-loading-pulse {
+  0%, 100% { opacity: 0; }
+  50%       { opacity: 1; }
+}
+
+/* ── FV chip value: monospace ────────────────────────────────── */
+.fv-val { font-family: ui-monospace, "Cascadia Code", Menlo, monospace; font-size: 10.5px; font-variant-numeric: tabular-nums; }
+
+/* ── Speed select hover ──────────────────────────────────────── */
+#speed-select { cursor: pointer; }

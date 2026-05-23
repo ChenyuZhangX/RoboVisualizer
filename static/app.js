@@ -1,10 +1,12 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v23
+   LeRobot Visualizer — app.js  v24
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
 const PREFETCH_AHEAD = 8;
 const SEARCH_DEBOUNCE_MS = 160;
+const SPEEDS = [0.25, 0.5, 1, 2, 4];
+const SIDEBAR_BREAKPOINT = 720;  // px; auto-collapse sidebar below this width
 const PALETTE = [
   "#3B82F6","#10B981","#F59E0B","#EF4444","#8B5CF6",
   "#06B6D4","#F97316","#EC4899","#14B8A6","#6366F1",
@@ -40,6 +42,7 @@ const state = {
   compareDataset: null,
   compareEpIndex: null,
   normalizeEnabled: true,
+  loopCount: 0,
 };
 
 /* ── Utility helpers ─────────────────────────────────────── */
@@ -67,6 +70,8 @@ function escapeHTML(str) {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
             .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
+
+function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 
 /* ── Dark mode ───────────────────────────────────────────── */
 function initDarkMode() {
@@ -102,7 +107,10 @@ function toggleSidebar() {
 
 function initSidebarState() {
   const stored = localStorage.getItem("sidebarCollapsed");
-  if (stored === "1") {
+  const narrow = window.innerWidth < SIDEBAR_BREAKPOINT;
+  // Auto-collapse on narrow viewports when no stored preference
+  const shouldCollapse = stored === "1" || (stored === null && narrow);
+  if (shouldCollapse) {
     el("main").classList.add("sidebar-collapsed");
     el("sidebar-toggle").setAttribute("aria-pressed", "true");
   }
@@ -183,7 +191,7 @@ async function loadHashState() {
 /* ── Normalization helpers ───────────────────────────────── */
 function normalizeValue(v, q01, q99) {
   if (q99 === q01) return 0;
-  return 2 * (Math.max(q01, Math.min(q99, v)) - q01) / (q99 - q01) - 1;
+  return 2 * (clamp(v, q01, q99) - q01) / (q99 - q01) - 1;
 }
 
 function normalizeData(data2d, ns) {
@@ -264,7 +272,7 @@ Chart.register(cursorPlugin, stdBandPlugin);
 /* ── Frame navigation ────────────────────────────────────── */
 function setFrame(f) {
   if (!state.episode) return;
-  state.frame = Math.max(0, Math.min(f, state.episode.length - 1));
+  state.frame = clamp(Math.round(f), 0, state.episode.length - 1);
   updateScrubber();
   updateChartCursor();
   updateTimeDimCursor();
@@ -409,6 +417,7 @@ function buildTaskNode(dsPath, task, allLengths = []) {
     item.tabIndex = 0;
     item.setAttribute("role", "option");
     item.setAttribute("aria-label", `Episode ${ep.episode_index}, ${ep.length} frames`);
+    item.title = `ep_${String(ep.episode_index).padStart(6,"0")} · ${ep.length} frames`;
 
     const handleActivate = (ctrlKey = false) => {
       if (ctrlKey) selectCompareEpisode(dsPath, ep.episode_index, item);
@@ -493,7 +502,18 @@ function applySearch(query) {
     countEl.className = "search-count";
     el("dataset-tree").before(countEl);
   }
-  countEl.textContent = q ? `${totalVisible} task${totalVisible !== 1 ? "s" : ""} found` : "";
+  let visibleEps = 0;
+  if (q) {
+    document.querySelectorAll(".ep-item").forEach(item => {
+      if (!item.classList.contains("ep-search-hidden") &&
+          !item.closest(".task-group")?.classList.contains("search-hidden")) {
+        visibleEps++;
+      }
+    });
+  }
+  countEl.textContent = q
+    ? `${totalVisible} task${totalVisible !== 1 ? "s" : ""} · ${visibleEps} ep${visibleEps !== 1 ? "s" : ""}`
+    : "";
   countEl.classList.toggle("hidden", !q);
 }
 
@@ -621,7 +641,9 @@ function prevEpisode() {
   if (idx <= 0) return;
   const entry = state.episodeList[idx - 1];
   entry.el.closest(".task-group")?.classList.add("open");
+  entry.el.closest(".ds-node")?.classList.add("open");
   selectEpisode(entry.dsPath, entry.epIndex, entry.taskText, entry.el);
+  requestAnimationFrame(() => entry.el.scrollIntoView({ block: "nearest", behavior: "smooth" }));
 }
 
 function nextEpisode() {
@@ -629,7 +651,9 @@ function nextEpisode() {
   if (idx < 0 || idx >= state.episodeList.length - 1) return;
   const entry = state.episodeList[idx + 1];
   entry.el.closest(".task-group")?.classList.add("open");
+  entry.el.closest(".ds-node")?.classList.add("open");
   selectEpisode(entry.dsPath, entry.epIndex, entry.taskText, entry.el);
+  requestAnimationFrame(() => entry.el.scrollIntoView({ block: "nearest", behavior: "smooth" }));
 }
 
 function updatePrevNextButtons() {
@@ -701,7 +725,8 @@ function prefetchFrames() {
   const ep = state.episode;
   if (!ep?.has_images) return;
   const { activeDataset: ds, activeEpIndex: epIdx } = state;
-  const end = Math.min(state.frame + PREFETCH_AHEAD, ep.length - 1);
+  const ahead = Math.round(PREFETCH_AHEAD * Math.max(1, state.speed));
+  const end = Math.min(state.frame + ahead, ep.length - 1);
   for (let f = state.frame + 1; f <= end; f++) {
     if (state.frameCache.has(f) || state.prefetchPending.has(f)) continue;
     state.prefetchPending.add(f);
@@ -765,8 +790,15 @@ function renderFrameData(keys, frames) {
       slot.appendChild(lbl);
     }
     img.src = src;
-    slot.title = key.replace(/_/g, " ") + " — click to expand";
+    slot.title = key.replace(/_/g, " ") + " — click to expand · double-click for fullscreen";
     slot.onclick = () => openLightbox(src, key.replace(/_/g, " "), i);
+    slot.ondblclick = e => {
+      e.stopPropagation();
+      if (document.fullscreenEnabled) {
+        if (document.fullscreenElement) document.exitFullscreen();
+        else slot.requestFullscreen?.();
+      }
+    };
   });
 }
 
@@ -781,7 +813,9 @@ async function updateImages() {
   } else {
     // Dim existing images to signal loading
     keys.forEach((_, i) => {
-      const img = el(`cam-${i}`)?.querySelector("img");
+      const slot = el(`cam-${i}`);
+      if (slot) slot.dataset.loading = "1";
+      const img = slot?.querySelector("img");
       if (img) img.style.opacity = "0.5";
     });
     try {
@@ -792,16 +826,19 @@ async function updateImages() {
         state.frameCache.set(f, frames);
         renderFrameData(keys, frames);
         keys.forEach((_, i) => {
-          const img = el(`cam-${i}`)?.querySelector("img");
+          const slot = el(`cam-${i}`);
+          if (slot) delete slot.dataset.loading;
+          const img = slot?.querySelector("img");
           if (img) img.style.opacity = "";
         });
       }
     } catch (e) {
       if (state.frame === f) {
         keys.forEach((_, i) => {
-          const img = el(`cam-${i}`)?.querySelector("img");
-          if (img) img.style.opacity = "";
           const slot = el(`cam-${i}`);
+          if (slot) delete slot.dataset.loading;
+          const img = slot?.querySelector("img");
+          if (img) img.style.opacity = "";
           if (slot && !slot.querySelector("img")) {
             slot.innerHTML = `<div class="cam-placeholder"><span style="font-size:10px;color:var(--text-3)">Failed</span></div>`;
           }
@@ -853,7 +890,8 @@ function exportFrame() {
         canvas.toBlob(blob => {
           const a = document.createElement("a");
           a.href = URL.createObjectURL(blob);
-          a.download = `frame_${String(state.activeEpIndex).padStart(6,"0")}_${String(state.frame).padStart(4,"0")}.png`;
+          const dsSlug = (state.activeDataset ?? "").replace(/[^a-z0-9_-]/gi, "_").slice(0, 32);
+          a.download = `${dsSlug}__ep${String(state.activeEpIndex).padStart(6,"0")}_f${String(state.frame).padStart(4,"0")}.png`;
           a.click();
           URL.revokeObjectURL(a.href);
         });
@@ -899,6 +937,7 @@ async function copyEpisodeURL() {
     ds: state.activeDataset,
     ep: state.activeEpIndex,
     f:  state.frame,
+    n:  state.normalizeEnabled ? "1" : "0",
   });
   const url = location.origin + location.pathname + "#" + params.toString();
   try {
@@ -967,6 +1006,7 @@ function toggleNormalize() {
   if (state.episode) {
     buildCharts(state.episode);
     updateFrameValues();
+    saveHashState();
   }
 }
 
@@ -1205,7 +1245,7 @@ function computeBins(values, nBins = 22) {
     counts[Math.min(Math.floor((v - mn) / w), nBins - 1)]++;
   }
   return {
-    edges: Array.from({ length: nBins }, (_, i) => (mn + (i + 0.5) * w).toFixed(3)),
+    edges: Array.from({ length: nBins }, (_, i) => mn + (i + 0.5) * w),
     counts,
   };
 }
@@ -1232,6 +1272,14 @@ function makeHistChart(canvasId, data2d, names, dims, dimIndex = null) {
       });
 
   const cc = chartColors();
+  const fmtTick = v => {
+    if (v === 0) return "0";
+    const a = Math.abs(v);
+    if (a >= 1000) return (v / 1000).toFixed(1) + "k";
+    if (a >= 1)    return v.toFixed(2).replace(/\.?0+$/, "");
+    if (a >= 0.01) return v.toFixed(3).replace(/\.?0+$/, "");
+    return v.toExponential(1);
+  };
   return new Chart(ctx, {
     type: "bar",
     data: { labels: datasets[0]._edges, datasets },
@@ -1242,14 +1290,15 @@ function makeHistChart(canvasId, data2d, names, dims, dimIndex = null) {
           labels: { font: { size: 9 }, boxWidth: 10, padding: 6, color: cc.tick } },
         tooltip: {
           callbacks: {
-            title: items => `≈${items[0].label}`,
+            title: items => `≈${fmtTick(parseFloat(items[0].label))}`,
             label: item => ` ${item.dataset.label}: ${item.raw}`,
           },
           bodyFont: { size: 11 }, padding: 6,
         },
       },
       scales: {
-        x: { ticks: { maxTicksLimit: 6, font: { size: 9 }, color: cc.tick },
+        x: { ticks: { maxTicksLimit: 6, font: { size: 9 }, color: cc.tick,
+                      callback: v => fmtTick(parseFloat(datasets[0]._edges[v] ?? v)) },
              grid: { display: false }, border: { color: cc.border } },
         y: { ticks: { maxTicksLimit: 4, font: { size: 9 }, color: cc.tick },
              grid: { color: cc.grid }, border: { color: cc.border } },
@@ -1317,6 +1366,8 @@ function buildCorrelationHeatmap(ep) {
   canvas.id = "corr-canvas";
   canvas.width = W; canvas.height = H_TOTAL;
   canvas.style.cssText = `width:${W}px;height:${H_TOTAL}px;`;
+  canvas.setAttribute("role", "img");
+  canvas.setAttribute("aria-label", `Action correlation matrix (${dims}×${dims})`);
   body.appendChild(canvas);
 
   const ctx = canvas.getContext("2d");
@@ -1389,8 +1440,13 @@ function buildCorrelationHeatmap(ep) {
 }
 
 /* ── Time × Dimension heatmap ────────────────────────────── */
-const TIMEDIM_CELL_H = 18;   // pixels per dimension row
 const TIMEDIM_LABEL_W = 60;  // left label column width
+// Cell height adapts: 18px for ≤20 dims, 12px for ≤40, 8px for more
+function timedimCellH(dims) {
+  if (dims <= 20) return 18;
+  if (dims <= 40) return 12;
+  return 8;
+}
 
 function buildTimeDimHeatmap(ep) {
   const card = el("timedim-card");
@@ -1409,6 +1465,7 @@ function buildTimeDimHeatmap(ep) {
   }
 
   const dims = ep.actions[0].length;
+  const CELL_H = timedimCellH(dims);
   const frames = ep.length;
   const rawNames = ep.action_names ?? [];
   const labels = Array.from({ length: dims }, (_, d) => {
@@ -1427,7 +1484,7 @@ function buildTimeDimHeatmap(ep) {
   }
 
   const CANVAS_W = Math.min(frames, 900);
-  const CANVAS_H = dims * TIMEDIM_CELL_H;
+  const CANVAS_H = dims * CELL_H;
   const TOTAL_W  = TIMEDIM_LABEL_W + CANVAS_W;
 
   body.innerHTML = "";
@@ -1440,6 +1497,9 @@ function buildTimeDimHeatmap(ep) {
   canvas.height = CANVAS_H;
   canvas.style.cssText = `width:${TOTAL_W}px;height:${CANVAS_H}px;cursor:crosshair;`;
   canvas.id = "timedim-canvas";
+  canvas.setAttribute("role", "img");
+  canvas.setAttribute("aria-label", `Action heatmap: time × ${dims} dimensions`);
+  canvas.setAttribute("tabindex", "0");
   wrap.appendChild(canvas);
 
   const ctx = canvas.getContext("2d");
@@ -1447,7 +1507,7 @@ function buildTimeDimHeatmap(ep) {
 
   for (let d = 0; d < dims; d++) {
     const lo = dimMin[d], hi = dimMax[d], range = hi - lo || 1;
-    const y0 = d * TIMEDIM_CELL_H;
+    const y0 = d * CELL_H;
 
     for (let f = 0; f < frames; f++) {
       const t = (ep.actions[f][d] - lo) / range;  // 0…1
@@ -1455,7 +1515,7 @@ function buildTimeDimHeatmap(ep) {
       const b = Math.round(Math.min(255, (1 - t) * 510));
       const g = Math.round(120 * (1 - Math.abs(t - 0.5) * 2));
       ctx.fillStyle = `rgb(${r},${g},${b})`;
-      ctx.fillRect(TIMEDIM_LABEL_W + f * cellW, y0, Math.ceil(cellW), TIMEDIM_CELL_H - 1);
+      ctx.fillRect(TIMEDIM_LABEL_W + f * cellW, y0, Math.ceil(cellW), CELL_H - 1);
     }
 
     const isDark = document.documentElement.classList.contains("dark");
@@ -1463,7 +1523,7 @@ function buildTimeDimHeatmap(ep) {
     ctx.fillStyle = isDark ? "#94A3B8" : "#64748B";
     ctx.textAlign = "right";
     ctx.textBaseline = "middle";
-    ctx.fillText(labels[d], TIMEDIM_LABEL_W - 4, y0 + TIMEDIM_CELL_H / 2);
+    ctx.fillText(labels[d], TIMEDIM_LABEL_W - 4, y0 + CELL_H / 2);
   }
 
   // Drag and click to seek + hover tooltip
@@ -1475,7 +1535,7 @@ function buildTimeDimHeatmap(ep) {
   const getDimFromPointer = e => {
     const rect = canvas.getBoundingClientRect();
     const py = (e.clientY - rect.top) * (canvas.height / rect.height);
-    return Math.floor(py / TIMEDIM_CELL_H);
+    return Math.floor(py / CELL_H);
   };
 
   let dragging = false;
@@ -1524,10 +1584,11 @@ function _doUpdateTimeDimCursor() {
 
   const ep = state.episode;
   const dims = ep.actions[0]?.length ?? 0;
+  const CELL_H = timedimCellH(dims);
   const frames = ep.length;
   const CANVAS_W = Math.min(frames, 900);
   const TOTAL_W  = TIMEDIM_LABEL_W + CANVAS_W;
-  const CANVAS_H = dims * TIMEDIM_CELL_H;
+  const CANVAS_H = dims * CELL_H;
 
   const ctx = canvas.getContext("2d");
   // Redraw cursor overlay using a separate canvas layer approach is complex;
@@ -1736,17 +1797,21 @@ function setupControls(ep) {
 function updateScrubber() {
   const ep = state.episode;
   if (!ep) return;
-  el("scrubber").value = state.frame;
+  const scrubber = el("scrubber");
+  scrubber.value = state.frame;
   const ts = ep.timestamps;
   const tsCurRaw = ts?.[state.frame] ?? null;
   const tsEndRaw = ts?.[ep.length - 1] ?? null;
   const fmt = v => v >= 60 ? formatDuration(v) : v.toFixed(2) + "s";
   const tsStr = tsCurRaw !== null ? `  •  ${fmt(tsCurRaw)} / ${fmt(tsEndRaw)}` : "";
   el("frame-counter").textContent = `${state.frame} / ${ep.length - 1}${tsStr}`;
-  el("scrubber").title = tsCurRaw != null ? fmt(tsCurRaw) : `frame ${state.frame}`;
+  const titleStr = tsCurRaw != null ? `${fmt(tsCurRaw)} (frame ${state.frame})` : `frame ${state.frame}`;
+  scrubber.title = titleStr;
+  scrubber.setAttribute("aria-valuenow", state.frame);
+  scrubber.setAttribute("aria-valuetext", titleStr);
   // Fill the scrubber track to show playback progress
   const pct = ep.length > 1 ? (state.frame / (ep.length - 1)) * 100 : 0;
-  el("scrubber").style.background =
+  scrubber.style.background =
     `linear-gradient(to right, var(--blue) ${pct}%, var(--border) ${pct}%)`;
 }
 
@@ -1758,11 +1823,13 @@ function stopPlayback() {
   el("play-icon")?.classList.remove("hidden");
   el("pause-icon")?.classList.add("hidden");
   el("fps-badge")?.classList.add("hidden");
+  saveHashState();
 }
 
 function startPlayback() {
   if (!state.episode) return;
   state.playing = true;
+  state.loopCount = 0;
   el("play-icon").classList.add("hidden");
   el("pause-icon").classList.remove("hidden");
 
@@ -1781,7 +1848,9 @@ function startPlayback() {
           const targetFps = (state.episode.fps || 10) * state.speed;
           const diff = fpsBucket - Math.round(targetFps);
           const lagStr = diff < -2 ? ` ⚠${diff}` : "";
-          badge.textContent = `${fpsBucket}/${Math.round(targetFps)} fps${lagStr}`;
+          const loopStr = state.looping && state.loopCount > 0 ? ` ×${state.loopCount}` : "";
+          badge.textContent = `${fpsBucket}/${Math.round(targetFps)} fps${lagStr}${loopStr}`;
+          badge.title = `Actual / target fps${lagStr ? " — ⚠ rendering lag" : ""}${loopStr ? `  •  looped ${state.loopCount}×` : ""}`;
           badge.classList.remove("hidden");
         }
         fpsBucket = 0;
@@ -1789,7 +1858,7 @@ function startPlayback() {
       }
       const next = state.frame + 1;
       if (next >= state.episode.length) {
-        if (state.looping) setFrame(0);
+        if (state.looping) { state.loopCount++; setFrame(0); }
         else { stopPlayback(); return; }
       } else {
         setFrame(next);
@@ -1803,8 +1872,7 @@ function startPlayback() {
 /* ── Restore saved playback preferences ──────────────────── */
 function initPlaybackPreferences() {
   const savedSpeed = parseFloat(localStorage.getItem("speed") || "1");
-  const validSpeeds = [0.25, 0.5, 1, 2, 4];
-  if (validSpeeds.includes(savedSpeed)) {
+  if (SPEEDS.includes(savedSpeed)) {
     state.speed = savedSpeed;
     el("speed-select").value = savedSpeed;
   }
@@ -1944,10 +2012,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (e.key === "+" || e.key === "=") {
       e.preventDefault();
-      const speeds = [0.25, 0.5, 1, 2, 4];
-      const cur = speeds.indexOf(state.speed);
-      if (cur < speeds.length - 1) {
-        state.speed = speeds[cur + 1];
+      const cur = SPEEDS.indexOf(state.speed);
+      if (cur < SPEEDS.length - 1) {
+        state.speed = SPEEDS[cur + 1];
         el("speed-select").value = state.speed;
         if (state.playing) { stopPlayback(); startPlayback(); }
       }
@@ -1955,10 +2022,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (e.key === "-" || e.key === "_") {
       e.preventDefault();
-      const speeds = [0.25, 0.5, 1, 2, 4];
-      const cur = speeds.indexOf(state.speed);
+      const cur = SPEEDS.indexOf(state.speed);
       if (cur > 0) {
-        state.speed = speeds[cur - 1];
+        state.speed = SPEEDS[cur - 1];
         el("speed-select").value = state.speed;
         if (state.playing) { stopPlayback(); startPlayback(); }
       }
@@ -1968,6 +2034,8 @@ document.addEventListener("DOMContentLoaded", () => {
       e.preventDefault();
       state.looping = !state.looping;
       el("btn-loop").classList.toggle("active", state.looping);
+      el("btn-loop").setAttribute("aria-pressed", state.looping);
+      localStorage.setItem("loop", state.looping ? "1" : "0");
       return;
     }
     if (e.key === "h" || e.key === "H") {
@@ -2006,6 +2074,28 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.key === "c" || e.key === "C") {
       e.preventDefault();
       copyEpisodeURL();
+      return;
+    }
+    if (e.key === "x" || e.key === "X") {
+      e.preventDefault();
+      exportCSV();
+      return;
+    }
+    if (e.key === "f" || e.key === "F") {
+      if (!el("cam-lightbox").classList.contains("hidden")) {
+        e.preventDefault();
+        // Fullscreen the lightbox image box
+        const box = el("cam-lightbox").querySelector(".lightbox-box");
+        if (document.fullscreenElement) document.exitFullscreen();
+        else box?.requestFullscreen?.();
+      } else {
+        const slot = el("cam-0");
+        if (slot && document.fullscreenEnabled) {
+          e.preventDefault();
+          if (document.fullscreenElement) document.exitFullscreen();
+          else slot.requestFullscreen?.();
+        }
+      }
       return;
     }
 
@@ -2060,5 +2150,35 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   el("cam-lightbox").addEventListener("click", e => {
     if (e.target === el("cam-lightbox")) el("cam-lightbox").classList.add("hidden");
+  });
+
+  // Swipe to navigate cameras in lightbox
+  {
+    let _touchStartX = 0;
+    const lb = el("cam-lightbox");
+    lb.addEventListener("touchstart", e => { _touchStartX = e.touches[0].clientX; }, { passive: true });
+    lb.addEventListener("touchend", e => {
+      const dx = e.changedTouches[0].clientX - _touchStartX;
+      if (Math.abs(dx) > 40) lightboxNavigate(dx < 0 ? 1 : -1);
+    }, { passive: true });
+  }
+
+  // Auto-collapse sidebar on resize below breakpoint
+  const _mq = window.matchMedia(`(max-width: ${SIDEBAR_BREAKPOINT}px)`);
+  _mq.addEventListener("change", e => {
+    if (e.matches && !el("main").classList.contains("sidebar-collapsed")) {
+      el("main").classList.add("sidebar-collapsed");
+      el("sidebar-toggle").setAttribute("aria-pressed", "true");
+    }
+  });
+
+  // Search input: Escape clears and blurs
+  el("search-input").addEventListener("keydown", e => {
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      el("search-input").value = "";
+      applySearch("");
+      el("search-input").blur();
+    }
   });
 });
