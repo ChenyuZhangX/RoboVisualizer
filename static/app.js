@@ -729,16 +729,17 @@ function buildCorrelationHeatmap(ep) {
   const dims = ep.actions[0].length;
   if (dims < 2) { section.classList.add("hidden"); return; }
 
-  // extract per-dim arrays
   const cols = Array.from({ length: dims }, (_, d) => ep.actions.map(r => r[d]));
-  const names = ep.action_names ?? Array.from({ length: dims }, (_, d) => `a${d}`);
+  // Guard: always produce exactly `dims` labels regardless of names array length
+  const rawNames = ep.action_names ?? [];
+  const labels = Array.from({ length: dims }, (_, d) => {
+    const n = rawNames[d] ?? `a${d}`;
+    return n.length > 7 ? n.slice(0, 6) + "…" : n;
+  });
 
-  // short labels (up to 8 chars)
-  const labels = names.map(n => n.length > 8 ? n.slice(0, 7) + "…" : n);
-
-  const CELL = 36, LABEL_W = 64, PAD = 4;
+  const CELL = 24, LABEL_W = 56, TOP_H = 22, PAD = 2;
   const W = LABEL_W + dims * CELL + PAD;
-  const H = LABEL_W + dims * CELL + PAD;
+  const H = TOP_H + dims * CELL + PAD;
 
   body.innerHTML = "";
   const canvas = document.createElement("canvas");
@@ -748,41 +749,41 @@ function buildCorrelationHeatmap(ep) {
   body.appendChild(canvas);
 
   const ctx = canvas.getContext("2d");
-  ctx.font = "9px -apple-system, sans-serif";
   ctx.textBaseline = "middle";
 
-  // draw cells
+  // draw cells + values
   for (let i = 0; i < dims; i++) {
     for (let j = 0; j < dims; j++) {
       const r = pearson(cols[i], cols[j]);
       ctx.fillStyle = corrColor(r);
-      ctx.fillRect(LABEL_W + j * CELL, PAD + i * CELL, CELL - 1, CELL - 1);
-      ctx.fillStyle = Math.abs(r) > 0.5 ? "rgba(255,255,255,.9)" : "rgba(0,0,0,.6)";
+      ctx.fillRect(LABEL_W + j * CELL, TOP_H + i * CELL, CELL - 1, CELL - 1);
+      ctx.font = "8px ui-monospace, monospace";
+      ctx.fillStyle = Math.abs(r) > 0.55 ? "rgba(255,255,255,.92)" : "rgba(0,0,0,.65)";
       ctx.textAlign = "center";
-      ctx.fillText(r.toFixed(2), LABEL_W + j * CELL + CELL / 2, PAD + i * CELL + CELL / 2);
+      ctx.fillText(r.toFixed(2), LABEL_W + j * CELL + CELL / 2, TOP_H + i * CELL + CELL / 2);
     }
   }
 
-  // row labels (left)
+  // row labels
+  ctx.font = "9px -apple-system, sans-serif";
   ctx.fillStyle = "#64748B";
   ctx.textAlign = "right";
   for (let i = 0; i < dims; i++) {
-    ctx.fillText(labels[i], LABEL_W - 4, PAD + i * CELL + CELL / 2);
+    ctx.fillText(labels[i], LABEL_W - 4, TOP_H + i * CELL + CELL / 2);
   }
 
-  // col labels (top, rotated)
-  ctx.save();
-  ctx.textAlign = "left";
+  // col labels (short, horizontal)
+  ctx.textAlign = "center";
   for (let j = 0; j < dims; j++) {
-    ctx.save();
-    ctx.translate(LABEL_W + j * CELL + CELL / 2, LABEL_W - 4);
-    ctx.rotate(-Math.PI / 4);
-    ctx.fillText(labels[j], 0, 0);
-    ctx.restore();
+    ctx.fillText(labels[j], LABEL_W + j * CELL + CELL / 2, TOP_H / 2);
   }
-  ctx.restore();
 
+  // Show section but keep body collapsed by default (hidden until toggled)
   section.classList.remove("hidden");
+  // Only auto-open if it was already open
+  if (!section.dataset.open) {
+    body.classList.add("corr-collapsed");
+  }
 }
 
 /* ── Playback ────────────────────────────────────────────── */
@@ -875,7 +876,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   el("compare-clear").addEventListener("click", clearCompare);
 
-  el("corr-close").addEventListener("click", () => el("corr-section").classList.add("hidden"));
+  el("corr-close").addEventListener("click", () => {
+    const section = el("corr-section");
+    const body = el("corr-body");
+    const collapsed = body.classList.toggle("corr-collapsed");
+    section.dataset.open = collapsed ? "" : "1";
+    el("corr-close").classList.toggle("active", !collapsed);
+  });
 
   // ── Search filter ─────────────────────────────────────────
   el("search-input").addEventListener("input", e => applySearch(e.target.value));

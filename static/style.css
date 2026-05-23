@@ -534,7 +534,8 @@ body {
 
 /* Correlation heatmap */
 #corr-section { margin-bottom: 10px; }
-#corr-body { overflow-x: auto; }
+#corr-body { overflow-x: auto; padding-top: 4px; }
+#corr-body.corr-collapsed { display: none; }
 #corr-canvas { display: block; }
 
 /* ── Playback Controls ────────────────────────────────────── */
