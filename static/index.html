@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LeRobot Visualizer</title>
-  <link rel="stylesheet" href="/style.css?v=14" />
+  <link rel="stylesheet" href="/style.css?v=15" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -65,135 +65,139 @@
         </div>
 
         <div id="viewer" class="hidden">
-          <!-- Viewer header row -->
-          <div id="viewer-header">
-            <div id="task-label"></div>
-            <div id="viewer-actions">
-              <button id="btn-copy-url" class="icon-btn-sm" title="Copy episode URL  C" aria-label="Copy episode URL">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-              </button>
-              <button id="btn-csv" class="icon-btn-sm" title="Export episode as CSV" aria-label="Export CSV">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-              </button>
-              <button id="btn-normalize" class="icon-btn-sm active" title="Toggle normalization  N" aria-label="Toggle normalization" aria-pressed="true">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="12" x2="2" y2="12"/><polyline points="16 6 22 12 16 18"/><polyline points="8 6 2 12 8 18"/></svg>
-              </button>
-              <button id="btn-frame-values" class="icon-btn-sm active" title="Toggle frame values panel  V">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
-              </button>
-              <button id="btn-export" class="icon-btn-sm" title="Export current frame as PNG">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              </button>
-            </div>
-          </div>
-
-          <!-- Episode info strip -->
-          <div id="ep-info-strip" class="ep-info-strip hidden"></div>
-
-          <!-- Compare banner -->
-          <div id="compare-banner" class="hidden">
-            <span id="compare-label"></span>
-            <button id="compare-clear" title="Clear comparison">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
-          </div>
-
-          <!-- Camera views -->
-          <div id="cameras"></div>
-
-          <!-- Charts -->
-          <div id="charts-area">
-            <div class="chart-card" id="chart-card-state">
-              <div class="chart-title-bar">
-                <span class="chart-title-text" id="chart-title-state">State</span>
-                <div class="chart-btn-group">
-                  <button class="chart-tool-btn" id="hist-state" title="Toggle histogram">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="12" width="4" height="9"/><rect x="10" y="7" width="4" height="14"/><rect x="17" y="3" width="4" height="18"/></svg>
-                  </button>
-                  <button class="expand-btn" id="expand-state" title="Split by dimension">
-                    <svg class="icon-expand" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-                    <svg class="icon-collapse hidden" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
-                  </button>
-                </div>
+          <div id="viewer-scroll">
+            <!-- Viewer header row -->
+            <div id="viewer-header">
+              <div id="task-label"></div>
+              <div id="viewer-actions">
+                <button id="btn-copy-url" class="icon-btn-sm" title="Copy episode URL  C" aria-label="Copy episode URL">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                </button>
+                <button id="btn-csv" class="icon-btn-sm" title="Export episode as CSV" aria-label="Export CSV">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                </button>
+                <button id="btn-normalize" class="icon-btn-sm active" title="Toggle normalization  N" aria-label="Toggle normalization" aria-pressed="true">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="12" x2="2" y2="12"/><polyline points="16 6 22 12 16 18"/><polyline points="8 6 2 12 8 18"/></svg>
+                </button>
+                <button id="btn-frame-values" class="icon-btn-sm active" title="Toggle frame values panel  V">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+                </button>
+                <button id="btn-export" class="icon-btn-sm" title="Export current frame as PNG">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                </button>
               </div>
-              <div class="chart-body" id="chart-body-state"></div>
             </div>
-            <div class="chart-card" id="chart-card-action">
-              <div class="chart-title-bar">
-                <span class="chart-title-text" id="chart-title-action">Action</span>
-                <div class="chart-btn-group">
-                  <button class="chart-tool-btn" id="hist-action" title="Toggle histogram">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="12" width="4" height="9"/><rect x="10" y="7" width="4" height="14"/><rect x="17" y="3" width="4" height="18"/></svg>
-                  </button>
-                  <button class="expand-btn" id="expand-action" title="Split by dimension">
-                    <svg class="icon-expand" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-                    <svg class="icon-collapse hidden" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
-                  </button>
+
+            <!-- Episode info strip -->
+            <div id="ep-info-strip" class="ep-info-strip hidden"></div>
+
+            <!-- Compare banner -->
+            <div id="compare-banner" class="hidden">
+              <span id="compare-label"></span>
+              <button id="compare-clear" title="Clear comparison">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+
+            <!-- Camera views -->
+            <div id="cameras"></div>
+
+            <!-- Charts -->
+            <div id="charts-area">
+              <div class="chart-card" id="chart-card-state">
+                <div class="chart-title-bar">
+                  <span class="chart-title-text" id="chart-title-state">State</span>
+                  <div class="chart-btn-group">
+                    <button class="chart-tool-btn" id="hist-state" title="Toggle histogram">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="12" width="4" height="9"/><rect x="10" y="7" width="4" height="14"/><rect x="17" y="3" width="4" height="18"/></svg>
+                    </button>
+                    <button class="expand-btn" id="expand-state" title="Split by dimension">
+                      <svg class="icon-expand" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                      <svg class="icon-collapse hidden" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                    </button>
+                  </div>
                 </div>
+                <div class="chart-body" id="chart-body-state"></div>
               </div>
-              <div class="chart-body" id="chart-body-action"></div>
+              <div class="chart-card" id="chart-card-action">
+                <div class="chart-title-bar">
+                  <span class="chart-title-text" id="chart-title-action">Action</span>
+                  <div class="chart-btn-group">
+                    <button class="chart-tool-btn" id="hist-action" title="Toggle histogram">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="12" width="4" height="9"/><rect x="10" y="7" width="4" height="14"/><rect x="17" y="3" width="4" height="18"/></svg>
+                    </button>
+                    <button class="expand-btn" id="expand-action" title="Split by dimension">
+                      <svg class="icon-expand" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                      <svg class="icon-collapse hidden" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="chart-body" id="chart-body-action"></div>
+              </div>
             </div>
+
+            <!-- Correlation heatmap (collapsed by default) -->
+            <div id="corr-section" class="chart-card hidden">
+              <div class="chart-title-bar">
+                <span class="chart-title-text">Action Correlation</span>
+                <button class="expand-btn" id="corr-close" title="Toggle correlation">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                </button>
+              </div>
+              <div id="corr-body" class="corr-collapsed"></div>
+            </div>
+
+            <!-- Time × Dimension action heatmap (collapsed by default) -->
+            <div id="timedim-card" class="chart-card hidden">
+              <div class="chart-title-bar">
+                <span class="chart-title-text">
+                  Action Heatmap
+                  <span style="color:var(--text-3);font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;">time × dim</span>
+                </span>
+                <button class="expand-btn" id="timedim-toggle" title="Toggle heatmap">
+                  <svg class="icon-expand" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                </button>
+              </div>
+              <div id="timedim-body"></div>
+            </div>
+
+            <!-- Frame values panel -->
+            <div id="frame-values-panel" class="frame-values-panel hidden"></div>
           </div>
 
-          <!-- Correlation heatmap (collapsed by default) -->
-          <div id="corr-section" class="chart-card hidden">
-            <div class="chart-title-bar">
-              <span class="chart-title-text">Action Correlation</span>
-              <button class="expand-btn" id="corr-close" title="Toggle correlation">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+          <!-- Sticky playback footer -->
+          <div id="viewer-footer">
+            <div id="controls">
+              <button id="btn-prev-ep" class="ctrl-btn" title="Previous episode  [" aria-label="Previous episode">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+              </button>
+              <button id="btn-rewind" class="ctrl-btn" title="Rewind  R" aria-label="Rewind to start">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M11 19V5l-9 7 9 7zm9-14v14l-9-7 9-7z"/></svg>
+              </button>
+              <button id="btn-play" class="ctrl-btn primary" title="Play/Pause  Space" aria-label="Play or pause">
+                <svg id="play-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+                <svg id="pause-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" class="hidden"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+              </button>
+              <button id="btn-loop" class="ctrl-btn" title="Toggle loop  L" aria-label="Toggle loop" aria-pressed="false">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+              </button>
+              <button id="btn-next-ep" class="ctrl-btn" title="Next episode  ]" aria-label="Next episode">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zm2-6 6-4.33v8.67L8 12zm8-6h2v12h-2z"/></svg>
+              </button>
+              <select id="speed-select" title="Playback speed">
+                <option value="0.25">0.25×</option>
+                <option value="0.5">0.5×</option>
+                <option value="1" selected>1×</option>
+                <option value="2">2×</option>
+                <option value="4">4×</option>
+              </select>
+              <input type="range" id="scrubber" min="0" value="0" step="1" aria-label="Frame scrubber" />
+              <span id="fps-badge" class="fps-badge hidden" aria-live="off"></span>
+              <span id="frame-counter" class="frame-count" role="status" aria-label="Frame position">0 / 0</span>
+              <button id="btn-shortcuts" class="ctrl-btn" title="Keyboard shortcuts  ?">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/></svg>
               </button>
             </div>
-            <div id="corr-body" class="corr-collapsed"></div>
-          </div>
-
-          <!-- Time × Dimension action heatmap (collapsed by default) -->
-          <div id="timedim-card" class="chart-card hidden">
-            <div class="chart-title-bar">
-              <span class="chart-title-text">
-                Action Heatmap
-                <span style="color:var(--text-3);font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;">time × dim</span>
-              </span>
-              <button class="expand-btn" id="timedim-toggle" title="Toggle heatmap">
-                <svg class="icon-expand" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-              </button>
-            </div>
-            <div id="timedim-body"></div>
-          </div>
-
-          <!-- Frame values panel -->
-          <div id="frame-values-panel" class="frame-values-panel hidden"></div>
-
-          <!-- Playback controls -->
-          <div id="controls">
-            <button id="btn-prev-ep" class="ctrl-btn" title="Previous episode  [" aria-label="Previous episode">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
-            </button>
-            <button id="btn-rewind" class="ctrl-btn" title="Rewind  R" aria-label="Rewind to start">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M11 19V5l-9 7 9 7zm9-14v14l-9-7 9-7z"/></svg>
-            </button>
-            <button id="btn-play" class="ctrl-btn primary" title="Play/Pause  Space" aria-label="Play or pause">
-              <svg id="play-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
-              <svg id="pause-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" class="hidden"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-            </button>
-            <button id="btn-loop" class="ctrl-btn" title="Toggle loop  L" aria-label="Toggle loop" aria-pressed="false">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-            </button>
-            <button id="btn-next-ep" class="ctrl-btn" title="Next episode  ]" aria-label="Next episode">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zm2-6 6-4.33v8.67L8 12zm8-6h2v12h-2z"/></svg>
-            </button>
-            <select id="speed-select" title="Playback speed">
-              <option value="0.25">0.25×</option>
-              <option value="0.5">0.5×</option>
-              <option value="1" selected>1×</option>
-              <option value="2">2×</option>
-              <option value="4">4×</option>
-            </select>
-            <input type="range" id="scrubber" min="0" value="0" step="1" aria-label="Frame scrubber" />
-            <span id="fps-badge" class="fps-badge hidden" aria-live="off"></span>
-            <span id="frame-counter" class="frame-count" role="status" aria-label="Frame position">0 / 0</span>
-            <button id="btn-shortcuts" class="ctrl-btn" title="Keyboard shortcuts  ?">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/></svg>
-            </button>
           </div>
         </div>
       </main>
@@ -213,10 +217,13 @@
         <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>Prev / Next episode</td></tr>
         <tr><td><kbd>←</kbd> <kbd>→</kbd> (lightbox)</td><td>Prev / next camera</td></tr>
         <tr><td><kbd>Ctrl</kbd>+click ep</td><td>Compare overlay</td></tr>
+        <tr><td><kbd>G</kbd></td><td>Focus search</td></tr>
         <tr><td><kbd>B</kbd></td><td>Toggle sidebar</td></tr>
         <tr><td><kbd>+</kbd> / <kbd>−</kbd></td><td>Speed up / slow down</td></tr>
         <tr><td><kbd>L</kbd></td><td>Toggle loop</td></tr>
         <tr><td><kbd>H</kbd> / <kbd>⇧H</kbd></td><td>Toggle state / action histogram</td></tr>
+        <tr><td><kbd>T</kbd></td><td>Toggle action heatmap</td></tr>
+        <tr><td><kbd>K</kbd></td><td>Toggle correlation matrix</td></tr>
         <tr><td><kbd>N</kbd></td><td>Toggle normalization</td></tr>
         <tr><td><kbd>C</kbd></td><td>Copy episode URL</td></tr>
         <tr><td><kbd>V</kbd></td><td>Toggle frame values panel</td></tr>
@@ -235,6 +242,6 @@
     </div>
   </div>
 
-  <script src="/app.js?v=14"></script>
+  <script src="/app.js?v=15"></script>
 </body>
 </html>

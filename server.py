@@ -9,6 +9,7 @@ from typing import Optional
 
 import pyarrow.parquet as pq
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from PIL import Image
@@ -26,19 +27,29 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 app = FastAPI(title="LeRobot Visualizer")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
+
 # ── Parquet table cache (LRU, max 24 tables) ─────────────────────────────────
 _TABLE_CACHE: OrderedDict = OrderedDict()
 _TABLE_CACHE_MAX = 24
 
 
 def read_parquet_cached(path: Path, columns: list[str] | None = None):
-    """Read a parquet file, caching the full table keyed by path."""
+    """Read a parquet file with LRU caching. Raises HTTPException on corrupt files."""
     key = str(path)
     if key in _TABLE_CACHE:
         _TABLE_CACHE.move_to_end(key)
         table = _TABLE_CACHE[key]
     else:
-        table = pq.read_table(path)
+        try:
+            table = pq.read_table(path)
+        except Exception as exc:
+            raise HTTPException(500, f"Failed to read parquet: {exc}") from exc
         _TABLE_CACHE[key] = table
         _TABLE_CACHE.move_to_end(key)
         if len(_TABLE_CACHE) > _TABLE_CACHE_MAX:
@@ -121,6 +132,21 @@ def list_datasets():
                 "fps": info.get("fps", 10),
             })
     return results
+
+
+@app.get("/api/datasets/{dataset}/meta")
+def get_dataset_meta(dataset: str):
+    base = get_dataset_path(dataset)
+    info = json.loads((base / "meta" / "info.json").read_text())
+    return {
+        "name": dataset,
+        "total_episodes": info.get("total_episodes", 0),
+        "total_tasks": info.get("total_tasks", 0),
+        "robot_type": info.get("robot_type", "unknown"),
+        "fps": info.get("fps", 10),
+        "features": info.get("features", {}),
+        "chunks_size": info.get("chunks_size", 1000),
+    }
 
 
 @app.get("/api/datasets/{dataset}/tasks")

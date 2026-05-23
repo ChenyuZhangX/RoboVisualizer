@@ -69,7 +69,10 @@ function applyDark(isDark, save = true) {
   el("dark-mode-btn").querySelector(".icon-sun").classList.toggle("hidden", !isDark);
   if (save) {
     localStorage.setItem("darkMode", isDark ? "1" : "0");
-    if (state.episode) buildCharts(state.episode);
+    if (state.episode) {
+      buildCharts(state.episode);
+      if (!el("timedim-card").classList.contains("hidden")) buildTimeDimHeatmap(state.episode);
+    }
   }
 }
 
@@ -392,9 +395,16 @@ function applySearch(query) {
 }
 
 /* ── Episode loading ─────────────────────────────────────── */
+let _loadingEpKey = null;
+
 async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
+  const key = `${dsPath}::${epIndex}`;
+  if (_loadingEpKey === key) return;
+  _loadingEpKey = key;
+
   document.querySelectorAll(".ep-item.active").forEach(e => e.classList.remove("active"));
   clickedEl?.classList.add("active");
+  clickedEl?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   stopPlayback();
 
   state.currentEpListIdx = state.episodeList.findIndex(
@@ -439,8 +449,13 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
     updateTopbarBreadcrumb();
     saveHashState();
   } catch (e) {
-    el("task-label").textContent = `Error: ${e.message}`;
+    el("task-label").innerHTML =
+      `<span style="color:var(--amber-dk)">Load failed:</span>` +
+      `<span style="font-weight:400;color:var(--text-2);margin-left:6px">${e.message}</span>`;
     el("ep-info-strip").classList.add("hidden");
+    state.episode = null;
+  } finally {
+    if (_loadingEpKey === key) _loadingEpKey = null;
   }
 }
 
@@ -694,22 +709,25 @@ function exportCSV() {
   const sNames = ep.state_names ?? ep.state?.[0]?.map((_, i) => `state_${i}`) ?? [];
   const aNames = ep.action_names ?? ep.actions?.[0]?.map((_, i) => `action_${i}`) ?? [];
 
-  const headerParts = ["timestamp", ...sNames.map(n => `state.${n}`), ...aNames.map(n => `action.${n}`)];
+  const headerParts = ["frame_index", "timestamp", ...sNames.map(n => `state.${n}`), ...aNames.map(n => `action.${n}`)];
   const rows = [headerParts.join(",")];
 
   for (let f = 0; f < ep.length; f++) {
-    const ts = ep.timestamps?.[f]?.toFixed(6) ?? f;
-    const sRow = ep.state?.[f]?.join(",") ?? "";
-    const aRow = ep.actions?.[f]?.join(",") ?? "";
-    rows.push([ts, sRow, aRow].filter(x => x !== "").join(","));
+    const ts = ep.timestamps?.[f]?.toFixed(6) ?? "";
+    const sRow = ep.state?.[f]?.map(v => v.toFixed(6)).join(",") ?? "";
+    const aRow = ep.actions?.[f]?.map(v => v.toFixed(6)).join(",") ?? "";
+    rows.push([f, ts, sRow, aRow].filter(x => x !== "").join(","));
   }
 
   const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = `ep_${String(state.activeEpIndex).padStart(6,"0")}.csv`;
+  a.href = url;
+  a.download = `${state.activeDataset}__ep_${String(state.activeEpIndex).padStart(6,"0")}.csv`;
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(a.href);
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
 /* ── Copy episode URL to clipboard ───────────────────────── */
@@ -1183,8 +1201,9 @@ function buildTimeDimHeatmap(ep) {
       ctx.fillRect(TIMEDIM_LABEL_W + f * cellW, y0, Math.ceil(cellW), TIMEDIM_CELL_H - 1);
     }
 
+    const isDark = document.documentElement.classList.contains("dark");
     ctx.font = "9px -apple-system, sans-serif";
-    ctx.fillStyle = "#64748B";
+    ctx.fillStyle = isDark ? "#94A3B8" : "#64748B";
     ctx.textAlign = "right";
     ctx.textBaseline = "middle";
     ctx.fillText(labels[d], TIMEDIM_LABEL_W - 4, y0 + TIMEDIM_CELL_H / 2);
@@ -1450,6 +1469,7 @@ function updateScrubber() {
   const tsEnd = ts?.[ep.length - 1]?.toFixed(2) ?? null;
   const tsStr = tsCur !== null ? `  •  ${tsCur}s / ${tsEnd}s` : "";
   el("frame-counter").textContent = `${state.frame} / ${ep.length - 1}${tsStr}`;
+  el("scrubber").title = tsCur != null ? `${tsCur}s` : `frame ${state.frame}`;
   // Fill the scrubber track to show playback progress
   const pct = ep.length > 1 ? (state.frame / (ep.length - 1)) * 100 : 0;
   el("scrubber").style.background =
@@ -1561,6 +1581,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const nowCollapsed = body.classList.toggle("timedim-collapsed");
     card.dataset.open = nowCollapsed ? "" : "1";
     el("timedim-toggle").classList.toggle("active", !nowCollapsed);
+    if (!nowCollapsed && state.episode) buildTimeDimHeatmap(state.episode);
   });
 
   // Search
@@ -1588,6 +1609,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (e.key === "b" || e.key === "B") {
       e.preventDefault(); toggleSidebar(); return;
+    }
+
+    if (e.key === "g" || e.key === "G") {
+      e.preventDefault();
+      el("search-input").focus();
+      el("search-input").select();
+      return;
     }
 
     if (!state.episode && !["[", "]"].includes(e.key)) return;
@@ -1623,6 +1651,16 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.key === "h" || e.key === "H") {
       e.preventDefault();
       toggleHistogram(e.shiftKey ? "action" : "state");
+      return;
+    }
+    if (e.key === "t" || e.key === "T") {
+      e.preventDefault();
+      el("timedim-toggle")?.click();
+      return;
+    }
+    if (e.key === "k" || e.key === "K") {
+      e.preventDefault();
+      el("corr-close")?.click();
       return;
     }
     if (e.key === "v" || e.key === "V") {
