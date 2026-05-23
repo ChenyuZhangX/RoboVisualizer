@@ -3,9 +3,12 @@ from __future__ import annotations
 import json
 import base64
 import io
+import time
 from collections import OrderedDict
 from pathlib import Path
 from typing import Optional
+
+_SERVER_START_TIME = time.time()
 
 # ── Info.json cache (small dict, no eviction needed) ─────────────────────────
 _INFO_CACHE: dict[str, dict] = {}
@@ -138,11 +141,14 @@ def extract_video_frame(video_path: Path, frame_index: int) -> str | None:
 
 @app.get("/api/health")
 def health():
+    dataset_count = sum(1 for d in DATA_DIR.iterdir() if d.is_dir() and is_valid_dataset(d)) if DATA_DIR.exists() else 0
     return {
         "status": "ok",
         "data_dir": str(DATA_DIR),
         "data_dir_exists": DATA_DIR.exists(),
+        "dataset_count": dataset_count,
         "video_support": _HAS_CV2,
+        "uptime_s": round(time.time() - _SERVER_START_TIME, 1),
         "cache_parquet": len(_TABLE_CACHE),
         "cache_info": len(_INFO_CACHE),
         "cache_tasks": len(_TASKS_CACHE),
@@ -152,12 +158,17 @@ def health():
 
 @app.post("/api/cache/clear")
 def clear_cache():
-    count = len(_TABLE_CACHE)
+    counts = {
+        "parquet": len(_TABLE_CACHE),
+        "info": len(_INFO_CACHE),
+        "tasks": len(_TASKS_CACHE),
+        "episodes": len(_EPISODES_CACHE),
+    }
     _TABLE_CACHE.clear()
     _INFO_CACHE.clear()
     _TASKS_CACHE.clear()
     _EPISODES_CACHE.clear()
-    return {"cleared": count}
+    return {"cleared": counts, "total": sum(counts.values())}
 
 
 @app.get("/api/datasets")
@@ -189,6 +200,11 @@ def list_datasets():
 def get_dataset_meta(dataset: str):
     base = get_dataset_path(dataset)
     info = read_info_cached(base)
+    # Include total_frames if episodes cache is populated
+    total_frames: Optional[int] = None
+    key = str(base)
+    if key in _EPISODES_CACHE:
+        total_frames = sum(ep.get("length", 0) for ep in _EPISODES_CACHE[key])
     return {
         "name": dataset,
         "total_episodes": info.get("total_episodes", 0),
@@ -197,6 +213,7 @@ def get_dataset_meta(dataset: str):
         "fps": info.get("fps", 10),
         "features": info.get("features", {}),
         "chunks_size": info.get("chunks_size", 1000),
+        "total_frames": total_frames,
     }
 
 

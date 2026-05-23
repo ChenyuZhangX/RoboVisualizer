@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v30
+   LeRobot Visualizer — app.js  v31
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -196,6 +196,7 @@ function applyDark(isDark, save = true) {
   document.documentElement.classList.toggle("dark", isDark);
   el("dark-mode-btn").querySelector(".icon-moon").classList.toggle("hidden", isDark);
   el("dark-mode-btn").querySelector(".icon-sun").classList.toggle("hidden", !isDark);
+  el("dark-mode-btn").setAttribute("aria-pressed", isDark);
   if (save) {
     localStorage.setItem("darkMode", isDark ? "1" : "0");
     if (state.episode) {
@@ -504,6 +505,8 @@ function updateSidebarFooter(numDatasets, totalEps, datasets = []) {
 function buildDatasetNode(ds) {
   const node = document.createElement("div");
   node.className = "ds-node";
+  node.setAttribute("role", "treeitem");
+  node.setAttribute("aria-label", ds.name);
   const robotStr = ds.robot_type && ds.robot_type !== "unknown" ? ` • ${escapeHTML(ds.robot_type)}` : "";
   const metaTitle = `${ds.name}${robotStr} • ${ds.total_episodes} episodes • ${ds.fps} fps`;
   const subtitleParts = [`${ds.fps} fps`];
@@ -582,7 +585,7 @@ function buildTaskNode(dsPath, task, allLengths = [], fps = 10) {
       <span class="task-avg-len" title="Average episode length">${avgLen}f</span>
       <span class="ep-count">${task.episodes.length}</span>
     </div>
-    <div class="task-eps"></div>`;
+    <div class="task-eps" role="listbox" aria-label="Episodes for task"></div>`;
 
   const header = group.querySelector(".task-header");
   const epsContainer = group.querySelector(".task-eps");
@@ -600,6 +603,7 @@ function buildTaskNode(dsPath, task, allLengths = [], fps = 10) {
 
     item.tabIndex = 0;
     item.setAttribute("role", "option");
+    item.setAttribute("aria-selected", "false");
     item.setAttribute("aria-label", `Episode ${ep.episode_index}, ${ep.length} frames`);
     item.dataset.length = ep.length;
     const epDurStr = formatDuration(ep.length / fps);
@@ -797,9 +801,15 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
   if (_loadingEpKey === key) return;
   _loadingEpKey = key;
 
-  document.querySelectorAll(".ep-item.active").forEach(e => e.classList.remove("active"));
-  clickedEl?.classList.add("active");
-  clickedEl?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  document.querySelectorAll(".ep-item.active").forEach(e => {
+    e.classList.remove("active");
+    e.setAttribute("aria-selected", "false");
+  });
+  if (clickedEl) {
+    clickedEl.classList.add("active");
+    clickedEl.setAttribute("aria-selected", "true");
+    clickedEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
   stopPlayback();
 
   state.currentEpListIdx = state.episodeList.findIndex(
@@ -826,6 +836,7 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
 
   el("welcome").classList.add("hidden");
   el("viewer").classList.remove("hidden");
+  el("viewer").setAttribute("aria-busy", "true");
   el("viewer-loader")?.classList.remove("hidden");
   const displayTask = taskText?.length > 80 ? taskText.slice(0, 77) + "…" : (taskText ?? "");
   el("task-label").textContent = displayTask;
@@ -870,12 +881,14 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
     el("charts-area").style.opacity = "";
     el("charts-area").style.pointerEvents = "";
     el("viewer-loader")?.classList.add("hidden");
+    el("viewer").setAttribute("aria-busy", "false");
     // Enable export buttons now that episode is loaded
     el("btn-export").disabled = false;
     el("btn-csv").disabled = false;
     el("btn-frame-values").disabled = false;
   } catch (e) {
     el("viewer-loader")?.classList.add("hidden");
+    el("viewer").setAttribute("aria-busy", "false");
     const retryBtn = `<button onclick="selectEpisode(${JSON.stringify(dsPath)},${epIndex},${JSON.stringify(taskText)},document.querySelector('.ep-item.active'))" style="margin-left:10px;background:var(--bg-3);border:1px solid var(--border);border-radius:4px;padding:1px 8px;font-size:11px;cursor:pointer;color:var(--text-2)">Retry</button>`;
     el("task-label").innerHTML =
       `<span style="color:var(--amber-dk)">Load failed:</span>` +
@@ -923,6 +936,24 @@ function updateEpInfoStrip(ep) {
     (aDims ? `<span class="info-chip">action ${aDims}D</span>` : "");
 }
 
+function randomEpisode() {
+  const list = state.episodeList;
+  if (!list.length) return;
+  const excludeIdx = state.currentEpListIdx;
+  // Pick a random index different from the current one
+  let idx;
+  if (list.length > 1) {
+    do { idx = Math.floor(Math.random() * list.length); } while (idx === excludeIdx);
+  } else {
+    idx = 0;
+  }
+  const entry = list[idx];
+  entry.el?.closest(".task-group")?.classList.add("open");
+  entry.el?.closest(".ds-node")?.classList.add("open");
+  selectEpisode(entry.dsPath, entry.epIndex, entry.taskText, entry.el);
+  requestAnimationFrame(() => entry.el?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+}
+
 function prevEpisode() {
   const idx = state.currentEpListIdx;
   if (idx <= 0) return;
@@ -948,7 +979,9 @@ function updatePrevNextButtons() {
   const hasPrev = idx > 0;
   const hasNext = idx >= 0 && idx < state.episodeList.length - 1;
   el("btn-prev-ep").disabled = !hasPrev;
+  el("btn-prev-ep").setAttribute("aria-disabled", !hasPrev);
   el("btn-next-ep").disabled = !hasNext;
+  el("btn-next-ep").setAttribute("aria-disabled", !hasNext);
   if (hasPrev) {
     const prev = state.episodeList[idx - 1];
     el("btn-prev-ep").title = `Previous episode: ep_${String(prev.epIndex).padStart(6, "0")}  [`;
@@ -990,8 +1023,10 @@ async function selectCompareEpisode(dsPath, epIndex, clickedEl) {
     const lenDiffStr = lenDiff !== 0 ? ` (${lenDiff > 0 ? "+" : ""}${lenDiff}f)` : "";
     el("compare-label").textContent =
       `Comparing ep_${String(epIndex).padStart(6, "0")}${cmpDs} — ${cmpEp.length}f${cmpDurStr}${lenDiffStr}${taskHint} — dashed overlay`;
-  } catch (_) {
+    showCopyToast(`✓ Comparing ep_${String(epIndex).padStart(6, "0")}`, "success");
+  } catch (e) {
     state.compareEpisode = null;
+    showCopyToast(`Failed to load compare episode: ${e.message}`, "error");
   }
 }
 
@@ -1096,6 +1131,15 @@ function openLightbox(src, label, camIdx = -1) {
   });
 }
 
+function downloadLightboxFrame() {
+  const img = el("lightbox-img");
+  if (!img?.src) return;
+  const camIdx = parseInt(el("cam-lightbox")?.dataset.camIdx ?? "-1", 10);
+  const key = state.episode?.image_keys?.[camIdx] ?? "frame";
+  _downloadDataURI(img.src, `${key}_ep${state.activeEpIndex}_f${state.frame}.jpg`);
+  showCopyToast(`✓ Saved ${key} frame ${state.frame}`, "success");
+}
+
 function lightboxNavigate(delta) {
   const overlay = el("cam-lightbox");
   if (overlay.classList.contains("hidden")) return;
@@ -1132,8 +1176,16 @@ function renderFrameData(keys, frames) {
     slot.tabIndex = 0;
     slot.setAttribute("role", "button");
     slot.setAttribute("aria-label", `Camera view: ${key.replace(/_/g, " ")} — press Enter to expand`);
-    slot.title = key.replace(/_/g, " ") + " — click to expand · double-click for fullscreen · Enter to expand";
-    slot.onclick = () => openLightbox(src, key.replace(/_/g, " "), i);
+    slot.title = key.replace(/_/g, " ") + " — click to expand · Ctrl+click to download · double-click for fullscreen · Enter to expand";
+    slot.onclick = e => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        _downloadDataURI(src, `${key}_ep${state.activeEpIndex}_f${state.frame}.jpg`);
+        showCopyToast(`✓ Saved ${key} frame ${state.frame}`, "success");
+      } else {
+        openLightbox(src, key.replace(/_/g, " "), i);
+      }
+    };
     slot.onkeydown = e => {
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openLightbox(src, key.replace(/_/g, " "), i); }
     };
@@ -1265,9 +1317,11 @@ function exportFrame() {
           const a = document.createElement("a");
           a.href = URL.createObjectURL(blob);
           const dsSlug = (state.activeDataset ?? "").replace(/[^a-z0-9_-]/gi, "_").slice(0, 32);
-          a.download = `${dsSlug}__ep${String(state.activeEpIndex).padStart(6,"0")}_f${String(state.frame).padStart(4,"0")}.png`;
+          const dlName = `${dsSlug}__ep${String(state.activeEpIndex).padStart(6,"0")}_f${String(state.frame).padStart(4,"0")}.png`;
+          a.download = dlName;
           a.click();
           URL.revokeObjectURL(a.href);
+          showCopyToast(`✓ Saved ${dlName}`, "success");
         });
       }
     };
@@ -1328,29 +1382,41 @@ function exportCSV() {
   const ep = state.episode;
   if (!ep) return;
 
+  // Proper CSV quoting: wrap in quotes if contains comma, quote, or newline
+  const csvCell = v => {
+    const s = String(v);
+    return (s.includes(",") || s.includes('"') || s.includes("\n"))
+      ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+
   const sNames = ep.state_names ?? ep.state?.[0]?.map((_, i) => `state_${i}`) ?? [];
   const aNames = ep.action_names ?? ep.actions?.[0]?.map((_, i) => `action_${i}`) ?? [];
 
-  const headerParts = ["frame_index", "timestamp", ...sNames.map(n => `state.${n}`), ...aNames.map(n => `action.${n}`)];
-  const rows = [headerParts.join(",")];
+  const header = ["frame_index", "timestamp",
+    ...sNames.map(n => `state.${n}`),
+    ...aNames.map(n => `action.${n}`),
+  ].map(csvCell).join(",");
 
+  const lines = [header];
   for (let f = 0; f < ep.length; f++) {
-    const ts = ep.timestamps?.[f]?.toFixed(6) ?? "";
-    const sRow = ep.state?.[f]?.map(v => v.toFixed(6)).join(",") ?? "";
-    const aRow = ep.actions?.[f]?.map(v => v.toFixed(6)).join(",") ?? "";
-    rows.push([f, ts, sRow, aRow].filter(x => x !== "").join(","));
+    const row = [f, ep.timestamps?.[f]?.toFixed(6) ?? ""];
+    ep.state?.[f]?.forEach(v => row.push(v.toFixed(6)));
+    ep.actions?.[f]?.forEach(v => row.push(v.toFixed(6)));
+    lines.push(row.map(csvCell).join(","));
   }
 
-  const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+  const dsSlug = (state.activeDataset ?? "").replace(/[^a-z0-9_-]/gi, "_").slice(0, 32);
+  const blob = new Blob([lines.join("\n")], { type: "text/csv" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `${state.activeDataset}__ep_${String(state.activeEpIndex).padStart(6,"0")}.csv`;
+  const fname = `${dsSlug}__ep${String(state.activeEpIndex).padStart(6,"0")}.csv`;
+  a.download = fname;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 5000);
-  showCopyToast("✓ CSV exported", "success");
+  showCopyToast(`✓ Exported ${fname}`, "success");
 }
 
 /* ── Copy episode URL to clipboard ───────────────────────── */
@@ -1424,6 +1490,71 @@ async function copyCurrentFrameJSON() {
     document.body.removeChild(inp);
   }
   showCopyToast(`✓ Frame ${f} values copied as JSON`, "success");
+}
+
+/* ── Download chart as PNG ───────────────────────────────── */
+function downloadChart(type) {
+  const charts = type === "state" ? state.stateCharts : state.actionCharts;
+  const ep = state.episode;
+  const suffix = ep
+    ? `_${state.activeDataset || "dataset"}_ep${String(state.activeEpIndex ?? 0).padStart(6, "0")}`
+    : "";
+  const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+
+  // If expanded (multiple mini-charts), zip them or just export each
+  if (!charts.length) { showCopyToast("No chart to download", "error"); return; }
+
+  if (charts.length === 1) {
+    const filename = `lerobot_${type}${suffix}_${ts}.png`;
+    _exportCanvasPNG(charts[0].canvas, filename);
+    showCopyToast(`✓ Downloaded ${filename.split("/").pop()}`, "success");
+  } else {
+    // Export all mini-charts as separate PNGs
+    charts.forEach((c, i) => {
+      const name = ep?.[`${type === "state" ? "state" : "action"}_names`]?.[i] ?? `dim_${i}`;
+      const safe = name.replace(/[^a-zA-Z0-9_-]/g, "_");
+      setTimeout(() => _exportCanvasPNG(c.canvas, `lerobot_${type}_${safe}${suffix}_${ts}.png`), i * 30);
+    });
+    showCopyToast(`✓ Downloading ${charts.length} charts…`, "success");
+  }
+}
+
+function downloadCorr() {
+  const canvas = el("corr-canvas");
+  if (!canvas) { showCopyToast("Show the correlation matrix first", "error"); return; }
+  const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+  const fname = `lerobot_corr_${state.activeDataset || "dataset"}_ep${state.activeEpIndex ?? 0}_${ts}.png`;
+  _exportCanvasPNG(canvas, fname);
+  showCopyToast(`✓ Downloaded ${fname.split("/").pop()}`, "success");
+}
+
+function downloadTimedim() {
+  const canvas = el("timedim-canvas");
+  if (!canvas) { showCopyToast("Show the action heatmap first", "error"); return; }
+  const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+  const fname = `lerobot_heatmap_${state.activeDataset || "dataset"}_ep${state.activeEpIndex ?? 0}_${ts}.png`;
+  _exportCanvasPNG(canvas, fname);
+  showCopyToast(`✓ Downloaded ${fname.split("/").pop()}`, "success");
+}
+
+function _exportCanvasPNG(canvas, filename) {
+  if (!canvas) return;
+  try {
+    const url = canvas.toDataURL("image/png");
+    _downloadDataURI(url, filename);
+  } catch (e) {
+    showCopyToast("Export failed: " + e.message, "error");
+  }
+}
+
+function _downloadDataURI(dataURI, filename) {
+  const a = document.createElement("a");
+  a.href = dataURI;
+  a.download = filename;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 function showCopyToast(msg = "Copied to clipboard", type = "info") {
@@ -2253,12 +2384,26 @@ function initFrameCounterJump() {
   });
 }
 
+/* ── Frame values sort ───────────────────────────────────── */
+let _fvSortActive = false;
+
+function toggleFrameValuesSort() {
+  _fvSortActive = !_fvSortActive;
+  const btn = document.getElementById("fv-sort-btn");
+  if (btn) {
+    btn.classList.toggle("active", _fvSortActive);
+    btn.title = _fvSortActive ? "Sort by |value| (click to restore order)" : "Sort by absolute value";
+  }
+  updateFrameValues();
+}
+
 /* ── Frame values panel toggle ───────────────────────────── */
 function toggleFrameValuesPanel() {
   const panel = el("frame-values-panel");
   if (!panel) return;
   const hidden = panel.classList.toggle("fv-collapsed");
   el("btn-frame-values")?.classList.toggle("active", !hidden);
+  el("btn-frame-values")?.setAttribute("aria-pressed", String(!hidden));
 }
 
 /* ── TimeDim tooltip ─────────────────────────────────────── */
@@ -2321,18 +2466,25 @@ function buildFrameValuesPanel(ep) {
 
   panel.innerHTML = "";
 
-  // Panel header with "Copy all" button
+  // Panel header with sort + copy buttons
   {
     const hdr = document.createElement("div");
     hdr.className = "fv-panel-header";
     hdr.innerHTML =
       `<span class="fv-panel-title">Frame Values</span>` +
-      `<button class="fv-copy-all-btn" title="Copy all current frame values as JSON  Ctrl+Shift+C" id="fv-copy-all">` +
-        `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>` +
-        ` Copy all` +
-      `</button>`;
+      `<div style="display:flex;gap:4px;align-items:center;">` +
+        `<button class="fv-copy-all-btn${_fvSortActive ? " active" : ""}" id="fv-sort-btn" title="Sort by absolute value">` +
+          `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>` +
+          ` Sort` +
+        `</button>` +
+        `<button class="fv-copy-all-btn" title="Copy all current frame values as JSON  Ctrl+Shift+C" id="fv-copy-all">` +
+          `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>` +
+          ` Copy all` +
+        `</button>` +
+      `</div>`;
     panel.appendChild(hdr);
     hdr.querySelector("#fv-copy-all").addEventListener("click", copyCurrentFrameJSON);
+    hdr.querySelector("#fv-sort-btn").addEventListener("click", toggleFrameValuesSort);
   }
 
   const makeChips = (data2d, dims, names, prefix) => {
@@ -2388,9 +2540,11 @@ function updateFrameValues() {
 
   const updateDim = (prefix, row, nsKey) => {
     if (!row) return;
+    const vals = [];
     row.forEach((v, d) => {
+      const nv = applyNorm(v, nsKey, d);
       const span = document.getElementById(`fv-${prefix}v-${d}`);
-      if (span) span.textContent = applyNorm(v, nsKey, d).toFixed(4);
+      if (span) span.textContent = nv.toFixed(4);
       const bar = document.getElementById(`fv-${prefix}b-${d}`);
       if (bar) {
         const chip = document.getElementById(`fv-${prefix}-${d}`);
@@ -2399,7 +2553,21 @@ function updateFrameValues() {
         const pct = mx !== mn ? clamp((v - mn) / (mx - mn), 0, 1) * 100 : 50;
         bar.style.width = pct + "%";
       }
+      vals.push({ d, abs: Math.abs(nv) });
     });
+    // Apply CSS ordering when sort is active
+    if (_fvSortActive) {
+      vals.sort((a, b) => b.abs - a.abs);
+      vals.forEach(({ d }, order) => {
+        const chip = document.getElementById(`fv-${prefix}-${d}`);
+        if (chip) chip.style.order = order;
+      });
+    } else {
+      vals.forEach(({ d }) => {
+        const chip = document.getElementById(`fv-${prefix}-${d}`);
+        if (chip) chip.style.order = "";
+      });
+    }
   };
 
   updateDim("s", ep.state?.[f], "state");
@@ -2408,8 +2576,13 @@ function updateFrameValues() {
 
 /* ── Playback ────────────────────────────────────────────── */
 function setupControls(ep) {
-  el("scrubber").max = ep.length - 1;
-  el("scrubber").value = 0;
+  const scrubber = el("scrubber");
+  scrubber.max = ep.length - 1;
+  scrubber.value = 0;
+  scrubber.setAttribute("aria-valuemin", "0");
+  scrubber.setAttribute("aria-valuemax", ep.length - 1);
+  scrubber.setAttribute("aria-valuenow", "0");
+  scrubber.setAttribute("aria-valuetext", "frame 0");
   el("frame-counter").textContent = `0 / ${ep.length - 1}`;
 }
 
@@ -2612,12 +2785,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
   el("compare-clear").addEventListener("click", clearCompare);
 
-  // Click task-label to copy the task description
-  el("task-label").addEventListener("click", async () => {
+  // Click / Enter task-label to copy the task description
+  const _copyTaskLabel = async () => {
     const txt = el("task-label").textContent.trim();
     if (!txt || state.episode == null) return;
     try { await navigator.clipboard.writeText(txt); } catch (_) {}
     showCopyToast("✓ Task copied", "success");
+  };
+  el("task-label").addEventListener("click", _copyTaskLabel);
+  el("task-label").addEventListener("keydown", e => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); _copyTaskLabel(); }
   });
   el("task-label").title = "Click to copy task description";
 
@@ -2657,7 +2834,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (e.key === "?" && !inInput) {
       e.preventDefault();
-      el("shortcuts-modal").classList.toggle("hidden");
+      const modal = el("shortcuts-modal");
+      const nowHidden = modal.classList.toggle("hidden");
+      el("btn-shortcuts").setAttribute("aria-expanded", String(!nowHidden));
       return;
     }
 
@@ -2793,6 +2972,16 @@ document.addEventListener("DOMContentLoaded", () => {
       exportJSON();
       return;
     }
+    if (e.key === "d" || e.key === "D") {
+      e.preventDefault();
+      // D in lightbox: download current camera frame; outside lightbox: download current frame as PNG
+      if (!el("cam-lightbox").classList.contains("hidden")) {
+        downloadLightboxFrame();
+      } else {
+        exportFrame();
+      }
+      return;
+    }
     if (e.key === "i" || e.key === "I") {
       e.preventDefault();
       el("ep-info-strip").classList.toggle("hidden");
@@ -2880,7 +3069,15 @@ document.addEventListener("DOMContentLoaded", () => {
         stopPlayback();
         setFrame(state.frame + (e.shiftKey ? 100 : 50));
         break;
-      case "r": case "R": case "Home":
+      case "r": case "R":
+        e.preventDefault();
+        if (e.shiftKey) {
+          randomEpisode();
+        } else {
+          stopPlayback(); setFrame(0);
+        }
+        break;
+      case "Home":
         e.preventDefault();
         stopPlayback(); setFrame(0);
         break;
@@ -2915,16 +3112,28 @@ document.addEventListener("DOMContentLoaded", () => {
       case "Escape":
         if (state.compareEpisode) { e.preventDefault(); clearCompare(); }
         el("shortcuts-modal").classList.add("hidden");
+        el("btn-shortcuts").setAttribute("aria-expanded", "false");
         el("cam-lightbox").classList.add("hidden");
         break;
     }
   });
 
   el("btn-shortcuts").addEventListener("click", () => {
-    el("shortcuts-modal").classList.toggle("hidden");
+    const modal = el("shortcuts-modal");
+    const nowHidden = modal.classList.toggle("hidden"); // true = modal is now hidden
+    el("btn-shortcuts").setAttribute("aria-expanded", String(!nowHidden));
+    if (!nowHidden) {
+      // Modal just opened — focus the box for keyboard nav
+      const box = modal.querySelector(".modal-box");
+      if (box && !box.hasAttribute("tabindex")) box.setAttribute("tabindex", "-1");
+      requestAnimationFrame(() => box?.focus());
+    }
   });
   el("shortcuts-modal").addEventListener("click", e => {
-    if (e.target === el("shortcuts-modal")) el("shortcuts-modal").classList.add("hidden");
+    if (e.target === el("shortcuts-modal")) {
+      el("shortcuts-modal").classList.add("hidden");
+      el("btn-shortcuts").setAttribute("aria-expanded", "false");
+    }
   });
   el("cam-lightbox").addEventListener("click", e => {
     if (e.target === el("cam-lightbox")) el("cam-lightbox").classList.add("hidden");
