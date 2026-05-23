@@ -4,18 +4,37 @@ Calculates per-dim mean/std/min/max/q01/q99 for:
   - state
   - action  (raw)
   - delta_action  (action[t+1] - action[t], within each episode)
+
+Usage:
+  python compute_norm_stats.py data/libero_reduced
+  python compute_norm_stats.py data/libero_reduced --out data/libero_reduced/meta/norm_stats.json
+  python compute_norm_stats.py data/libero_reduced --q 1 99   # custom percentiles
 """
+import argparse
 import json
 from pathlib import Path
 
 import numpy as np
 import pyarrow.parquet as pq
 
-DATASET = Path("/opt/zhangchenyu/datasets/lerobot/physical-intelligence/libero")
-OUT = Path("/tmp/norm_stats.json")
-
 
 def main():
+    parser = argparse.ArgumentParser(description="Compute norm_stats.json for a LeRobot dataset")
+    parser.add_argument("dataset", help="Path to LeRobot dataset root (must contain meta/info.json)")
+    parser.add_argument("--out", default=None,
+                        help="Output path (default: <dataset>/meta/norm_stats.json)")
+    parser.add_argument("--q", nargs=2, type=float, default=[1.0, 99.0],
+                        metavar=("LO", "HI"),
+                        help="Percentile bounds (default: 1 99)")
+    args = parser.parse_args()
+
+    DATASET = Path(args.dataset)
+    OUT = Path(args.out) if args.out else DATASET / "meta" / "norm_stats.json"
+    Q_LO, Q_HI = args.q
+
+    if not (DATASET / "meta" / "info.json").exists():
+        parser.error(f"Not a valid LeRobot dataset: {DATASET} (missing meta/info.json)")
+
     info = json.loads((DATASET / "meta" / "info.json").read_text())
     chunks_size = info.get("chunks_size", 1000)
 
@@ -54,8 +73,8 @@ def main():
             "std":  data.std(0).tolist(),
             "min":  data.min(0).tolist(),
             "max":  data.max(0).tolist(),
-            "q01":  np.percentile(data, 1,  axis=0).tolist(),
-            "q99":  np.percentile(data, 99, axis=0).tolist(),
+            "q01":  np.percentile(data, Q_LO, axis=0).tolist(),
+            "q99":  np.percentile(data, Q_HI, axis=0).tolist(),
         }
 
     print("Computing statistics…", flush=True)
