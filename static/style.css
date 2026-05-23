@@ -234,6 +234,62 @@ mark.search-hl {
   padding: 0 1px;
 }
 
+/* ── Recent episodes section ──────────────────────────────── */
+.sidebar-recent {
+  border-bottom: 1px solid var(--border);
+  padding: 4px 0;
+  flex-shrink: 0;
+}
+.recent-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .7px;
+  color: var(--text-3);
+  padding: 4px 14px 2px;
+}
+.recent-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 14px;
+  cursor: pointer;
+  transition: background var(--transition);
+  border-radius: 0;
+  overflow: hidden;
+}
+.recent-item:hover { background: var(--bg-3); }
+.recent-ep {
+  font-size: 10.5px;
+  font-family: ui-monospace, monospace;
+  color: var(--blue);
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.recent-task {
+  font-size: 10.5px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recent-clear {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-3);
+  padding: 2px 4px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  margin-right: 8px;
+}
+.recent-clear:hover { color: var(--text); background: var(--bg-3); }
+
 #dataset-tree {
   flex: 1;
   overflow-y: auto;

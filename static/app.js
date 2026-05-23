@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v27
+   LeRobot Visualizer — app.js  v28
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -7,6 +7,7 @@ const PREFETCH_AHEAD = 8;
 const SEARCH_DEBOUNCE_MS = 160;
 const SPEEDS = [0.25, 0.5, 1, 2, 4];
 const SIDEBAR_BREAKPOINT = 720;  // px; auto-collapse sidebar below this width
+const MAX_RECENT = 8;            // number of recent episodes to show
 const PALETTE = [
   "#3B82F6","#10B981","#F59E0B","#EF4444","#8B5CF6",
   "#06B6D4","#F97316","#EC4899","#14B8A6","#6366F1",
@@ -43,6 +44,7 @@ const state = {
   compareEpIndex: null,
   normalizeEnabled: true,
   loopCount: 0,
+  recentEpisodes: [],     // [{dsPath, epIndex, taskText}] - last 8 visited
 };
 
 /* ── Utility helpers ─────────────────────────────────────── */
@@ -54,8 +56,17 @@ function debounce(fn, ms) {
 }
 
 async function apiFetch(path) {
-  const r = await fetch(path);
-  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  let r;
+  try {
+    r = await fetch(path);
+  } catch (e) {
+    throw new Error(`Network error: ${e.message}`);
+  }
+  if (!r.ok) {
+    let detail = "";
+    try { detail = (await r.json()).detail ?? ""; } catch (_) {}
+    throw new Error(`${r.status}${detail ? `: ${detail}` : ` ${r.statusText}`}`);
+  }
   return r.json();
 }
 
@@ -72,6 +83,79 @@ function escapeHTML(str) {
 }
 
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+/* ── Recent episodes tracking ───────────────────────────── */
+function loadRecentEpisodes() {
+  try {
+    const stored = localStorage.getItem("recentEpisodes");
+    if (stored) state.recentEpisodes = JSON.parse(stored).slice(0, MAX_RECENT);
+  } catch (_) {}
+}
+
+function addToRecent(dsPath, epIndex, taskText) {
+  const entry = { dsPath, epIndex, taskText };
+  // Remove existing same entry
+  state.recentEpisodes = state.recentEpisodes.filter(
+    r => !(r.dsPath === dsPath && r.epIndex === epIndex)
+  );
+  // Prepend new entry
+  state.recentEpisodes.unshift(entry);
+  state.recentEpisodes = state.recentEpisodes.slice(0, MAX_RECENT);
+  try {
+    localStorage.setItem("recentEpisodes", JSON.stringify(state.recentEpisodes));
+  } catch (_) {}
+  updateRecentSection();
+}
+
+function clearRecentEpisodes() {
+  state.recentEpisodes = [];
+  try { localStorage.removeItem("recentEpisodes"); } catch (_) {}
+  updateRecentSection();
+}
+
+function updateRecentSection() {
+  const section = document.getElementById("sidebar-recent");
+  if (!section || !state.recentEpisodes.length) {
+    if (section) section.classList.add("hidden");
+    return;
+  }
+  section.classList.remove("hidden");
+  const list = section.querySelector(".recent-list");
+  if (!list) return;
+  list.innerHTML = "";
+  // Add clear button to header
+  const header = section.querySelector(".recent-header");
+  if (header && !header.querySelector(".recent-clear")) {
+    const clearBtn = document.createElement("button");
+    clearBtn.className = "recent-clear";
+    clearBtn.title = "Clear recent";
+    clearBtn.innerHTML = `<svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+    clearBtn.addEventListener("click", e => { e.stopPropagation(); clearRecentEpisodes(); });
+    header.appendChild(clearBtn);
+  }
+  for (const r of state.recentEpisodes) {
+    const item = document.createElement("div");
+    item.className = "recent-item";
+    const epStr = `ep_${String(r.epIndex).padStart(6, "0")}`;
+    const shortTask = r.taskText?.length > 48 ? r.taskText.slice(0, 45) + "…" : (r.taskText ?? "");
+    item.innerHTML =
+      `<span class="recent-ep">${epStr}</span>` +
+      `<span class="recent-task">${escapeHTML(shortTask)}</span>`;
+    item.title = `${r.dsPath} › ${epStr}` + (r.taskText ? `\n${r.taskText}` : "");
+    item.addEventListener("click", () => {
+      const entry = state.episodeList.find(e => e.dsPath === r.dsPath && e.epIndex === r.epIndex);
+      if (entry) {
+        entry.el.closest(".task-group")?.classList.add("open");
+        entry.el.closest(".ds-node")?.classList.add("open");
+        selectEpisode(r.dsPath, r.epIndex, r.taskText, entry.el);
+      } else {
+        // Entry not in current episode list — just load by path
+        selectEpisode(r.dsPath, r.epIndex, r.taskText, null);
+      }
+    });
+    list.appendChild(item);
+  }
+}
 
 /* ── Dark mode ───────────────────────────────────────────── */
 function initDarkMode() {
@@ -642,6 +726,7 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
     updateImages();
     updateTopbarBreadcrumb();
     saveHashState();
+    addToRecent(dsPath, epIndex, taskText);
     const taskShort = taskText?.length > 48 ? taskText.slice(0, 45) + "…" : taskText;
     document.title = taskShort
       ? `ep_${String(epIndex).padStart(6, "0")} — ${taskShort} • LeRobot Visualizer`
@@ -745,8 +830,11 @@ async function selectCompareEpisode(dsPath, epIndex, clickedEl) {
     const cmpLastTs = cmpEp.timestamps?.[cmpEp.timestamps.length - 1] ?? null;
     const cmpDurStr = cmpLastTs !== null ? ` / ${formatDuration(cmpLastTs)}` : "";
     const cmpDs = dsPath !== state.activeDataset ? ` (${dsPath})` : "";
+    const cmpTaskEp = state.episodeList.find(e => e.dsPath === dsPath && e.epIndex === epIndex);
+    const cmpTaskStr = cmpTaskEp?.taskText?.length > 36 ? cmpTaskEp.taskText.slice(0, 33) + "…" : (cmpTaskEp?.taskText ?? "");
+    const taskHint = cmpTaskStr ? ` · ${cmpTaskStr}` : "";
     el("compare-label").textContent =
-      `Comparing ep_${String(epIndex).padStart(6, "0")}${cmpDs} — ${cmpEp.length}f${cmpDurStr} — dashed overlay`;
+      `Comparing ep_${String(epIndex).padStart(6, "0")}${cmpDs} — ${cmpEp.length}f${cmpDurStr}${taskHint} — dashed overlay`;
   } catch (_) {
     state.compareEpisode = null;
   }
@@ -985,6 +1073,35 @@ function exportFrame() {
     };
     tmp.src = img.src;
   });
+}
+
+/* ── Export episode as JSON ──────────────────────────────── */
+function exportJSON() {
+  const ep = state.episode;
+  if (!ep) return;
+  const payload = {
+    dataset: state.activeDataset,
+    episode_index: state.activeEpIndex,
+    length: ep.length,
+    fps: ep.fps,
+    robot_type: ep.robot_type,
+    timestamps: ep.timestamps,
+    state_names: ep.state_names,
+    action_names: ep.action_names,
+    state: ep.state,
+    actions: ep.actions,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const dsSlug = (state.activeDataset ?? "").replace(/[^a-z0-9_-]/gi, "_").slice(0, 32);
+  a.download = `${dsSlug}__ep${String(state.activeEpIndex).padStart(6,"0")}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  showCopyToast("✓ JSON exported");
 }
 
 /* ── Export episode timestamps ───────────────────────────– */
@@ -2019,6 +2136,8 @@ document.addEventListener("DOMContentLoaded", () => {
   initSidebarState();
   initFrameCounterJump();
   initPlaybackPreferences();
+  loadRecentEpisodes();
+  updateRecentSection();
 
   // Update welcome hint modifier key for platform
   const hint = document.querySelector(".welcome-hint");
@@ -2138,6 +2257,11 @@ document.addEventListener("DOMContentLoaded", () => {
       el("search-input").select();
       return;
     }
+    if (modKey && e.key === "d") {
+      e.preventDefault();
+      toggleDarkMode();
+      return;
+    }
 
     if (modKey && e.key === "s") {
       e.preventDefault();
@@ -2221,6 +2345,16 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.key === "w" || e.key === "W") {
       e.preventDefault();
       exportTimestamps();
+      return;
+    }
+    if (e.key === "j" || e.key === "J") {
+      e.preventDefault();
+      exportJSON();
+      return;
+    }
+    if (e.key === "i" || e.key === "I") {
+      e.preventDefault();
+      el("ep-info-strip").classList.toggle("hidden");
       return;
     }
     if (modKey && e.key === "j") {
