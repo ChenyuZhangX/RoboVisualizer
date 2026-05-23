@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v35
+   LeRobot Visualizer — app.js  v36
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -487,8 +487,14 @@ async function loadDatasets() {
     const totalEps = datasets.reduce((s, d) => s + d.total_episodes, 0);
     updateSidebarFooter(datasets.length, totalEps, datasets);
   } catch (e) {
-    tree.innerHTML = `<div class="error-msg">Failed: ${e.message}</div>`;
+    const msg = e.message || "Unknown error";
+    tree.innerHTML = `<div class="error-msg" role="alert">
+      Failed to load datasets<br>
+      <span style="font-size:10px;color:var(--text-3);margin-top:4px;display:block">${escapeHTML(msg)}</span>
+      <button onclick="loadDatasets()" style="margin-top:6px;padding:2px 8px;font-size:11px;background:var(--blue);color:#fff;border:none;border-radius:3px;cursor:pointer">Retry</button>
+    </div>`;
     updateSidebarFooter(0, 0);
+    console.error("Load datasets error:", e);
   } finally {
     if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.classList.remove("spinning"); }
   }

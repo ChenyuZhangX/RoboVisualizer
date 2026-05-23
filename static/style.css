@@ -475,15 +475,29 @@ html.dark .ep-len.len-long      { color: #22C55E; background: #0a2017; }
 }
 
 .error-msg {
-  padding: 10px 12px;
-  color: #EF4444;
+  padding: 12px 14px;
+  color: #DC2626;
   font-size: 12px;
-  background: #FEF2F2;
-  border-left: 3px solid #EF4444;
+  background: #FEE2E2;
+  border-left: 3px solid #DC2626;
   margin: 8px;
   border-radius: 4px;
+  line-height: 1.5;
 }
-html.dark .error-msg { background: #3b0f0f; }
+html.dark .error-msg { background: #3b0f0f; color: #FCA5A5; }
+.error-msg button {
+  background: #DC2626;
+  color: #fff;
+  border: none;
+  border-radius: 3px;
+  padding: 3px 9px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background .12s ease;
+}
+.error-msg button:hover { background: #991B1B; }
+html.dark .error-msg button { background: #EF4444; color: #fff; }
+html.dark .error-msg button:hover { background: #DC2626; }
 
 /* ── Main panel ───────────────────────────────────────────── */
 #panel {
