@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v19
+   LeRobot Visualizer — app.js  v20
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -117,6 +117,7 @@ function _doSaveHash() {
     ds: state.activeDataset,
     ep: state.activeEpIndex,
     f:  state.frame,
+    n:  state.normalizeEnabled ? "1" : "0",
   });
   history.replaceState(null, "", "#" + params.toString());
 }
@@ -166,6 +167,13 @@ async function loadHashState() {
 
     // Open the task group containing this episode
     epEntry.el.closest(".task-group")?.classList.add("open");
+    // Restore normalize before loading so charts build with correct state
+    const nParam = params.get("n");
+    if (nParam !== null && (nParam === "1") !== state.normalizeEnabled) {
+      state.normalizeEnabled = nParam === "1";
+      el("btn-normalize")?.classList.toggle("active", state.normalizeEnabled);
+      el("btn-normalize")?.setAttribute("aria-pressed", state.normalizeEnabled);
+    }
     await selectEpisode(ds, epIndex, epEntry.taskText, epEntry.el);
     if (f != null) setFrame(parseInt(f, 10));
     epEntry.el.scrollIntoView({ block: "nearest" });
@@ -473,7 +481,9 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
 
   el("welcome").classList.add("hidden");
   el("viewer").classList.remove("hidden");
-  el("task-label").textContent = taskText;
+  const displayTask = taskText?.length > 80 ? taskText.slice(0, 77) + "…" : (taskText ?? "");
+  el("task-label").textContent = displayTask;
+  el("task-label").title = taskText?.length > 80 ? taskText : "";
   el("ep-info-strip").innerHTML = `<span class="spinner"></span><span style="color:var(--text-3)"> Loading…</span>`;
   el("ep-info-strip").classList.remove("hidden");
   el("charts-area").style.opacity = "0.4";
@@ -486,6 +496,13 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
     state.episode = ep;
     state.frame = 0;
     updateEpInfoStrip(ep);
+    // Update normalize btn tooltip based on stats availability
+    const hasNormStats = !!state.normStats;
+    el("btn-normalize")?.setAttribute("title",
+      hasNormStats
+        ? "Toggle normalization  N"
+        : "Toggle normalization  N  (no norm_stats.json found)"
+    );
     buildCharts(ep);
     buildCorrelationHeatmap(ep);
     buildTimeDimHeatmap(ep);
@@ -503,9 +520,11 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
     el("charts-area").style.opacity = "";
     el("charts-area").style.pointerEvents = "";
   } catch (e) {
+    const retryBtn = `<button onclick="selectEpisode(${JSON.stringify(dsPath)},${epIndex},${JSON.stringify(taskText)},document.querySelector('.ep-item.active'))" style="margin-left:10px;background:var(--bg-3);border:1px solid var(--border);border-radius:4px;padding:1px 8px;font-size:11px;cursor:pointer;color:var(--text-2)">Retry</button>`;
     el("task-label").innerHTML =
       `<span style="color:var(--amber-dk)">Load failed:</span>` +
-      `<span style="font-weight:400;color:var(--text-2);margin-left:6px">${e.message}</span>`;
+      `<span style="font-weight:400;color:var(--text-2);margin-left:6px">${escapeHTML(e.message)}</span>` +
+      retryBtn;
     el("ep-info-strip").classList.add("hidden");
     el("charts-area").style.opacity = "";
     el("charts-area").style.pointerEvents = "";
@@ -585,9 +604,12 @@ async function selectCompareEpisode(dsPath, epIndex, clickedEl) {
     );
     buildCharts(state.episode);
     el("compare-banner").classList.remove("hidden");
+    const cmpEp = state.compareEpisode;
+    const cmpLastTs = cmpEp.timestamps?.[cmpEp.timestamps.length - 1] ?? null;
+    const cmpDurStr = cmpLastTs !== null ? ` / ${formatDuration(cmpLastTs)}` : "";
     const cmpDs = dsPath !== state.activeDataset ? ` (${dsPath})` : "";
     el("compare-label").textContent =
-      `Comparing ep_${String(epIndex).padStart(6, "0")}${cmpDs} — dashed overlay`;
+      `Comparing ep_${String(epIndex).padStart(6, "0")}${cmpDs} — ${cmpEp.length}f${cmpDurStr} — dashed overlay`;
   } catch (_) {
     state.compareEpisode = null;
   }
@@ -676,6 +698,7 @@ function renderFrameData(keys, frames) {
       slot.innerHTML = "";
       img = document.createElement("img");
       img.alt = key;
+      img.draggable = false;
       slot.appendChild(img);
       const lbl = document.createElement("div");
       lbl.className = "cam-label";
@@ -683,6 +706,7 @@ function renderFrameData(keys, frames) {
       slot.appendChild(lbl);
     }
     img.src = src;
+    slot.title = key.replace(/_/g, " ") + " — click to expand";
     slot.onclick = () => openLightbox(src, key.replace(/_/g, " "), i);
   });
 }
@@ -696,6 +720,11 @@ async function updateImages() {
   if (state.frameCache.has(f)) {
     renderFrameData(keys, state.frameCache.get(f));
   } else {
+    // Dim existing images to signal loading
+    keys.forEach((_, i) => {
+      const img = el(`cam-${i}`)?.querySelector("img");
+      if (img) img.style.opacity = "0.5";
+    });
     try {
       const frames = await apiFetch(
         `/api/datasets/${encodeURIComponent(state.activeDataset)}/episodes/${state.activeEpIndex}/frame/${f}`
@@ -703,12 +732,20 @@ async function updateImages() {
       if (state.frame === f) {
         state.frameCache.set(f, frames);
         renderFrameData(keys, frames);
+        keys.forEach((_, i) => {
+          const img = el(`cam-${i}`)?.querySelector("img");
+          if (img) img.style.opacity = "";
+        });
       }
     } catch (e) {
       if (state.frame === f) {
         keys.forEach((_, i) => {
+          const img = el(`cam-${i}`)?.querySelector("img");
+          if (img) img.style.opacity = "";
           const slot = el(`cam-${i}`);
-          if (slot) slot.innerHTML = `<div class="cam-placeholder"><span style="font-size:10px;color:var(--text-3)">Failed</span></div>`;
+          if (slot && !slot.querySelector("img")) {
+            slot.innerHTML = `<div class="cam-placeholder"><span style="font-size:10px;color:var(--text-3)">Failed</span></div>`;
+          }
         });
       }
     }
@@ -895,7 +932,8 @@ function buildChartCard(type, data2d, names, normalized, ep, cmpData2d = null, n
 
   if (!body) return [];
 
-  const labels = ep.state.map((_, i) => i);
+  const frames = ep.state?.length || ep.actions?.length || 0;
+  const labels = Array.from({ length: frames }, (_, i) => i);
   const dims = data2d[0]?.length ?? 0;
 
   (state[`${type}Charts`] ?? []).forEach(c => c?.destroy());
@@ -913,6 +951,11 @@ function buildChartCard(type, data2d, names, normalized, ep, cmpData2d = null, n
   btn.querySelector(".icon-expand").classList.toggle("hidden", expanded);
   btn.querySelector(".icon-collapse").classList.toggle("hidden", !expanded);
   histBtn?.classList.toggle("active", isHist);
+
+  if (dims === 0) {
+    body.innerHTML = `<div class="chart-no-data">No ${type} data</div>`;
+    return [];
+  }
 
   const charts = [];
 
@@ -1159,6 +1202,13 @@ function buildCorrelationHeatmap(ep) {
   const dims = ep.actions[0].length;
   if (dims < 2) { section.classList.add("hidden"); return; }
 
+  // Defer render until expanded (avoids computing Pearson on every episode switch)
+  if (body.classList.contains("corr-collapsed")) {
+    section.classList.remove("hidden");
+    body.innerHTML = "";
+    return;
+  }
+
   const cols = Array.from({ length: dims }, (_, d) => ep.actions.map(r => r[d]));
   const rawNames = ep.action_names ?? [];
   const labels = Array.from({ length: dims }, (_, d) => {
@@ -1167,14 +1217,16 @@ function buildCorrelationHeatmap(ep) {
   });
 
   const CELL = 24, LABEL_W = 56, TOP_H = 22, PAD = 2;
+  const COLORBAR_H = 12, COLORBAR_GAP = 8, COLORBAR_LABEL_H = 12;
   const W = LABEL_W + dims * CELL + PAD;
   const H = TOP_H + dims * CELL + PAD;
+  const H_TOTAL = H + COLORBAR_GAP + COLORBAR_H + COLORBAR_LABEL_H;
 
   body.innerHTML = "";
   const canvas = document.createElement("canvas");
   canvas.id = "corr-canvas";
-  canvas.width = W; canvas.height = H;
-  canvas.style.cssText = `width:${W}px;height:${H}px;`;
+  canvas.width = W; canvas.height = H_TOTAL;
+  canvas.style.cssText = `width:${W}px;height:${H_TOTAL}px;`;
   body.appendChild(canvas);
 
   const ctx = canvas.getContext("2d");
@@ -1204,6 +1256,18 @@ function buildCorrelationHeatmap(ep) {
     ctx.fillText(labels[j], LABEL_W + j * CELL + CELL / 2, TOP_H / 2);
   }
 
+  // Colorbar (−1 → 0 → +1 gradient)
+  const barX = LABEL_W, barY = H + COLORBAR_GAP, barW = dims * CELL;
+  for (let x = 0; x < barW; x++) {
+    ctx.fillStyle = corrColor(x / barW * 2 - 1);
+    ctx.fillRect(barX + x, barY, 1, COLORBAR_H);
+  }
+  ctx.font = "8px -apple-system, sans-serif";
+  ctx.fillStyle = isDark ? "#94A3B8" : "#64748B";
+  ctx.textAlign = "left";  ctx.fillText("−1", barX, barY + COLORBAR_H + 9);
+  ctx.textAlign = "center"; ctx.fillText("0",  barX + barW / 2, barY + COLORBAR_H + 9);
+  ctx.textAlign = "right";  ctx.fillText("+1", barX + barW,     barY + COLORBAR_H + 9);
+
   // Pre-compute all pearson values for tooltip
   const corrMatrix = Array.from({ length: dims }, (_, i) =>
     Array.from({ length: dims }, (_, j) => pearson(cols[i], cols[j]))
@@ -1213,7 +1277,7 @@ function buildCorrelationHeatmap(ep) {
 
   canvas.addEventListener("mousemove", e => {
     const rect = canvas.getBoundingClientRect();
-    const scaleX = W / rect.width, scaleY = H / rect.height;
+    const scaleX = W / rect.width, scaleY = H_TOTAL / rect.height;
     const cx = (e.clientX - rect.left) * scaleX, cy = (e.clientY - rect.top) * scaleY;
     const j = Math.floor((cx - LABEL_W) / CELL);
     const i = Math.floor((cy - TOP_H) / CELL);
@@ -1245,6 +1309,13 @@ function buildTimeDimHeatmap(ep) {
 
   if (!ep?.actions?.length || ep.actions[0].length < 1) {
     card.classList.add("hidden"); return;
+  }
+
+  // Defer render until expanded (avoids heavy canvas work on every episode switch)
+  if (body.classList.contains("timedim-collapsed")) {
+    card.classList.remove("hidden");
+    body.innerHTML = "";
+    return;
   }
 
   const dims = ep.actions[0].length;
@@ -1574,11 +1645,12 @@ function updateScrubber() {
   if (!ep) return;
   el("scrubber").value = state.frame;
   const ts = ep.timestamps;
-  const tsCur = ts?.[state.frame]?.toFixed(2) ?? null;
-  const tsEnd = ts?.[ep.length - 1]?.toFixed(2) ?? null;
-  const tsStr = tsCur !== null ? `  •  ${tsCur}s / ${tsEnd}s` : "";
+  const tsCurRaw = ts?.[state.frame] ?? null;
+  const tsEndRaw = ts?.[ep.length - 1] ?? null;
+  const fmt = v => v >= 60 ? formatDuration(v) : v.toFixed(2) + "s";
+  const tsStr = tsCurRaw !== null ? `  •  ${fmt(tsCurRaw)} / ${fmt(tsEndRaw)}` : "";
   el("frame-counter").textContent = `${state.frame} / ${ep.length - 1}${tsStr}`;
-  el("scrubber").title = tsCur != null ? `${tsCur}s` : `frame ${state.frame}`;
+  el("scrubber").title = tsCurRaw != null ? fmt(tsCurRaw) : `frame ${state.frame}`;
   // Fill the scrubber track to show playback progress
   const pct = ep.length > 1 ? (state.frame / (ep.length - 1)) * 100 : 0;
   el("scrubber").style.background =

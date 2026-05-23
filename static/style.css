@@ -563,7 +563,9 @@ html.dark .error-msg { background: #3b0f0f; }
   padding: 10px 14px;
   box-shadow: var(--shadow);
   margin-bottom: 0;
+  transition: box-shadow var(--transition), border-color var(--transition);
 }
+.chart-card:hover { box-shadow: var(--shadow-md); }
 
 .chart-title-bar {
   display: flex;
@@ -671,6 +673,14 @@ html.dark .norm-badge { background: #0d2e1f; border-color: #166534; }
   padding: 2px 7px;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+
+/* ── Chart no-data state ─────────────────────────────────── */
+.chart-no-data {
+  padding: 20px 0;
+  text-align: center;
+  color: var(--text-3);
+  font-size: 12px;
 }
 
 /* ── Correlation heatmap ──────────────────────────────────── */
