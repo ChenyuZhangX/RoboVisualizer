@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LeRobot Visualizer</title>
-  <link rel="stylesheet" href="/style.css?v=27" />
+  <link rel="stylesheet" href="/style.css?v=29" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -72,6 +72,7 @@
         </div>
 
         <div id="viewer" class="hidden">
+          <div id="viewer-loader" class="viewer-loader hidden"></div>
           <div id="viewer-scroll">
             <!-- Viewer header row -->
             <div id="viewer-header">
@@ -219,8 +220,10 @@
         <tr><td><kbd>Space</kbd></td><td>Play / Pause</td></tr>
         <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Step 1 frame</td></tr>
         <tr><td><kbd>⇧←</kbd> <kbd>⇧→</kbd></td><td>Step 10 frames</td></tr>
+        <tr><td><kbd>Alt</kbd>+<kbd>←</kbd> <kbd>→</kbd></td><td>Navigate frame history</td></tr>
         <tr><td><kbd>Ctrl</kbd>+<kbd>J</kbd></td><td>Jump to specific frame</td></tr>
         <tr><td><kbd>R</kbd> / <kbd>Home</kbd></td><td>Rewind to start</td></tr>
+        <tr><td><kbd>Z</kbd></td><td>Rewind and play from start</td></tr>
         <tr><td><kbd>End</kbd></td><td>Jump to last frame</td></tr>
         <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>Prev / Next episode</td></tr>
         <tr><td><kbd>←</kbd> <kbd>→</kbd> (lightbox)</td><td>Prev / next camera</td></tr>
@@ -232,6 +235,7 @@
         <tr><td><kbd>+</kbd> / <kbd>−</kbd></td><td>Speed up / slow down</td></tr>
         <tr><td><kbd>L</kbd></td><td>Toggle loop</td></tr>
         <tr><td><kbd>H</kbd> / <kbd>⇧H</kbd></td><td>Toggle state / action histogram</td></tr>
+        <tr><td><kbd>E</kbd> / <kbd>⇧E</kbd></td><td>Split state / action chart by dimension</td></tr>
         <tr><td><kbd>T</kbd></td><td>Toggle action heatmap</td></tr>
         <tr><td><kbd>K</kbd></td><td>Toggle correlation matrix</td></tr>
         <tr><td><kbd>N</kbd></td><td>Toggle normalization</td></tr>
@@ -266,6 +270,6 @@
     </button>
   </div>
 
-  <script src="/app.js?v=27"></script>
+  <script src="/app.js?v=29"></script>
 </body>
 </html>

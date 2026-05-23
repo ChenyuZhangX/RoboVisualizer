@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v28
+   LeRobot Visualizer — app.js  v29
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -8,6 +8,7 @@ const SEARCH_DEBOUNCE_MS = 160;
 const SPEEDS = [0.25, 0.5, 1, 2, 4];
 const SIDEBAR_BREAKPOINT = 720;  // px; auto-collapse sidebar below this width
 const MAX_RECENT = 8;            // number of recent episodes to show
+const FRAME_HISTORY_MAX = 40;    // max manual-navigation positions to remember
 const PALETTE = [
   "#3B82F6","#10B981","#F59E0B","#EF4444","#8B5CF6",
   "#06B6D4","#F97316","#EC4899","#14B8A6","#6366F1",
@@ -47,6 +48,11 @@ const state = {
   recentEpisodes: [],     // [{dsPath, epIndex, taskText}] - last 8 visited
 };
 
+/* ── Frame navigation history ────────────────────────────── */
+const _frameHistory = [];        // positions visited via explicit navigation
+let _frameHistoryPos = -1;       // current index in _frameHistory (-1 = empty)
+let _navigatingHistory = false;  // true while traversing history (prevents re-push)
+
 /* ── Utility helpers ─────────────────────────────────────── */
 const el = id => document.getElementById(id);
 
@@ -55,12 +61,16 @@ function debounce(fn, ms) {
   return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
 }
 
-async function apiFetch(path) {
+async function apiFetch(path, timeoutMs = 30000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let r;
   try {
-    r = await fetch(path);
+    r = await fetch(path, { signal: controller.signal });
   } catch (e) {
-    throw new Error(`Network error: ${e.message}`);
+    throw new Error(e.name === "AbortError" ? "Request timed out" : `Network error: ${e.message}`);
+  } finally {
+    clearTimeout(timer);
   }
   if (!r.ok) {
     let detail = "";
@@ -72,9 +82,15 @@ async function apiFetch(path) {
 
 function formatDuration(secs) {
   if (secs < 60) return secs.toFixed(1) + "s";
-  const m = Math.floor(secs / 60);
-  const s = (secs % 60).toFixed(1).padStart(4, "0");
-  return `${m}:${s}`;
+  if (secs < 3600) {
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60).toString().padStart(2, "0");
+    return `${m}:${s}`;
+  }
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60).toString().padStart(2, "0");
+  const s = Math.floor(secs % 60).toString().padStart(2, "0");
+  return `${h}:${m}:${s}`;
 }
 
 function escapeHTML(str) {
@@ -373,12 +389,30 @@ Chart.register(cursorPlugin, stdBandPlugin);
 /* ── Frame navigation ────────────────────────────────────── */
 function setFrame(f) {
   if (!state.episode) return;
-  state.frame = clamp(Math.round(f), 0, state.episode.length - 1);
+  const newF = clamp(Math.round(f), 0, state.episode.length - 1);
+  if (!state.playing && !_navigatingHistory && newF !== state.frame) {
+    // Truncate any forward history, then push the current position before moving
+    _frameHistory.splice(_frameHistoryPos + 1);
+    _frameHistory.push(state.frame);
+    if (_frameHistory.length > FRAME_HISTORY_MAX) _frameHistory.shift();
+    else _frameHistoryPos++;
+  }
+  state.frame = newF;
   updateScrubber();
   updateChartCursor();
   updateTimeDimCursor();
   updateFrameValues();
   updateImages();
+}
+
+function navigateFrameHistory(delta) {
+  if (!state.episode || state.playing) return;
+  const newPos = _frameHistoryPos + delta;
+  if (newPos < 0 || newPos >= _frameHistory.length) return;
+  _frameHistoryPos = newPos;
+  _navigatingHistory = true;
+  setFrame(_frameHistory[_frameHistoryPos]);
+  _navigatingHistory = false;
 }
 
 /* ── Episode length colour coding ───────────────────────── */
@@ -556,6 +590,12 @@ function buildTaskNode(dsPath, task, allLengths = []) {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
         handleActivate(e.ctrlKey || e.metaKey, false);
+      } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const allItems = Array.from(document.querySelectorAll(".ep-item:not(.ep-search-hidden):not(.search-hidden .ep-item)"));
+        const idx = allItems.indexOf(item);
+        const target = allItems[e.key === "ArrowDown" ? idx + 1 : idx - 1];
+        if (target) { target.focus(); target.scrollIntoView({ block: "nearest" }); }
       }
     });
 
@@ -686,11 +726,14 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
   state.frameCache.clear();
   // Note: don't clear prefetchPending — requests are in-flight; they'll self-discard on frame change check
   state.prefetchPending.clear();
+  _frameHistory.length = 0;
+  _frameHistoryPos = -1;
 
   if (state.compareDataset === dsPath && state.compareEpIndex === epIndex) clearCompare();
 
   el("welcome").classList.add("hidden");
   el("viewer").classList.remove("hidden");
+  el("viewer-loader")?.classList.remove("hidden");
   const displayTask = taskText?.length > 80 ? taskText.slice(0, 77) + "…" : (taskText ?? "");
   el("task-label").textContent = displayTask;
   el("task-label").title = taskText?.length > 80 ? taskText : "";
@@ -733,11 +776,13 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
       : `ep_${String(epIndex).padStart(6, "0")} • ${dsPath} • LeRobot Visualizer`;
     el("charts-area").style.opacity = "";
     el("charts-area").style.pointerEvents = "";
+    el("viewer-loader")?.classList.add("hidden");
     // Enable export buttons now that episode is loaded
     el("btn-export").disabled = false;
     el("btn-csv").disabled = false;
     el("btn-frame-values").disabled = false;
   } catch (e) {
+    el("viewer-loader")?.classList.add("hidden");
     const retryBtn = `<button onclick="selectEpisode(${JSON.stringify(dsPath)},${epIndex},${JSON.stringify(taskText)},document.querySelector('.ep-item.active'))" style="margin-left:10px;background:var(--bg-3);border:1px solid var(--border);border-radius:4px;padding:1px 8px;font-size:11px;cursor:pointer;color:var(--text-2)">Retry</button>`;
     el("task-label").innerHTML =
       `<span style="color:var(--amber-dk)">Load failed:</span>` +
@@ -873,14 +918,16 @@ function buildCameraGrid(ep) {
     const slot = document.createElement("div");
     slot.className = "cam-slot";
     slot.id = `cam-${i}`;
-    slot.innerHTML = `<div class="cam-placeholder"><span>No camera</span></div>`;
+    slot.innerHTML = CAM_PLACEHOLDER_HTML;
     cameras.appendChild(slot);
   }
 }
 
+const CAM_PLACEHOLDER_HTML = `<div class="cam-placeholder"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" style="opacity:.3"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></div>`;
+
 function resetCam(i) {
   const slot = el(`cam-${i}`);
-  if (slot) slot.innerHTML = `<div class="cam-placeholder"><span>No camera</span></div>`;
+  if (slot) slot.innerHTML = CAM_PLACEHOLDER_HTML;
 }
 
 /* ── Frame prefetch cache ────────────────────────────────── */
@@ -912,7 +959,11 @@ function prefetchFrames() {
 /* ── Camera rendering ────────────────────────────────────── */
 function openLightbox(src, label, camIdx = -1) {
   el("lightbox-img").src = src;
-  el("lightbox-label").textContent = label;
+  const ts = state.episode?.timestamps?.[state.frame];
+  const tsStr = ts != null
+    ? ` · ${ts >= 60 ? formatDuration(ts) : ts.toFixed(3) + "s"}  (f${state.frame})`
+    : ` (f${state.frame})`;
+  el("lightbox-label").textContent = label + tsStr;
   el("cam-lightbox").classList.remove("hidden");
   el("cam-lightbox").dataset.camIdx = camIdx;
 
@@ -960,8 +1011,14 @@ function renderFrameData(keys, frames) {
       slot.appendChild(lbl);
     }
     img.src = src;
-    slot.title = key.replace(/_/g, " ") + " — click to expand · double-click for fullscreen";
+    slot.tabIndex = 0;
+    slot.setAttribute("role", "button");
+    slot.setAttribute("aria-label", `Camera view: ${key.replace(/_/g, " ")} — press Enter to expand`);
+    slot.title = key.replace(/_/g, " ") + " — click to expand · double-click for fullscreen · Enter to expand";
     slot.onclick = () => openLightbox(src, key.replace(/_/g, " "), i);
+    slot.onkeydown = e => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openLightbox(src, key.replace(/_/g, " "), i); }
+    };
     slot.ondblclick = e => {
       e.stopPropagation();
       if (document.fullscreenEnabled) {
@@ -981,6 +1038,20 @@ async function updateImages() {
   _lastImageUpdateFrame = state.frame;
   const keys = ep.image_keys.slice(0, MAX_CAMS);
 
+  // Update lightbox label if open (shows current frame timestamp)
+  if (!el("cam-lightbox").classList.contains("hidden")) {
+    const lbl = el("lightbox-label");
+    if (lbl && state.episode) {
+      const camIdx = parseInt(el("cam-lightbox").dataset.camIdx ?? "-1", 10);
+      const key = camIdx >= 0 ? keys[camIdx] : null;
+      const ts = state.episode.timestamps?.[state.frame];
+      const tsStr = ts != null
+        ? ` · ${ts >= 60 ? formatDuration(ts) : ts.toFixed(3) + "s"}  (f${state.frame})`
+        : ` (f${state.frame})`;
+      if (key) lbl.textContent = key.replace(/_/g, " ") + tsStr;
+    }
+  }
+
   const f = state.frame;
   if (state.frameCache.has(f)) {
     renderFrameData(keys, state.frameCache.get(f));
@@ -992,6 +1063,7 @@ async function updateImages() {
       const img = slot?.querySelector("img");
       if (img) img.style.opacity = "0.5";
     });
+    el("fps-badge")?.classList.add("loading");
     try {
       const frames = await apiFetch(
         `/api/datasets/${encodeURIComponent(state.activeDataset)}/episodes/${state.activeEpIndex}/frame/${f}`
@@ -1005,16 +1077,18 @@ async function updateImages() {
           const img = slot?.querySelector("img");
           if (img) img.style.opacity = "";
         });
+        el("fps-badge")?.classList.remove("loading");
       }
     } catch (e) {
       if (state.frame === f) {
+        el("fps-badge")?.classList.remove("loading");
         keys.forEach((_, i) => {
           const slot = el(`cam-${i}`);
           if (slot) delete slot.dataset.loading;
           const img = slot?.querySelector("img");
           if (img) img.style.opacity = "";
           if (slot && !slot.querySelector("img")) {
-            slot.innerHTML = `<div class="cam-placeholder"><span style="font-size:10px;color:var(--text-3)">Failed</span></div>`;
+            slot.innerHTML = `<div class="cam-placeholder"><span style="font-size:10px;color:var(--text-3);position:absolute;bottom:8px">Failed to load</span></div>`;
           }
         });
       }
@@ -1085,6 +1159,8 @@ function exportJSON() {
     length: ep.length,
     fps: ep.fps,
     robot_type: ep.robot_type,
+    image_keys: ep.image_keys,
+    video_keys: ep.video_keys,
     timestamps: ep.timestamps,
     state_names: ep.state_names,
     action_names: ep.action_names,
@@ -1148,6 +1224,7 @@ function exportCSV() {
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 5000);
+  showCopyToast("✓ CSV exported");
 }
 
 /* ── Copy episode URL to clipboard ───────────────────────── */
@@ -1172,7 +1249,15 @@ async function copyEpisodeURL() {
     await navigator.clipboard.writeText(url);
     showCopyToast("✓ URL copied to clipboard");
   } catch (_) {
-    prompt("Copy this URL:", url);
+    // Fallback: select text in a temporary input for manual copy
+    const inp = document.createElement("input");
+    inp.value = url;
+    inp.style.cssText = "position:fixed;top:-9999px;opacity:0;";
+    document.body.appendChild(inp);
+    inp.select();
+    try { document.execCommand("copy"); showCopyToast("✓ URL copied to clipboard"); }
+    catch (_2) { showCopyToast("URL: " + url.slice(0, 60) + "…"); }
+    document.body.removeChild(inp);
   }
 }
 
@@ -1240,12 +1325,14 @@ function toggleNormalize() {
 
 function toggleExpand(type) {
   state[`${type}Expanded`] = !state[`${type}Expanded`];
+  localStorage.setItem(`expand_${type}`, state[`${type}Expanded`] ? "1" : "0");
   rebuildChartsFor(type);
 }
 
 function toggleHistogram(type) {
   const key = `hist${type[0].toUpperCase() + type.slice(1)}`;
   state[key] = !state[key];
+  localStorage.setItem(`hist_${type}`, state[key] ? "1" : "0");
   rebuildChartsFor(type);
 }
 
@@ -1281,6 +1368,13 @@ function buildChartCard(type, data2d, names, normalized, ep, cmpData2d = null, n
 
   if (dims === 0) {
     body.innerHTML = `<div class="chart-no-data">No ${type} data</div>`;
+    return [];
+  }
+
+  if (expanded && dims > 64) {
+    body.innerHTML = `<div class="chart-no-data" style="padding:14px">
+      ${dims}D — too many to split (max 64). Use the combined view.
+    </div>`;
     return [];
   }
 
@@ -1596,13 +1690,15 @@ function buildCorrelationHeatmap(ep) {
   body.innerHTML = "";
   const canvas = document.createElement("canvas");
   canvas.id = "corr-canvas";
-  canvas.width = W; canvas.height = H_TOTAL;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = W * dpr; canvas.height = H_TOTAL * dpr;
   canvas.style.cssText = `width:${W}px;height:${H_TOTAL}px;`;
   canvas.setAttribute("role", "img");
   canvas.setAttribute("aria-label", `Action correlation matrix (${dims}×${dims})`);
   body.appendChild(canvas);
 
   const ctx = canvas.getContext("2d");
+  ctx.scale(dpr, dpr);
   ctx.textBaseline = "middle";
 
   for (let i = 0; i < dims; i++) {
@@ -1680,6 +1776,8 @@ function timedimCellH(dims) {
   return 8;
 }
 
+const TIMEDIM_MAX_DIMS = 128;  // hard limit to avoid canvas OOM
+
 function buildTimeDimHeatmap(ep) {
   const card = el("timedim-card");
   const body = el("timedim-body");
@@ -1696,7 +1794,9 @@ function buildTimeDimHeatmap(ep) {
     return;
   }
 
-  const dims = ep.actions[0].length;
+  const dimsRaw = ep.actions[0].length;
+  const truncated = dimsRaw > TIMEDIM_MAX_DIMS;
+  const dims = Math.min(dimsRaw, TIMEDIM_MAX_DIMS);
   const CELL_H = timedimCellH(dims);
   const frames = ep.length;
   const rawNames = ep.action_names ?? [];
@@ -1715,19 +1815,22 @@ function buildTimeDimHeatmap(ep) {
     }
   }
 
-  const CANVAS_W = Math.min(frames, 900);
-  const CANVAS_H = dims * CELL_H;
-  const TOTAL_W  = TIMEDIM_LABEL_W + CANVAS_W;
+  const CANVAS_W  = Math.min(frames, 900);
+  const CANVAS_H  = dims * CELL_H;
+  const TIME_AX_H = 18;                    // time axis row at bottom
+  const TOTAL_W   = TIMEDIM_LABEL_W + CANVAS_W;
+  const TOTAL_H   = CANVAS_H + TIME_AX_H;
 
   body.innerHTML = "";
   const wrap = document.createElement("div");
   wrap.className = "timedim-wrap";
   body.appendChild(wrap);
 
+  const dpr = window.devicePixelRatio || 1;
   const canvas = document.createElement("canvas");
-  canvas.width  = TOTAL_W;
-  canvas.height = CANVAS_H;
-  canvas.style.cssText = `width:${TOTAL_W}px;height:${CANVAS_H}px;cursor:crosshair;`;
+  canvas.width  = TOTAL_W * dpr;
+  canvas.height = TOTAL_H * dpr;
+  canvas.style.cssText = `width:${TOTAL_W}px;height:${TOTAL_H}px;cursor:crosshair;`;
   canvas.id = "timedim-canvas";
   canvas.setAttribute("role", "img");
   canvas.setAttribute("aria-label", `Action heatmap: time × ${dims} dimensions`);
@@ -1735,6 +1838,7 @@ function buildTimeDimHeatmap(ep) {
   wrap.appendChild(canvas);
 
   const ctx = canvas.getContext("2d");
+  ctx.scale(dpr, dpr);
   const cellW = CANVAS_W / frames;
 
   for (let d = 0; d < dims; d++) {
@@ -1758,6 +1862,26 @@ function buildTimeDimHeatmap(ep) {
     ctx.fillText(labels[d], TIMEDIM_LABEL_W - 4, y0 + CELL_H / 2);
   }
 
+  // Draw time axis
+  {
+    const isDark = document.documentElement.classList.contains("dark");
+    const axY = CANVAS_H + 2;
+    ctx.font = "8px -apple-system, sans-serif";
+    ctx.fillStyle = isDark ? "#64748B" : "#94A3B8";
+    ctx.textBaseline = "top";
+    const nTicks = Math.min(8, frames);
+    for (let t = 0; t <= nTicks; t++) {
+      const fi = Math.round(t / nTicks * (frames - 1));
+      const x = TIMEDIM_LABEL_W + fi * cellW;
+      ctx.fillStyle = isDark ? "#475569" : "#CBD5E1";
+      ctx.fillRect(x, CANVAS_H, 1, 4);
+      ctx.fillStyle = isDark ? "#64748B" : "#94A3B8";
+      ctx.textAlign = t === 0 ? "left" : t === nTicks ? "right" : "center";
+      const ts = ep.timestamps?.[fi] ?? (fi / (ep.fps || 10));
+      ctx.fillText(ts >= 60 ? formatDuration(ts) : ts.toFixed(1) + "s", x, axY + 4);
+    }
+  }
+
   // Drag and click to seek + hover tooltip
   const getFrameFromPointer = e => {
     const rect = canvas.getBoundingClientRect();
@@ -1766,7 +1890,7 @@ function buildTimeDimHeatmap(ep) {
   };
   const getDimFromPointer = e => {
     const rect = canvas.getBoundingClientRect();
-    const py = (e.clientY - rect.top) * (canvas.height / rect.height);
+    const py = (e.clientY - rect.top) * (TOTAL_H / rect.height);
     return Math.floor(py / CELL_H);
   };
 
@@ -1797,6 +1921,13 @@ function buildTimeDimHeatmap(ep) {
   canvas.addEventListener("pointerup", () => { dragging = false; });
   canvas.addEventListener("pointerleave", () => { dragging = false; hideTimeDimTooltip(); });
 
+  if (truncated) {
+    const note = document.createElement("div");
+    note.style.cssText = "font-size:10px;color:var(--text-3);padding:2px 8px 4px;";
+    note.textContent = `Showing first ${TIMEDIM_MAX_DIMS} of ${dimsRaw} dimensions`;
+    body.appendChild(note);
+  }
+
   card.classList.remove("hidden");
   if (!card.dataset.open) body.classList.add("timedim-collapsed");
 }
@@ -1820,34 +1951,27 @@ function _doUpdateTimeDimCursor() {
   const dims = ep.actions[0]?.length ?? 0;
   const CELL_H = timedimCellH(dims);
   const frames = ep.length;
-  const CANVAS_W = Math.min(frames, 900);
-  const TOTAL_W  = TIMEDIM_LABEL_W + CANVAS_W;
-  const CANVAS_H = dims * CELL_H;
+  const CANVAS_W  = Math.min(frames, 900);
+  const TOTAL_W   = TIMEDIM_LABEL_W + CANVAS_W;
+  const CANVAS_H  = dims * CELL_H;
+  const TIME_AX_H = 18;
+  const TOTAL_H   = CANVAS_H + TIME_AX_H;
 
-  const ctx = canvas.getContext("2d");
-  // Redraw cursor overlay using a separate canvas layer approach is complex;
-  // instead we overlay a thin vertical line with clearRect trick.
-  // We store the last cursor x and restore the heatmap column on each move.
   const cellW = CANVAS_W / frames;
   const cursorX = TIMEDIM_LABEL_W + state.frame * cellW;
 
-  // Draw cursor line
-  if (canvas._prevCursorX != null) {
-    // Restore a thin strip — already baked into the static heatmap so just redraw cursor
-    // Actually: draw a semi-transparent overlay rect for cursor
-  }
-  canvas._prevCursorX = cursorX;
-
-  // Use an overlay canvas approach: draw cursor on a separate <canvas> layered on top
+  // Overlay canvas: only covers the heatmap rows (not the time axis)
   let overlay = el("timedim-overlay");
   if (!overlay) {
+    const dpr2 = window.devicePixelRatio || 1;
     overlay = document.createElement("canvas");
     overlay.id = "timedim-overlay";
-    overlay.width  = TOTAL_W;
-    overlay.height = CANVAS_H;
+    overlay.width  = TOTAL_W * dpr2;
+    overlay.height = CANVAS_H * dpr2;
     overlay.style.cssText = `position:absolute;top:0;left:0;width:${TOTAL_W}px;height:${CANVAS_H}px;pointer-events:none;`;
     canvas.parentElement.style.position = "relative";
     canvas.parentElement.appendChild(overlay);
+    overlay.getContext("2d").scale(dpr2, dpr2);
   }
 
   const oc = overlay.getContext("2d");
@@ -1866,11 +1990,14 @@ function updateTopbarBreadcrumb() {
     return;
   }
   const epStr = `ep_${String(state.activeEpIndex).padStart(6, "0")}`;
+  const dsShort = state.activeDataset.length > 28
+    ? state.activeDataset.slice(0, 25) + "…"
+    : state.activeDataset;
   crumb.innerHTML =
     `<span class="crumb-sep">›</span>` +
-    `<span class="crumb-ds" title="${escapeHTML(state.activeDataset)}">${escapeHTML(state.activeDataset)}</span>` +
+    `<span class="crumb-ds" title="${escapeHTML(state.activeDataset)}">${escapeHTML(dsShort)}</span>` +
     `<span class="crumb-sep">›</span>` +
-    `<span class="crumb-ep" title="Click to copy URL  C" style="cursor:pointer">${epStr}</span>`;
+    `<span class="crumb-ep" title="Click to copy URL  (C)" style="cursor:pointer">${epStr}</span>`;
   crumb.classList.remove("hidden");
   crumb.querySelector(".crumb-ep")?.addEventListener("click", copyEpisodeURL);
 }
@@ -1951,13 +2078,24 @@ function hideTimeDimTooltip() {
 }
 
 /* ── Episode per-dim statistics ─────────────────────────── */
-function dimMinMax(data2d, d) {
-  let min = Infinity, max = -Infinity;
+function dimStats(data2d, d) {
+  let min = Infinity, max = -Infinity, sum = 0, sumSq = 0;
+  const n = data2d.length;
   for (const row of data2d) {
     const v = row[d];
     if (v < min) min = v;
     if (v > max) max = v;
+    sum += v;
+    sumSq += v * v;
   }
+  const mean = n > 0 ? sum / n : 0;
+  const variance = n > 1 ? sumSq / n - mean * mean : 0;
+  const std = Math.sqrt(Math.max(0, variance));
+  return { min, max, mean, std };
+}
+
+function dimMinMax(data2d, d) {
+  const { min, max } = dimStats(data2d, d);
   return { min, max };
 }
 
@@ -1981,12 +2119,27 @@ function buildFrameValuesPanel(ep) {
     panel.appendChild(section);
     const grid = section.querySelector(`#fv-${prefix}-grid`);
     for (let d = 0; d < dims; d++) {
-      const { min, max } = dimMinMax(data2d, d);
+      const { min, max, mean, std } = dimStats(data2d, d);
       const chip = document.createElement("div");
       chip.className = "fv-chip";
       chip.id = `fv-${prefix}-${d}`;
-      chip.title = `min: ${min.toFixed(4)}  max: ${max.toFixed(4)}`;
-      chip.innerHTML = `<span class="fv-dim" style="color:${PALETTE[d % PALETTE.length]}">${names[d] ?? `${prefix}${d}`}</span><span class="fv-val" id="fv-${prefix}v-${d}">—</span>`;
+      chip.title = `min: ${min.toFixed(4)}  max: ${max.toFixed(4)}\nmean: ${mean.toFixed(4)}  std: ${std.toFixed(4)}\nClick to copy current value`;
+      chip.style.cursor = "pointer";
+      chip.dataset.min = min;
+      chip.dataset.max = max;
+      chip.innerHTML =
+        `<div class="fv-top">` +
+        `<span class="fv-dim" style="color:${PALETTE[d % PALETTE.length]}">${names[d] ?? `${prefix}${d}`}</span>` +
+        `<span class="fv-val" id="fv-${prefix}v-${d}">—</span>` +
+        `</div>` +
+        `<div class="fv-bar"><div class="fv-bar-fill" id="fv-${prefix}b-${d}" style="background:${PALETTE[d % PALETTE.length]}"></div></div>`;
+      chip.addEventListener("click", async () => {
+        const val = document.getElementById(`fv-${prefix}v-${d}`)?.textContent;
+        if (val && val !== "—") {
+          try { await navigator.clipboard.writeText(val); } catch (_) {}
+          showCopyToast(`✓ ${names[d] ?? `${prefix}${d}`}: ${val}`);
+        }
+      });
       grid.appendChild(chip);
     }
   };
@@ -2009,21 +2162,24 @@ function updateFrameValues() {
     return normalizeValue(v, ns[nsKey].q01[d], ns[nsKey].q99[d]);
   };
 
-  const sRow = ep.state?.[f];
-  if (sRow) {
-    sRow.forEach((v, d) => {
-      const span = document.getElementById(`fv-sv-${d}`);
-      if (span) span.textContent = applyNorm(v, "state", d).toFixed(4);
+  const updateDim = (prefix, row, nsKey) => {
+    if (!row) return;
+    row.forEach((v, d) => {
+      const span = document.getElementById(`fv-${prefix}v-${d}`);
+      if (span) span.textContent = applyNorm(v, nsKey, d).toFixed(4);
+      const bar = document.getElementById(`fv-${prefix}b-${d}`);
+      if (bar) {
+        const chip = document.getElementById(`fv-${prefix}-${d}`);
+        const mn = parseFloat(chip?.dataset.min ?? "0");
+        const mx = parseFloat(chip?.dataset.max ?? "1");
+        const pct = mx !== mn ? clamp((v - mn) / (mx - mn), 0, 1) * 100 : 50;
+        bar.style.width = pct + "%";
+      }
     });
-  }
+  };
 
-  const aRow = ep.actions?.[f];
-  if (aRow) {
-    aRow.forEach((v, d) => {
-      const span = document.getElementById(`fv-av-${d}`);
-      if (span) span.textContent = applyNorm(v, "action", d).toFixed(4);
-    });
-  }
+  updateDim("s", ep.state?.[f], "state");
+  updateDim("a", ep.actions?.[f], "action");
 }
 
 /* ── Playback ────────────────────────────────────────────── */
@@ -2139,6 +2295,24 @@ document.addEventListener("DOMContentLoaded", () => {
   loadRecentEpisodes();
   updateRecentSection();
 
+  // Restore persisted chart UI states
+  state.stateExpanded  = localStorage.getItem("expand_state")  === "1";
+  state.actionExpanded = localStorage.getItem("expand_action") === "1";
+  state.histState  = localStorage.getItem("hist_state")  === "1";
+  state.histAction = localStorage.getItem("hist_action") === "1";
+
+  // Restore corr/timedim open state (will take effect after episode loads)
+  if (localStorage.getItem("corrOpen") === "1") {
+    el("corr-body")?.classList.remove("corr-collapsed");
+    if (el("corr-section")) el("corr-section").dataset.open = "1";
+    el("corr-close")?.classList.add("active");
+  }
+  if (localStorage.getItem("timedimOpen") === "1") {
+    el("timedim-body")?.classList.remove("timedim-collapsed");
+    if (el("timedim-card")) el("timedim-card").dataset.open = "1";
+    el("timedim-toggle")?.classList.add("active");
+  }
+
   // Update welcome hint modifier key for platform
   const hint = document.querySelector(".welcome-hint");
   if (hint) hint.innerHTML = hint.innerHTML.replace(/Ctrl/g, MOD_KEY);
@@ -2211,6 +2385,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const nowCollapsed = body.classList.toggle("corr-collapsed");
     el("corr-section").dataset.open = nowCollapsed ? "" : "1";
     el("corr-close").classList.toggle("active", !nowCollapsed);
+    localStorage.setItem("corrOpen", nowCollapsed ? "0" : "1");
     if (!nowCollapsed && state.episode) buildCorrelationHeatmap(state.episode);
   });
 
@@ -2220,6 +2395,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const nowCollapsed = body.classList.toggle("timedim-collapsed");
     card.dataset.open = nowCollapsed ? "" : "1";
     el("timedim-toggle").classList.toggle("active", !nowCollapsed);
+    localStorage.setItem("timedimOpen", nowCollapsed ? "0" : "1");
     if (!nowCollapsed && state.episode) buildTimeDimHeatmap(state.episode);
   });
 
@@ -2277,7 +2453,9 @@ document.addEventListener("DOMContentLoaded", () => {
       if (cur < SPEEDS.length - 1) {
         state.speed = SPEEDS[cur + 1];
         el("speed-select").value = state.speed;
+        localStorage.setItem("speed", state.speed);
         if (state.playing) { stopPlayback(); startPlayback(); }
+        showCopyToast(`Speed: ${state.speed}×`);
       }
       return;
     }
@@ -2287,7 +2465,9 @@ document.addEventListener("DOMContentLoaded", () => {
       if (cur > 0) {
         state.speed = SPEEDS[cur - 1];
         el("speed-select").value = state.speed;
+        localStorage.setItem("speed", state.speed);
         if (state.playing) { stopPlayback(); startPlayback(); }
+        showCopyToast(`Speed: ${state.speed}×`);
       }
       return;
     }
@@ -2302,6 +2482,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.key === "h" || e.key === "H") {
       e.preventDefault();
       toggleHistogram(e.shiftKey ? "action" : "state");
+      return;
+    }
+    if (e.key === "e" || e.key === "E") {
+      e.preventDefault();
+      toggleExpand(e.shiftKey ? "action" : "state");
       return;
     }
     if (e.key === "t" || e.key === "T") {
@@ -2393,10 +2578,15 @@ document.addEventListener("DOMContentLoaded", () => {
         e.preventDefault();
         if (state.playing) stopPlayback(); else startPlayback();
         break;
+      case "Enter":
+        if (modKey) { e.preventDefault(); if (state.playing) stopPlayback(); else startPlayback(); }
+        break;
       case "ArrowLeft":
         e.preventDefault();
         if (!el("cam-lightbox").classList.contains("hidden")) {
           lightboxNavigate(-1);
+        } else if (e.altKey) {
+          navigateFrameHistory(-1);
         } else {
           stopPlayback();
           setFrame(state.frame - (e.shiftKey ? 10 : 1));
@@ -2406,6 +2596,8 @@ document.addEventListener("DOMContentLoaded", () => {
         e.preventDefault();
         if (!el("cam-lightbox").classList.contains("hidden")) {
           lightboxNavigate(1);
+        } else if (e.altKey) {
+          navigateFrameHistory(1);
         } else {
           stopPlayback();
           setFrame(state.frame + (e.shiftKey ? 10 : 1));
@@ -2414,6 +2606,10 @@ document.addEventListener("DOMContentLoaded", () => {
       case "r": case "R": case "Home":
         e.preventDefault();
         stopPlayback(); setFrame(0);
+        break;
+      case "z": case "Z":
+        e.preventDefault();
+        stopPlayback(); setFrame(0); startPlayback();
         break;
       case "End":
         e.preventDefault();
