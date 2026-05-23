@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v26
+   LeRobot Visualizer — app.js  v27
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -329,7 +329,17 @@ async function loadDatasets() {
       return;
     }
     tree.innerHTML = "";
-    for (const ds of datasets) tree.appendChild(buildDatasetNode(ds));
+    for (const ds of datasets) {
+      const node = buildDatasetNode(ds);
+      // Restore expansion state from localStorage
+      const dsExpandKey = `ds-expand-${ds.path}`;
+      if (localStorage.getItem(dsExpandKey) === "1") {
+        node.classList.add("open");
+        // Trigger load
+        node.querySelector(".ds-header")?.click();
+      }
+      tree.appendChild(node);
+    }
     // Auto-open when there's only one dataset
     if (datasets.length === 1) {
       tree.querySelector(".ds-header")?.click();
@@ -381,7 +391,11 @@ function buildDatasetNode(ds) {
   let loaded = false;
 
   header.addEventListener("click", async () => {
+    const isOpening = !node.classList.contains("open");
     node.classList.toggle("open");
+    // Persist dataset expansion state
+    const dsExpandKey = `ds-expand-${ds.path}`;
+    localStorage.setItem(dsExpandKey, isOpening ? "1" : "0");
     if (!loaded) {
       loaded = true;
       try {
@@ -437,18 +451,27 @@ function buildTaskNode(dsPath, task, allLengths = []) {
     item.tabIndex = 0;
     item.setAttribute("role", "option");
     item.setAttribute("aria-label", `Episode ${ep.episode_index}, ${ep.length} frames`);
-    item.title = `ep_${String(ep.episode_index).padStart(6,"0")} · ${ep.length} frames`;
+    item.title = `ep_${String(ep.episode_index).padStart(6,"0")} · ${ep.length} frames · double-click to play`;
 
-    const handleActivate = (ctrlKey = false) => {
+    const handleActivate = (ctrlKey = false, autoPlay = false) => {
       if (ctrlKey) selectCompareEpisode(dsPath, ep.episode_index, item);
-      else selectEpisode(dsPath, ep.episode_index, task.task, item);
+      else {
+        selectEpisode(dsPath, ep.episode_index, task.task, item);
+        if (autoPlay) {
+          setTimeout(() => startPlayback(), 100);
+        }
+      }
     };
 
-    item.addEventListener("click", e => handleActivate(e.ctrlKey || e.metaKey));
+    item.addEventListener("click", e => handleActivate(e.ctrlKey || e.metaKey, false));
+    item.addEventListener("dblclick", e => {
+      e.preventDefault();
+      handleActivate(false, true);
+    });
     item.addEventListener("keydown", e => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
-        handleActivate(e.ctrlKey || e.metaKey);
+        handleActivate(e.ctrlKey || e.metaKey, false);
       }
     });
 
@@ -515,11 +538,15 @@ function applySearch(query) {
     const total   = children.querySelectorAll(".task-group").length;
     const visible = children.querySelectorAll(".task-group:not(.search-hidden)").length;
     if (total > 0) {
-      node.style.display = visible ? "" : "none";
-      if (q && visible && !node.classList.contains("open")) {
+      const show = (q && visible) || !q;
+      node.style.display = show ? "" : "none";
+      const isOpen = node.classList.contains("open");
+      if (q && visible && !isOpen) {
         node.querySelector(".ds-header")?.click();
+      } else if (!q && isOpen) {
+        // Optionally: auto-close on clear — disabled for now, user prefers manual
       }
-      totalVisible += visible;
+      if (show && visible) totalVisible += visible;
     }
   });
 
@@ -731,7 +758,10 @@ function clearCompare() {
   state.compareEpIndex = null;
   document.querySelectorAll(".ep-item.compare").forEach(e => e.classList.remove("compare"));
   el("compare-banner").classList.add("hidden");
-  if (state.episode) buildCharts(state.episode);
+  if (state.episode) {
+    buildCharts(state.episode);
+    showCopyToast("✓ Comparison cleared");
+  }
 }
 
 const MAX_CAMS = 6;
@@ -742,7 +772,15 @@ function buildCameraGrid(ep) {
   const count = Math.min(ep.has_images ? ep.image_keys.length : 0, MAX_CAMS) || 0;
   cameras.className = count > 0 ? `cams-${count}` : "";
   cameras.innerHTML = "";
-  if (count === 0) return;
+  if (count === 0) {
+    // Show note if episode has video keys but no image fallback
+    if (ep.video_keys?.length > 0 && !ep.has_images) {
+      cameras.innerHTML = `<div style="padding:12px;color:var(--text-3);font-size:11px;text-align:center;background:var(--bg-2);border-radius:var(--radius);border:1px solid var(--border);">
+        Video cameras detected but frame extraction unavailable<br><span style="font-size:10px">Install opencv-python for video support</span>
+      </div>`;
+    }
+    return;
+  }
   for (let i = 0; i < count; i++) {
     const slot = document.createElement("div");
     slot.className = "cam-slot";
@@ -2004,6 +2042,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   el("btn-play").addEventListener("click", () => {
     if (state.playing) stopPlayback(); else startPlayback();
+    el("btn-play").setAttribute("aria-label", state.playing ? "Pause playback" : "Start playback");
   });
   el("btn-rewind").addEventListener("click", () => { stopPlayback(); setFrame(0); });
   el("btn-loop").addEventListener("click", () => {
