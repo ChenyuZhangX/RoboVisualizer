@@ -399,7 +399,8 @@ mark.search-hl {
   font-size: 11.5px;
 }
 .ep-item:hover { background: var(--bg-3); color: var(--text); }
-.ep-item:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; border-radius: 2px; }
+.ep-item:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; border-radius: 2px; box-shadow: inset 0 0 0 1px rgba(59,130,246,.3); }
+.ep-item:disabled, .ep-item[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
 .task-header:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; border-radius: 3px; }
 .ds-header:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; border-radius: 3px; }
 .ep-item.active,
@@ -1396,6 +1397,11 @@ html.dark #viewer-footer {
   0%, 100% { opacity: 0; }
   50%       { opacity: 1; }
 }
+
+/* ── Camera slot focus and hover ─────────────────────────────── */
+.cam-slot { transition: box-shadow .15s ease, transform .15s ease; }
+.cam-slot:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--blue); }
+.cam-slot:hover:not([data-loading]) { box-shadow: inset 0 0 0 1px rgba(59,130,246,.3); }
 
 /* ── FV chip value: monospace ────────────────────────────────── */
 .fv-val { font-family: ui-monospace, "Cascadia Code", Menlo, monospace; font-size: 10.5px; font-variant-numeric: tabular-nums; }

@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v32
+   LeRobot Visualizer — app.js  v33
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -1522,18 +1522,20 @@ async function copyCurrentFrameJSON() {
     ) : null,
   };
   const json = JSON.stringify(obj, null, 2);
+  const sizeKb = (json.length / 1024).toFixed(1);
   try {
     await navigator.clipboard.writeText(json);
+    showCopyToast(`✓ Frame ${f} copied (${sizeKb} KB)`, "success");
   } catch (_) {
     const inp = document.createElement("textarea");
     inp.value = json;
     inp.style.cssText = "position:fixed;top:-9999px;opacity:0;";
     document.body.appendChild(inp);
     inp.select();
-    try { document.execCommand("copy"); } catch (_2) {}
+    try { document.execCommand("copy"); showCopyToast(`✓ Frame ${f} copied (${sizeKb} KB)`, "success"); }
+    catch (_2) { showCopyToast("Failed to copy", "error"); }
     document.body.removeChild(inp);
   }
-  showCopyToast(`✓ Frame ${f} values copied as JSON`, "success");
 }
 
 /* ── Download chart as PNG ───────────────────────────────── */
@@ -3233,7 +3235,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Don't auto-expand; user should control. Just ensure consistency with media query.
   }, { passive: true });
 
-  // Search input: Escape clears; Enter jumps to first visible episode
+  // Search input: Escape clears; Enter/ArrowDown jumps to first visible episode
   el("search-input").addEventListener("keydown", e => {
     if (e.key === "Escape") {
       e.stopPropagation();
@@ -3250,7 +3252,7 @@ document.addEventListener("DOMContentLoaded", () => {
         first.click();
         el("search-input").blur();
       }
-    } else if (e.key === "ArrowDown") {
+    } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       const first = document.querySelector(
         ".ep-item:not(.ep-search-hidden):not(.search-hidden .ep-item)"
