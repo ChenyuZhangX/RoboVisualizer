@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v49
+   LeRobot Visualizer — app.js  v50
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -1220,7 +1220,7 @@ function buildCameraGrid(ep) {
     if (ep.video_keys?.length > 0 && !ep.has_images) {
       cameras.innerHTML = `<div class="no-cam-notice">
         Video cameras detected but frame extraction unavailable<br>
-        <span style="font-size:10px">Install opencv-python for video support</span>
+        <small>Install opencv-python for video support</small>
       </div>`;
     } else if ((ep.image_keys?.length ?? 0) === 0) {
       cameras.innerHTML = `<div class="no-cam-notice">No camera data in this episode</div>`;
@@ -1393,21 +1393,24 @@ function renderFrameData(keys, frames) {
 
     if (!slot.dataset.camEventsSet) {
       slot.addEventListener("click", e => {
+        const img = slot.querySelector("img");
+        if (!img?.src) return;
         if (e.ctrlKey || e.metaKey) {
           e.preventDefault();
-          const curKey = el(`cam-${i}`)?.querySelector("img")?.alt;
-          const curSrc = frames[curKey];
-          if (curSrc) {
-            _downloadDataURI(curSrc, `${curKey}_ep${state.activeEpIndex}_f${state.frame}.jpg`);
-            showCopyToast(`✓ Saved ${curKey} frame ${state.frame}`, "success");
-          }
+          const curKey = img.alt;
+          _downloadDataURI(img.src, `${curKey}_ep${state.activeEpIndex}_f${state.frame}.jpg`);
+          showCopyToast(`✓ Saved ${curKey} frame ${state.frame}`, "success");
         } else {
-          openLightbox(src, keyDisplay, i);
+          openLightbox(img.src, img.alt.replace(/_/g, " "), i);
         }
       });
 
       slot.addEventListener("keydown", e => {
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openLightbox(src, keyDisplay, i); }
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          const img = slot.querySelector("img");
+          if (img?.src) openLightbox(img.src, img.alt.replace(/_/g, " "), i);
+        }
       });
 
       slot.addEventListener("dblclick", e => {
@@ -1906,7 +1909,7 @@ function buildChartCard(type, data2d, names, normalized, ep, cmpData2d = null, n
   if (titleEl) {
     titleEl.innerHTML =
       (type === "state" ? "State" : "Action") +
-      `<span style="color:var(--text-3);font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;margin-left:4px;">(${dims}D)</span>` +
+      `<span class="chart-title-sub">(${dims}D)</span>` +
       (badge ? " " + badge : "");
   }
 
@@ -2309,7 +2312,8 @@ function buildCorrelationHeatmap(ep) {
   canvas.id = "corr-canvas";
   const dpr = window.devicePixelRatio || 1;
   canvas.width = W * dpr; canvas.height = H_TOTAL * dpr;
-  canvas.style.cssText = `width:${W}px;height:${H_TOTAL}px;`;
+  canvas.style.width = W + "px";
+  canvas.style.height = H_TOTAL + "px";
   canvas.setAttribute("role", "img");
   canvas.setAttribute("aria-label", `Action correlation matrix (${dims}×${dims})`);
   body.appendChild(canvas);
@@ -2545,8 +2549,6 @@ function buildTimeDimHeatmap(ep) {
   // Colorbar legend (per-dimension normalization, so labels are generic)
   {
     const legend = document.createElement("div");
-    legend.className = "timedim-colorbar";
-    const isDark = document.documentElement.classList.contains("dark");
     legend.className = "timedim-legend";
     // Draw gradient swatch using a small canvas
     const swatch = document.createElement("canvas");
@@ -2815,7 +2817,7 @@ function buildFrameValuesPanel(ep) {
     hdr.className = "fv-panel-header";
     hdr.innerHTML =
       `<span class="fv-panel-title">Frame Values</span>` +
-      `<div style="display:flex;gap:4px;align-items:center;">` +
+      `<div class="fv-btn-group">` +
         `<button class="fv-copy-all-btn${_fvSortActive ? " active" : ""}" id="fv-sort-btn" title="Sort by absolute value">` +
           `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>` +
           ` Sort` +
@@ -2844,7 +2846,6 @@ function buildFrameValuesPanel(ep) {
       chip.className = "fv-chip";
       chip.id = `fv-${prefix}-${d}`;
       chip.title = `min: ${min.toFixed(4)}  max: ${max.toFixed(4)}\nmean: ${mean.toFixed(4)}  std: ${std.toFixed(4)}\nClick to copy current value`;
-      chip.style.cursor = "pointer";
       const span = document.createElement("span");
       span.className = "fv-val";
       span.textContent = "—";
@@ -2961,10 +2962,9 @@ function updateScrubber() {
   scrubber.title = titleStr;
   scrubber.setAttribute("aria-valuenow", state.frame);
   scrubber.setAttribute("aria-valuetext", titleStr);
-  // Fill the scrubber track to show playback progress
+  // Fill the scrubber track to show playback progress (CSS --scrub-pct custom property)
   const pct = ep.length > 1 ? (state.frame / (ep.length - 1)) * 100 : 0;
-  scrubber.style.background =
-    `linear-gradient(to right, var(--blue) ${pct}%, var(--border) ${pct}%)`;
+  scrubber.style.setProperty("--scrub-pct", pct.toFixed(1) + "%");
 }
 
 function stopPlayback() {
@@ -3153,8 +3153,6 @@ document.addEventListener("DOMContentLoaded", () => {
     el("btn-loop").click();
     showCopyToast(state.looping ? "Loop on" : "Loop off");
   });
-  el("fps-badge").style.cursor = "pointer";
-  el("fps-badge").title = "Click to toggle loop";
   el("btn-export").addEventListener("click", exportFrame);
   el("btn-frame-values").addEventListener("click", toggleFrameValuesPanel);
   el("btn-normalize")?.addEventListener("click", toggleNormalize);

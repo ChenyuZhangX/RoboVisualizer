@@ -50,7 +50,7 @@
   --alpha-2:   rgba(59,130,246,.2);
   --alpha-4:   rgba(59,130,246,.4);
   --alpha-6-blue:  rgba(59,130,246,.6);
-  --alpha-3-amber: var(--alpha-3-amber);
+  --alpha-3-amber: rgba(245,158,11,.3);
   --alpha-4-amber: rgba(245,158,11,.4);
   --alpha-3-green: rgba(16,185,129,.3);
   --alpha-4-green: rgba(16,185,129,.4);
@@ -773,6 +773,7 @@ html.dark .ep-len.len-long      { color: #22C55E; background: #0a2017; }
   color: var(--text-2);
   line-height: 1.5;
 }
+.no-cam-notice small { font-size: var(--font-2xs); color: var(--text-3); }
 
 .cam-label {
   position: absolute;
@@ -834,6 +835,7 @@ html.dark .chart-card:hover { background: var(--bg-2); }
   text-transform: none;
   letter-spacing: 0;
   font-size: var(--font-2xs);
+  margin-left: 4px;
 }
 
 .norm-badge {
@@ -1130,12 +1132,12 @@ html.dark #speed-select:hover, html.dark #speed-select:focus { background: var(-
   height: 4px;
   -webkit-appearance: none;
   appearance: none;
-  background: var(--border);
+  background: linear-gradient(to right, var(--blue) var(--scrub-pct, 0%), var(--border) var(--scrub-pct, 0%));
   border-radius: 2px;
   cursor: pointer;
   outline: none;
   min-width: 60px;
-  transition: background .12s ease;
+  transition: opacity .12s ease;
 }
 #scrubber:hover, #scrubber:focus { background: var(--blue); opacity: .7; }
 #scrubber::-webkit-slider-thumb {
@@ -1501,6 +1503,7 @@ html.dark #viewer-footer {
 /* ── FPS badge animation ──────────────────────────────────────── */
 #fps-badge {
   animation: none;
+  cursor: pointer;
 }
 #fps-badge:not(.hidden) {
   animation: badge-pop .15s ease;
@@ -1677,6 +1680,7 @@ textarea:focus {
   border-color: var(--blue);
   background: var(--blue-lt);
 }
+.fv-btn-group { display: flex; gap: 4px; align-items: center; }
 
 /* ── Search: filter hint placeholder (smaller font) ─────────── */
 #search-input::placeholder { font-size: var(--font-xs); }
