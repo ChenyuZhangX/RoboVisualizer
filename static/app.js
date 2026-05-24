@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v69
+   LeRobot Visualizer — app.js  v70
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -135,6 +135,7 @@ const dsSlug = () => (state.activeDataset ?? "").replace(/[^a-z0-9_-]/gi, "_").s
 const epPad = (idx = state.activeEpIndex) => String(idx).padStart(6, "0");
 const apiDs = ds => `/api/datasets/${encodeURIComponent(ds)}`;
 const hasActiveEp = () => !!(state.activeDataset && state.activeEpIndex != null);
+const isKey = (e, ...keys) => keys.some(k => e.key === k || e.key === k.toUpperCase());
 
 function debounce(fn, ms) {
   let t;
@@ -3237,7 +3238,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (inInput) return;
 
-    if (e.key === "b" || e.key === "B") {
+    if (isKey(e, "b")) {
       e.preventDefault(); toggleSidebar(); return;
     }
 
@@ -3260,7 +3261,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     const modKey = e.ctrlKey || e.metaKey;
-    if (e.key === "/" || e.key === "g" || e.key === "G" || (modKey && e.key === "k")) {
+    if (e.key === "/" || isKey(e, "g") || (modKey && e.key === "k")) {
       e.preventDefault();
       el("search-input").focus();
       el("search-input").select();
@@ -3318,32 +3319,32 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       return;
     }
-    if (e.key === "l" || e.key === "L") {
+    if (isKey(e, "l")) {
       e.preventDefault();
       toggleLooping();
       return;
     }
-    if (e.key === "h" || e.key === "H") {
+    if (isKey(e, "h")) {
       e.preventDefault();
       toggleHistogram(e.shiftKey ? "action" : "state");
       return;
     }
-    if (e.key === "e" || e.key === "E") {
+    if (isKey(e, "e")) {
       e.preventDefault();
       toggleExpand(e.shiftKey ? "action" : "state");
       return;
     }
-    if (e.key === "t" || e.key === "T") {
+    if (isKey(e, "t")) {
       e.preventDefault();
       el("timedim-toggle")?.click();
       return;
     }
-    if (e.key === "k" || e.key === "K") {
+    if (isKey(e, "k")) {
       e.preventDefault();
       el("corr-close")?.click();
       return;
     }
-    if (e.key === "v" || e.key === "V" || e.key === "p" || e.key === "P") {
+    if (isKey(e, "v", "p")) {
       e.preventDefault();
       toggleFrameValuesPanel();
       return;
@@ -3378,27 +3379,27 @@ document.addEventListener("DOMContentLoaded", () => {
       setFrame(state.frame + (e.key === "PageDown" ? step : -step));
       return;
     }
-    if (e.key === "n" || e.key === "N") {
+    if (isKey(e, "n")) {
       e.preventDefault();
       toggleNormalize();
       return;
     }
-    if (e.key === "c" || e.key === "C") {
+    if (isKey(e, "c")) {
       e.preventDefault();
       copyEpisodeURL();
       return;
     }
-    if (e.key === "x" || e.key === "X") {
+    if (isKey(e, "x")) {
       e.preventDefault();
       exportCSV();
       return;
     }
-    if (e.key === "w" || e.key === "W") {
+    if (isKey(e, "w")) {
       e.preventDefault();
       exportTimestamps();
       return;
     }
-    if (e.key === "q" || e.key === "Q") {
+    if (isKey(e, "q")) {
       e.preventDefault();
       const ts = state.episode?.timestamps?.[state.frame];
       if (ts != null) {
@@ -3408,12 +3409,12 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       return;
     }
-    if (e.key === "j" || e.key === "J") {
+    if (isKey(e, "j")) {
       e.preventDefault();
       exportJSON();
       return;
     }
-    if (e.key === "d" || e.key === "D") {
+    if (isKey(e, "d")) {
       e.preventDefault();
       // D in lightbox: download current camera frame; outside lightbox: download current frame as PNG
       if (!isHidden("cam-lightbox")) {
@@ -3423,12 +3424,12 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       return;
     }
-    if (e.key === "i" || e.key === "I") {
+    if (isKey(e, "i")) {
       e.preventDefault();
       toggle("ep-info-strip", "hidden");
       return;
     }
-    if (e.key === "a" || e.key === "A") {
+    if (isKey(e, "a")) {
       e.preventDefault();
       // Scroll sidebar to active episode
       const activeItem = document.querySelector(".ep-item.active");
@@ -3441,7 +3442,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       return;
     }
-    if (e.key === "o" || e.key === "O") {
+    if (isKey(e, "o")) {
       e.preventDefault();
       // Isolate: collapse all task groups except the one containing the active episode
       const activeItem = document.querySelector(".ep-item.active");
@@ -3465,7 +3466,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (state.episode && !state.playing) el("frame-counter").click();
       return;
     }
-    if (e.key === "f" || e.key === "F") {
+    if (isKey(e, "f")) {
       if (!isHidden("cam-lightbox")) {
         e.preventDefault();
         // Fullscreen the lightbox image box
@@ -3482,7 +3483,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       return;
     }
-    if ((modKey) && (e.key === "m" || e.key === "M")) {
+    if (modKey && isKey(e, "m")) {
       e.preventDefault();
       if (state.episode) {
         stopPlayback();
@@ -3491,7 +3492,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       return;
     }
-    if (e.key === "m" || e.key === "M") {
+    if (isKey(e, "m")) {
       e.preventDefault();
       _mirrorMode = !_mirrorMode;
       try { lsFlag("mirrorMode", _mirrorMode); } catch (_) {}
