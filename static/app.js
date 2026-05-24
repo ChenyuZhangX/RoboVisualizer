@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v65
+   LeRobot Visualizer — app.js  v66
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -130,6 +130,9 @@ const lsBool = k => localStorage.getItem(k) === "1";
 const lsFlag = (k, v) => localStorage.setItem(k, v ? "1" : "0");
 const isoNow = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
 const setDisabled = (ids, disabled) => ids.forEach(id => { const e = el(id); if (e) e.disabled = disabled; });
+const unslug = s => s.replace(/_/g, " ");
+const dsSlug = () => (state.activeDataset ?? "").replace(/[^a-z0-9_-]/gi, "_").slice(0, 32);
+const epPad = (idx = state.activeEpIndex) => String(idx).padStart(6, "0");
 
 function debounce(fn, ms) {
   let t;
@@ -1362,7 +1365,7 @@ function lightboxNavigate(delta) {
   const next = (cur + delta + keys.length) % keys.length;
   const slot = el(`cam-${next}`);
   const img = slot?.querySelector("img");
-  if (img) openLightbox(img.src, keys[next].replace(/_/g, " "), next);
+  if (img) openLightbox(img.src, unslug(keys[next]), next);
 }
 
 function renderFrameData(keys, frames) {
@@ -1373,7 +1376,7 @@ function renderFrameData(keys, frames) {
     const src = frames[key];
     if (!src) { resetCam(i); return; }
 
-    const keyDisplay = key.replace(/_/g, " ");
+    const keyDisplay = unslug(key);
 
     let img = slot.querySelector("img");
     if (!img) {
@@ -1403,7 +1406,7 @@ function renderFrameData(keys, frames) {
           _downloadDataURI(img.src, `${curKey}_ep${state.activeEpIndex}_f${state.frame}.jpg`);
           showCopyToast(`✓ Saved ${curKey} frame ${state.frame}`, "success");
         } else {
-          openLightbox(img.src, img.alt.replace(/_/g, " "), i);
+          openLightbox(img.src, unslug(img.alt), i);
         }
       });
 
@@ -1411,7 +1414,7 @@ function renderFrameData(keys, frames) {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           const img = slot.querySelector("img");
-          if (img?.src) openLightbox(img.src, img.alt.replace(/_/g, " "), i);
+          if (img?.src) openLightbox(img.src, unslug(img.alt), i);
         }
       });
 
@@ -1448,7 +1451,7 @@ async function updateImages() {
       const tsStr = ts != null
         ? ` · ${ts >= 60 ? formatDuration(ts) : ts.toFixed(3) + "s"}  (f${state.frame})`
         : ` (f${state.frame})`;
-      if (key) lbl.textContent = key.replace(/_/g, " ") + tsStr;
+      if (key) lbl.textContent = unslug(key) + tsStr;
     }
   }
 
@@ -1543,7 +1546,7 @@ function exportFrame() {
         ctx.font = "10px system-ui, sans-serif";
         ctx.textAlign = "right";
         ctx.fillText(
-          `ep_${String(state.activeEpIndex).padStart(6,"0")}  frame ${state.frame}`,
+          `ep_${epPad()}  frame ${state.frame}`,
           canvas.width - 8, H + FULLSCREEN_LABEL_HEIGHT - 10
         );
         canvas.toBlob(blob => {
@@ -1551,8 +1554,7 @@ function exportFrame() {
           const objectURL = URL.createObjectURL(blob);
           const a = document.createElement("a");
           a.href = objectURL;
-          const dsSlug = (state.activeDataset ?? "").replace(/[^a-z0-9_-]/gi, "_").slice(0, 32);
-          const dlName = `${dsSlug}__ep${String(state.activeEpIndex).padStart(6,"0")}_f${String(state.frame).padStart(4,"0")}.png`;
+          const dlName = `${dsSlug()}__ep${epPad()}_f${String(state.frame).padStart(4,"0")}.png`;
           a.download = dlName;
           a.click();
           setTimeout(() => URL.revokeObjectURL(objectURL), 5000);
@@ -1582,8 +1584,7 @@ function exportJSON() {
     state: ep.state,
     actions: ep.actions,
   };
-  const dsSlug = (state.activeDataset ?? "").replace(/[^a-z0-9_-]/gi, "_").slice(0, 32);
-  const fname = `${dsSlug}__ep${String(state.activeEpIndex).padStart(6,"0")}.json`;
+  const fname = `${dsSlug()}__ep${epPad()}.json`;
   _downloadBlob(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }), fname);
   showCopyToast("✓ JSON exported", "success");
 }
@@ -1595,7 +1596,7 @@ function exportTimestamps() {
   const lines = ep.timestamps.map((t, i) => `${i}\t${t.toFixed(6)}`);
   _downloadBlob(
     new Blob([lines.join("\n")], { type: "text/plain" }),
-    `${state.activeDataset}__ep${String(state.activeEpIndex).padStart(6,"0")}_timestamps.txt`
+    `${state.activeDataset}__ep${epPad()}_timestamps.txt`
   );
   showCopyToast("✓ Timestamps exported", "success");
 }
@@ -1628,8 +1629,7 @@ function exportCSV() {
     lines.push(row.map(csvCell).join(","));
   }
 
-  const dsSlug = (state.activeDataset ?? "").replace(/[^a-z0-9_-]/gi, "_").slice(0, 32);
-  const fname = `${dsSlug}__ep${String(state.activeEpIndex).padStart(6,"0")}.csv`;
+  const fname = `${dsSlug()}__ep${epPad()}.csv`;
   _downloadBlob(new Blob([lines.join("\n")], { type: "text/csv" }), fname);
   showCopyToast(`✓ Exported ${fname}`, "success");
 }
@@ -1716,7 +1716,7 @@ function downloadChart(type) {
   const charts = type === "state" ? state.stateCharts : state.actionCharts;
   const ep = state.episode;
   const suffix = ep
-    ? `_${state.activeDataset || "dataset"}_ep${String(state.activeEpIndex ?? 0).padStart(6, "0")}`
+    ? `_${state.activeDataset || "dataset"}_ep${epPad(state.activeEpIndex ?? 0)}`
     : "";
   const ts = isoNow();
 
