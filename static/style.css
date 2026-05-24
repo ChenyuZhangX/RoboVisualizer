@@ -1235,18 +1235,22 @@ kbd {
 }
 
 /* ── Custom scrollbars ────────────────────────────────────── */
+#sidebar::-webkit-scrollbar,
 #viewer-scroll::-webkit-scrollbar,
 #dataset-tree::-webkit-scrollbar { width: 5px; }
 
+#sidebar::-webkit-scrollbar-track,
 #viewer-scroll::-webkit-scrollbar-track,
 #dataset-tree::-webkit-scrollbar-track { background: transparent; }
 
+#sidebar::-webkit-scrollbar-thumb,
 #viewer-scroll::-webkit-scrollbar-thumb,
 #dataset-tree::-webkit-scrollbar-thumb {
   background: var(--border);
   border-radius: 3px;
 }
 
+#sidebar::-webkit-scrollbar-thumb:hover,
 #viewer-scroll::-webkit-scrollbar-thumb:hover,
 #dataset-tree::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
 
@@ -1457,7 +1461,7 @@ html.dark .frame-jump-input { background: var(--bg-2); }
 .mini-chart-wrap canvas:active { cursor: col-resize; }
 
 /* ── Camera slot focus and hover ─────────────────────────────── */
-.cam-slot { transition: box-shadow .15s ease, transform .15s ease; }
+.cam-slot { transition: box-shadow .15s ease; }
 .cam-slot:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--blue); }
 .cam-slot:hover:not(.loading) { box-shadow: inset 0 0 0 1px rgba(59,130,246,.3); }
 
@@ -1480,11 +1484,9 @@ html.dark .frame-jump-input { background: var(--bg-2); }
   opacity: .75;
 }
 
-/* ── Speed select hover ──────────────────────────────────────── */
-#speed-select { cursor: pointer; }
-#speed-select:focus { border-color: var(--blue); box-shadow: 0 0 0 2px rgba(59,130,246,.2); }
+/* ── Speed select focus glow ─────────────────────────────────── */
+#speed-select:focus { box-shadow: 0 0 0 2px rgba(59,130,246,.2); }
 
-#scrubber { accent-color: var(--blue); }
 #scrubber:focus { outline: 2px solid var(--blue); outline-offset: 2px; }
 
 /* ── Input elements focus styling ────────────────────────── */
@@ -1578,19 +1580,6 @@ textarea:focus {
 /* ── Search: filter hint placeholder (smaller font) ─────────── */
 #search-input::placeholder { font-size: 10.5px; }
 
-/* ── Custom thin scrollbars (Chrome/Safari/Edge) ─────────────── */
-#sidebar::-webkit-scrollbar,
-#viewer-scroll::-webkit-scrollbar { width: 5px; }
-#sidebar::-webkit-scrollbar-track,
-#viewer-scroll::-webkit-scrollbar-track { background: transparent; }
-#sidebar::-webkit-scrollbar-thumb,
-#viewer-scroll::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
-}
-#sidebar::-webkit-scrollbar-thumb:hover,
-#viewer-scroll::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
-
 /* ── Task header: left accent on active task's group ───────────── */
 .task-group:has(.ep-item.active) > .task-header {
   border-left: 2px solid var(--blue);
@@ -1642,6 +1631,9 @@ html.dark .cam-slot.loading::before {
 
 /* ── Correlation matrix font readability ─────────────────────── */
 #corr-body canvas { font-smooth: always; -webkit-font-smoothing: antialiased; }
+
+/* ── Interactive canvas focus ────────────────────────────────── */
+#timedim-canvas:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 3px; }
 
 /* ── Lightbox zoom badge ─────────────────────────────────────── */
 .lightbox-zoom-badge {

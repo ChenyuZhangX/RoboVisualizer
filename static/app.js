@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v41
+   LeRobot Visualizer — app.js  v42
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -70,11 +70,12 @@ function _refreshChartObserver() {
   _chartIntersectObs = null;
   const allCharts = [...state.stateCharts, ...state.actionCharts].filter(c => c?.canvas);
   if (!allCharts.length) return;
+  // Build a canvas→chart map once for O(1) lookup in the callback
+  const canvasMap = new Map(allCharts.map(c => [c.canvas, c]));
   _chartIntersectObs = new IntersectionObserver(entries => {
     for (const entry of entries) {
-      const chart = [...state.stateCharts, ...state.actionCharts]
-        .find(c => c?.canvas === entry.target);
-      if (!chart) return;
+      const chart = canvasMap.get(entry.target);
+      if (!chart) continue;
       if (entry.isIntersecting) _visibleCharts.add(chart);
       else _visibleCharts.delete(chart);
     }
@@ -557,11 +558,19 @@ async function loadDatasets() {
     updateSidebarFooter(datasets.length, totalEps, datasets);
   } catch (e) {
     const msg = e.message || "Unknown error";
-    tree.innerHTML = `<div class="error-msg" role="alert">
-      Failed to load datasets<br>
-      <span style="font-size:10px;color:var(--text-3);margin-top:4px;display:block">${escapeHTML(msg)}</span>
-      <button onclick="loadDatasets()" style="margin-top:6px;padding:2px 8px;font-size:11px;background:var(--blue);color:#fff;border:none;border-radius:3px;cursor:pointer">Retry</button>
-    </div>`;
+    const errDiv = document.createElement("div");
+    errDiv.className = "error-msg";
+    errDiv.setAttribute("role", "alert");
+    errDiv.innerHTML =
+      `Failed to load datasets<br>` +
+      `<span style="font-size:10px;color:var(--text-3);margin-top:4px;display:block">${escapeHTML(msg)}</span>`;
+    const retryBtn = document.createElement("button");
+    retryBtn.textContent = "Retry";
+    retryBtn.style.cssText = "margin-top:6px;padding:2px 8px;font-size:11px;background:var(--blue);color:#fff;border:none;border-radius:3px;cursor:pointer";
+    retryBtn.addEventListener("click", loadDatasets);
+    errDiv.appendChild(retryBtn);
+    tree.innerHTML = "";
+    tree.appendChild(errDiv);
     updateSidebarFooter(0, 0);
     console.error("Load datasets error:", e);
   } finally {
@@ -663,7 +672,7 @@ function buildDatasetNode(ds) {
           children.querySelector(".task-group")?.classList.add("open");
         }
       } catch (e) {
-        children.innerHTML = `<div class="error-msg">Failed to load tasks: ${e.message}</div>`;
+        children.innerHTML = `<div class="error-msg">Failed to load tasks: ${escapeHTML(e.message ?? String(e))}</div>`;
       }
     }
   });
@@ -856,12 +865,8 @@ function applySearch(query) {
       const lenOk = !hasFilter || matchesLengthFilter(parseInt(item.dataset.length ?? "0", 10), filters);
       const epMatches = textMatches && lenOk;
       const isHidden = q && !epMatches;
-      if (item.classList.toggle("ep-search-hidden", isHidden) !== isHidden) {
-        // Class actually changed; item became visible
-        if (!isHidden) anyEpMatch = true;
-      } else if (!isHidden) {
-        anyEpMatch = true;
-      }
+      item.classList.toggle("ep-search-hidden", isHidden);
+      if (!isHidden) anyEpMatch = true;
     }
 
     const groupVisible = taskMatches || anyEpMatch;
@@ -1029,11 +1034,17 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
   } catch (e) {
     el("viewer-loader")?.classList.add("hidden");
     el("viewer").setAttribute("aria-busy", "false");
-    const retryBtn = `<button onclick="selectEpisode(${JSON.stringify(dsPath)},${epIndex},${JSON.stringify(taskText)},document.querySelector('.ep-item.active'))" style="margin-left:10px;background:var(--bg-3);border:1px solid var(--border);border-radius:4px;padding:1px 8px;font-size:11px;cursor:pointer;color:var(--text-2)">Retry</button>`;
-    el("task-label").innerHTML =
+    const taskLbl = el("task-label");
+    taskLbl.innerHTML =
       `<span style="color:var(--amber-dk)">Load failed:</span>` +
-      `<span style="font-weight:400;color:var(--text-2);margin-left:6px">${escapeHTML(e.message)}</span>` +
-      retryBtn;
+      `<span style="font-weight:400;color:var(--text-2);margin-left:6px">${escapeHTML(e.message)}</span>`;
+    const retryBtn = document.createElement("button");
+    retryBtn.textContent = "Retry";
+    retryBtn.style.cssText = "margin-left:10px;background:var(--bg-3);border:1px solid var(--border);border-radius:4px;padding:1px 8px;font-size:11px;cursor:pointer;color:var(--text-2)";
+    retryBtn.addEventListener("click", () =>
+      selectEpisode(dsPath, epIndex, taskText, document.querySelector(".ep-item.active"))
+    );
+    taskLbl.appendChild(retryBtn);
     el("ep-info-strip").classList.add("hidden");
     el("charts-area").style.opacity = "";
     el("charts-area").style.pointerEvents = "";
@@ -1080,10 +1091,11 @@ function randomEpisode() {
   const list = state.episodeList;
   if (!list.length) return;
   const excludeIdx = state.currentEpListIdx;
-  // Pick a random index different from the current one
+  // Pick uniformly from all episodes except the current one (O(1), no retry loop)
   let idx;
   if (list.length > 1) {
-    do { idx = Math.floor(Math.random() * list.length); } while (idx === excludeIdx);
+    idx = Math.floor(Math.random() * (list.length - 1));
+    if (idx >= excludeIdx) idx++;
   } else {
     idx = 0;
   }
@@ -1505,6 +1517,7 @@ function exportFrame() {
           canvas.width - 8, H + 18
         );
         canvas.toBlob(blob => {
+          if (!blob) { showCopyToast("Export failed: could not create image", "error"); return; }
           const objectURL = URL.createObjectURL(blob);
           const a = document.createElement("a");
           a.href = objectURL;
@@ -1771,6 +1784,17 @@ function showCopyToast(msg = "Copied to clipboard", type = "info") {
 }
 
 /* ── Charts ─────────────────────────────────────────────── */
+
+// Shared axis/tick number formatter (compact: 1k, 1.23, 1.234e-5, …)
+function fmtAxisTick(v) {
+  const a = Math.abs(v);
+  if (a === 0) return "0";
+  if (a >= 1000) return (v / 1000).toFixed(1) + "k";
+  if (a >= 1)    return v.toFixed(2).replace(/\.?0+$/, "");
+  if (a >= 0.01) return v.toFixed(3).replace(/\.?0+$/, "");
+  return v.toExponential(1);
+}
+
 function buildCharts(ep) {
   if (!ep) return;
   const ns = state.normalizeEnabled ? state.normStats : null;
@@ -2005,21 +2029,13 @@ function makeChart(canvasId, labels, data2d, names, normalized, dims,
         }));
 
   const cc = chartColors();
-  const fmtTick = v => {
-    const a = Math.abs(v);
-    if (a === 0) return "0";
-    if (a >= 1000) return (v / 1000).toFixed(1) + "k";
-    if (a >= 1)    return v.toFixed(2).replace(/\.?0+$/, "");
-    if (a >= 0.01) return v.toFixed(3).replace(/\.?0+$/, "");
-    return v.toExponential(1);
-  };
   const yConfig = normalized
     ? { min: -1.05, max: 1.05,
         ticks: { maxTicksLimit: isMini ? 3 : 5, font: { size: 9 }, color: cc.tick,
                  callback: v => v.toFixed(1) },
         grid: { color: cc.grid }, border: { color: cc.border } }
     : { ticks: { maxTicksLimit: isMini ? 3 : 5, font: { size: 9 }, color: cc.tick,
-                 callback: fmtTick },
+                 callback: fmtAxisTick },
         grid: { color: cc.grid }, border: { color: cc.border } };
 
   const chart = new Chart(ctx, {
@@ -2155,14 +2171,6 @@ function makeHistChart(canvasId, data2d, names, dims, dimIndex = null) {
       });
 
   const cc = chartColors();
-  const fmtTick = v => {
-    if (v === 0) return "0";
-    const a = Math.abs(v);
-    if (a >= 1000) return (v / 1000).toFixed(1) + "k";
-    if (a >= 1)    return v.toFixed(2).replace(/\.?0+$/, "");
-    if (a >= 0.01) return v.toFixed(3).replace(/\.?0+$/, "");
-    return v.toExponential(1);
-  };
   return new Chart(ctx, {
     type: "bar",
     data: { labels: datasets[0]._edges, datasets },
@@ -2173,7 +2181,7 @@ function makeHistChart(canvasId, data2d, names, dims, dimIndex = null) {
           labels: { font: { size: 9 }, boxWidth: 10, padding: 6, color: cc.tick } },
         tooltip: {
           callbacks: {
-            title: items => `≈${fmtTick(parseFloat(items[0].label))}`,
+            title: items => `≈${fmtAxisTick(parseFloat(items[0].label))}`,
             label: item => ` ${item.dataset.label}: ${item.raw}`,
           },
           bodyFont: { size: 11 }, padding: 6,
@@ -2187,7 +2195,7 @@ function makeHistChart(canvasId, data2d, names, dims, dimIndex = null) {
       },
       scales: {
         x: { ticks: { maxTicksLimit: 6, font: { size: 9 }, color: cc.tick,
-                      callback: v => fmtTick(parseFloat(datasets[0]._edges[v] ?? v)) },
+                      callback: v => fmtAxisTick(parseFloat(datasets[0]._edges[v] ?? v)) },
              grid: { display: false }, border: { color: cc.border } },
         y: { ticks: { maxTicksLimit: 4, font: { size: 9 }, color: cc.tick },
              grid: { color: cc.grid }, border: { color: cc.border } },
@@ -2245,8 +2253,8 @@ function pearson(xs, ys) {
 
 function corrColor(r) {
   const t = Math.abs(r);
-  if (r >= 0) return `rgb(255,${Math.round(255*(1-t))},${Math.round(255*(1-t))})`;
-  return `rgb(${Math.round(255*(1-t))},${Math.round(255*(1-t))},255)`;
+  const lo = Math.round(255 * (1 - t));
+  return r >= 0 ? `rgb(255,${lo},${lo})` : `rgb(${lo},${lo},255)`;
 }
 
 function buildCorrelationHeatmap(ep) {
@@ -2291,9 +2299,14 @@ function buildCorrelationHeatmap(ep) {
   ctx.scale(dpr, dpr);
   ctx.textBaseline = "middle";
 
+  // Pre-compute matrix once (used for both rendering and tooltip)
+  const corrMatrix = Array.from({ length: dims }, (_, i) =>
+    Array.from({ length: dims }, (_, j) => pearson(cols[i], cols[j]))
+  );
+
   for (let i = 0; i < dims; i++) {
     for (let j = 0; j < dims; j++) {
-      const r = pearson(cols[i], cols[j]);
+      const r = corrMatrix[i][j];
       ctx.fillStyle = corrColor(r);
       ctx.fillRect(LABEL_W + j * CELL, TOP_H + i * CELL, CELL - 1, CELL - 1);
       ctx.font = "8px ui-monospace, monospace";
@@ -2327,11 +2340,6 @@ function buildCorrelationHeatmap(ep) {
   ctx.textAlign = "center"; ctx.fillText("0",  barX + barW / 2, barY + COLORBAR_H + 9);
   ctx.textAlign = "right";  ctx.fillText("+1", barX + barW,     barY + COLORBAR_H + 9);
 
-  // Pre-compute all pearson values for tooltip
-  const corrMatrix = Array.from({ length: dims }, (_, i) =>
-    Array.from({ length: dims }, (_, j) => pearson(cols[i], cols[j]))
-  );
-
   const rawLabels = Array.from({ length: dims }, (_, d) => rawNames[d] ?? `a${d}`);
 
   canvas.addEventListener("mousemove", e => {
@@ -2358,6 +2366,15 @@ function buildCorrelationHeatmap(ep) {
 }
 
 /* ── Time × Dimension heatmap ────────────────────────────── */
+
+// Blue→green→red heatmap: t=0 is blue, t=0.5 green, t=1 red (per-dim normalised)
+function _heatmapColor(t) {
+  const r = Math.round(Math.min(255, t * 510));
+  const b = Math.round(Math.min(255, (1 - t) * 510));
+  const g = Math.round(120 * (1 - Math.abs(t - 0.5) * 2));
+  return `rgb(${r},${g},${b})`;
+}
+
 const TIMEDIM_LABEL_W = 60;  // left label column width
 // Cell height adapts: 18px for ≤20 dims, 12px for ≤40, 8px for more
 function timedimCellH(dims) {
@@ -2430,6 +2447,7 @@ function buildTimeDimHeatmap(ep) {
   const ctx = canvas.getContext("2d");
   ctx.scale(dpr, dpr);
   const cellW = CANVAS_W / frames;
+  const isDark = document.documentElement.classList.contains("dark");
 
   for (let d = 0; d < dims; d++) {
     const lo = dimMin[d], hi = dimMax[d], range = hi - lo || 1;
@@ -2437,14 +2455,10 @@ function buildTimeDimHeatmap(ep) {
 
     for (let f = 0; f < frames; f++) {
       const t = (ep.actions[f][d] - lo) / range;  // 0…1
-      const r = Math.round(Math.min(255, t * 510));
-      const b = Math.round(Math.min(255, (1 - t) * 510));
-      const g = Math.round(120 * (1 - Math.abs(t - 0.5) * 2));
-      ctx.fillStyle = `rgb(${r},${g},${b})`;
+      ctx.fillStyle = _heatmapColor(t);
       ctx.fillRect(TIMEDIM_LABEL_W + f * cellW, y0, Math.ceil(cellW), CELL_H - 1);
     }
 
-    const isDark = document.documentElement.classList.contains("dark");
     ctx.font = "9px -apple-system, sans-serif";
     ctx.fillStyle = isDark ? "#94A3B8" : "#64748B";
     ctx.textAlign = "right";
@@ -2454,7 +2468,6 @@ function buildTimeDimHeatmap(ep) {
 
   // Draw time axis
   {
-    const isDark = document.documentElement.classList.contains("dark");
     const axY = CANVAS_H + 2;
     ctx.font = "8px -apple-system, sans-serif";
     ctx.fillStyle = isDark ? "#64748B" : "#94A3B8";
@@ -2524,11 +2537,7 @@ function buildTimeDimHeatmap(ep) {
     swatch.style.cssText = "width:80px;height:8px;border-radius:2px;flex-shrink:0;";
     const sc = swatch.getContext("2d");
     for (let x = 0; x < 80; x++) {
-      const t = x / 79;
-      const r = Math.round(Math.min(255, t * 510));
-      const b = Math.round(Math.min(255, (1 - t) * 510));
-      const g = Math.round(120 * (1 - Math.abs(t - 0.5) * 2));
-      sc.fillStyle = `rgb(${r},${g},${b})`;
+      sc.fillStyle = _heatmapColor(x / 79);
       sc.fillRect(x, 0, 1, 8);
     }
     legend.appendChild(Object.assign(document.createElement("span"), { textContent: "low" }));
@@ -2749,18 +2758,20 @@ function hideTimeDimTooltip() {
 
 /* ── Episode per-dim statistics ─────────────────────────── */
 function dimStats(data2d, d) {
-  let min = Infinity, max = -Infinity, sum = 0, sumSq = 0;
   const n = data2d.length;
-  for (const row of data2d) {
-    const v = row[d];
+  if (!n) return { min: 0, max: 0, mean: 0, std: 0 };
+  let min = Infinity, max = -Infinity;
+  // Welford's online algorithm — numerically stable mean + variance
+  let mean = 0, M2 = 0;
+  for (let i = 0; i < n; i++) {
+    const v = data2d[i][d];
     if (v < min) min = v;
     if (v > max) max = v;
-    sum += v;
-    sumSq += v * v;
+    const delta = v - mean;
+    mean += delta / (i + 1);
+    M2 += delta * (v - mean);
   }
-  const mean = n > 0 ? sum / n : 0;
-  const variance = n > 1 ? sumSq / n - mean * mean : 0;
-  const std = Math.sqrt(Math.max(0, variance));
+  const std = n > 1 ? Math.sqrt(M2 / n) : 0;
   return { min, max, mean, std };
 }
 
