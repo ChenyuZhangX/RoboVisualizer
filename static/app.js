@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v46
+   LeRobot Visualizer — app.js  v47
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -1001,10 +1001,9 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
   const displayTask = taskText?.length > 80 ? taskText.slice(0, 77) + "…" : (taskText ?? "");
   el("task-label").textContent = displayTask;
   el("task-label").title = taskText?.length > 80 ? taskText : "";
-  el("ep-info-strip").innerHTML = `<span class="spinner"></span><span style="color:var(--text-3)"> Loading…</span>`;
+  el("ep-info-strip").innerHTML = `<span class="spinner"></span><span class="text-muted"> Loading…</span>`;
   el("ep-info-strip").classList.remove("hidden");
-  el("charts-area").style.opacity = "0.4";
-  el("charts-area").style.pointerEvents = "none";
+  el("charts-area").classList.add("charts-loading");
 
   updatePrevNextButtons();
 
@@ -1040,8 +1039,7 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
     document.title = taskShort
       ? `ep_${String(epIndex).padStart(6, "0")} — ${taskShort} • LeRobot Visualizer`
       : `ep_${String(epIndex).padStart(6, "0")} • ${dsPath} • LeRobot Visualizer`;
-    el("charts-area").style.opacity = "";
-    el("charts-area").style.pointerEvents = "";
+    el("charts-area").classList.remove("charts-loading");
     el("viewer-loader")?.classList.add("hidden");
     el("viewer").setAttribute("aria-busy", "false");
     // Enable export buttons now that episode is loaded
@@ -1063,8 +1061,7 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
     );
     taskLbl.appendChild(retryBtn);
     el("ep-info-strip").classList.add("hidden");
-    el("charts-area").style.opacity = "";
-    el("charts-area").style.pointerEvents = "";
+    el("charts-area").classList.remove("charts-loading");
     state.episode = null;
   } finally {
     if (_loadingEpKey === key) _loadingEpKey = null;
@@ -1226,9 +1223,7 @@ function buildCameraGrid(ep) {
         <span style="font-size:10px">Install opencv-python for video support</span>
       </div>`;
     } else if ((ep.image_keys?.length ?? 0) === 0) {
-      cameras.innerHTML = `<div class="no-cam-notice" style="color:var(--text-3)">
-        No camera data in this episode
-      </div>`;
+      cameras.innerHTML = `<div class="no-cam-notice">No camera data in this episode</div>`;
     }
     return;
   }
@@ -1681,7 +1676,7 @@ async function copyEpisodeURL() {
     // Fallback: select text in a temporary input for manual copy
     const inp = document.createElement("input");
     inp.value = url;
-    inp.style.cssText = "position:fixed;top:-9999px;opacity:0;";
+    inp.className = "offscreen-input";
     document.body.appendChild(inp);
     inp.select();
     try { document.execCommand("copy"); showCopyToast("✓ URL copied to clipboard", "success"); }
@@ -1722,7 +1717,7 @@ async function copyCurrentFrameJSON() {
   } catch (_) {
     const inp = document.createElement("textarea");
     inp.value = json;
-    inp.style.cssText = "position:fixed;top:-9999px;opacity:0;";
+    inp.className = "offscreen-input";
     document.body.appendChild(inp);
     inp.select();
     try { document.execCommand("copy"); showCopyToast(`✓ Frame ${f} copied (${sizeKb} KB)`, "success"); }
@@ -1926,9 +1921,7 @@ function buildChartCard(type, data2d, names, normalized, ep, cmpData2d = null, n
   }
 
   if (expanded && dims > 64) {
-    body.innerHTML = `<div class="chart-no-data" style="padding:14px">
-      ${dims}D — too many to split (max 64). Use the combined view.
-    </div>`;
+    body.innerHTML = `<div class="chart-no-data">${dims}D — too many to split (max 64). Use the combined view.</div>`;
     return [];
   }
 
@@ -3255,9 +3248,10 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // ── Keyboard shortcuts ────────────────────────────────────
+  const _inputTags = new Set(["INPUT", "TEXTAREA", "SELECT"]);
   document.addEventListener("keydown", e => {
     const tag = e.target.tagName;
-    const inInput = ["INPUT", "TEXTAREA", "SELECT"].includes(tag);
+    const inInput = _inputTags.has(tag);
 
     if (e.key === "?" && !inInput) {
       e.preventDefault();

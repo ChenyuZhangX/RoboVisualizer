@@ -88,6 +88,12 @@ body {
 :focus { outline: none; }
 :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: var(--radius-xs); }
 
+/* ── Utility ─────────────────────────────────────────────── */
+.text-muted { color: var(--text-3); }
+.text-2 { color: var(--text-2); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
+.offscreen-input { position: fixed; top: -9999px; opacity: 0; }
+
 /* ── Layout ───────────────────────────────────────────────── */
 #app { display: flex; flex-direction: column; height: 100vh; }
 
@@ -788,6 +794,7 @@ html.dark .ep-len.len-long      { color: #22C55E; background: #0a2017; }
   margin-bottom: 12px;
   transition: opacity .2s ease;
 }
+#charts-area.charts-loading { opacity: 0.4; pointer-events: none; }
 
 .chart-card {
   background: var(--bg);
