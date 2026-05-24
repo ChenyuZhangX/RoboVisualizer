@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v55
+   LeRobot Visualizer — app.js  v56
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -8,6 +8,7 @@ const SEARCH_DEBOUNCE_MS = 160;
 const SPEEDS = [0.25, 0.5, 1, 2, 4];
 const SIDEBAR_BREAKPOINT = 720;
 const MAX_RECENT = 8;
+const MAX_CAMS = 6;
 const FRAME_HISTORY_MAX = 40;
 const MAX_LEGEND_DIMS = 20;
 const CHART_MINI_DIMS_THRESHOLD = 22;
@@ -1214,8 +1215,6 @@ function clearCompare() {
     showCopyToast("✓ Comparison cleared", "success");
   }
 }
-
-const MAX_CAMS = 6;
 
 /* ── Camera grid ─────────────────────────────────────────── */
 function buildCameraGrid(ep) {
