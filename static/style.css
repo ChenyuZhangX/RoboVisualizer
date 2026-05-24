@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   LeRobot Visualizer — style.css  v54
+   LeRobot Visualizer — style.css  v55
    ────────────────────────────────────────────────────────── */
 
 /* ── Reset & Base ─────────────────────────────────────────── */
@@ -82,6 +82,8 @@ html.dark {
   --red:       #F87171;
   --shadow:    0 1px 3px var(--alpha-3-black), 0 1px 2px rgba(0,0,0,.2);
   --shadow-md: 0 4px 12px var(--alpha-4-black), 0 2px 4px var(--alpha-3-black);
+  --dark-green-bg: var(--dark-green-bg);
+  --dark-green-border: var(--dark-green-border);
 }
 
 html, body { height: 100%; }
@@ -508,7 +510,7 @@ mark.search-hl {
 .ep-len.len-med-long  { color: #16A34A; background: #DCFCE7; }
 .ep-len.len-long      { color: #15803D; background: #BBF7D0; }
 html.dark .ep-len.len-med-short { color: #FB923C; background: #3d1a08; }
-html.dark .ep-len.len-med-long  { color: #4ADE80; background: #0d2e1f; }
+html.dark .ep-len.len-med-long  { color: #4ADE80; background: var(--dark-green-bg); }
 html.dark .ep-len.len-long      { color: #22C55E; background: #0a2017; }
 
 /* Loading / error */
@@ -859,7 +861,7 @@ html.dark .chart-card:hover { background: var(--bg-2); }
   border-radius: var(--radius-lg);
   padding: 1px 7px;
 }
-html.dark .norm-badge { background: #0d2e1f; border-color: #166534; }
+html.dark .norm-badge { background: var(--dark-green-bg); border-color: var(--dark-green-border); }
 
 .chart-btn-group {
   display: flex;
@@ -1249,7 +1251,7 @@ html.dark #speed-select:hover, html.dark #speed-select:focus { background: var(-
   flex-shrink: 0;
   white-space: nowrap;
 }
-html.dark .fps-badge { background: #0d2e1f; border-color: #166534; }
+html.dark .fps-badge { background: var(--dark-green-bg); border-color: var(--dark-green-border); }
 
 /* ── Info chip variants ───────────────────────────────────── */
 .info-chip-blue {
@@ -1264,7 +1266,7 @@ html.dark .info-chip-blue { color: #93c5fd; }
   background: #ECFDF5;
   border-color: var(--alpha-4-green);
 }
-html.dark .info-chip-green { color: #6EE7B7; background: #0d2e1f; border-color: var(--alpha-3-green); }
+html.dark .info-chip-green { color: #6EE7B7; background: var(--dark-green-bg); border-color: var(--alpha-3-green); }
 
 .info-chip-orange {
   color: #92400E;
