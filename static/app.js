@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v60
+   LeRobot Visualizer — app.js  v61
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -19,9 +19,12 @@ const FRAME_LABEL_SIZE_PX = 11;
 const FULLSCREEN_LABEL_HEIGHT = 20;
 const HISTOGRAM_BIN_COUNT = 22;
 const TIMEDIM_MAX_CANVAS_W = 900;
+const TIMEDIM_LABEL_W = 60;         // timedim left label column width (px)
+const TIMEDIM_MAX_DIMS = 128;       // hard canvas OOM limit
 const API_TIMEOUT_MS = 30000;
 const FRAME_RETRY_DELAY_MS = 700;
 const FRAME_RETRY_DEBOUNCE_MS = 120;
+const CHART_FONT_SIZE = 9;          // Chart.js tick/label font size (px)
 const PALETTE = [
   "#3B82F6","#10B981","#F59E0B","#EF4444","#8B5CF6",
   "#06B6D4","#F97316","#EC4899","#14B8A6","#6366F1",
@@ -115,6 +118,7 @@ const _frameRetryPending = new Set();
 const el = id => document.getElementById(id);
 const isHidden = id => el(id)?.classList.contains("hidden") ?? true;
 const truncate = (str, maxLen) => str?.length > maxLen ? str.slice(0, maxLen - 1) + "…" : (str ?? "");
+const capitalize = s => s ? s[0].toUpperCase() + s.slice(1) : s;
 const epStr = idx => `ep_${String(idx).padStart(6, "0")}`;
 
 function debounce(fn, ms) {
@@ -1864,7 +1868,7 @@ function toggleExpand(type) {
 }
 
 function toggleHistogram(type) {
-  const key = `hist${type[0].toUpperCase() + type.slice(1)}`;
+  const key = `hist${capitalize(type)}`;
   state[key] = !state[key];
   localStorage.setItem(`hist_${type}`, state[key] ? "1" : "0");
   rebuildChartsFor(type);
@@ -1872,7 +1876,7 @@ function toggleHistogram(type) {
 
 function buildChartCard(type, data2d, names, normalized, ep, cmpData2d = null, normBand = null) {
   const expanded = state[`${type}Expanded`];
-  const isHist   = state[`hist${type[0].toUpperCase() + type.slice(1)}`];
+  const isHist   = state[`hist${capitalize(type)}`];
   const body    = el(`chart-body-${type}`);
   const titleEl = el(`chart-title-${type}`);
   const btn     = el(`expand-${type}`);
@@ -1890,7 +1894,7 @@ function buildChartCard(type, data2d, names, normalized, ep, cmpData2d = null, n
     ? `<span class="norm-badge">normalized [−1, 1]</span>` : "";
   if (titleEl) {
     titleEl.innerHTML =
-      (type === "state" ? "State" : "Action") +
+      capitalize(type) +
       `<span class="chart-title-sub">(${dims}D)</span>` +
       (badge ? " " + badge : "");
   }
@@ -1939,7 +1943,6 @@ function buildChartCard(type, data2d, names, normalized, ep, cmpData2d = null, n
     if (dims > 0 && dims <= MAX_LEGEND_DIMS) {
       const legendDiv = document.createElement("div");
       legendDiv.className = "chart-legend";
-      const maxShow = MAX_LEGEND_DIMS;
       const legendItems = [];
       const setAllVisible = () => {
         for (let i = 0; i < dims; i++) {
@@ -1949,7 +1952,7 @@ function buildChartCard(type, data2d, names, normalized, ep, cmpData2d = null, n
         legendItems.forEach(li => li.classList.remove("legend-hidden"));
         mainChart?.update("none");
       };
-      for (let d = 0; d < Math.min(dims, maxShow); d++) {
+      for (let d = 0; d < dims; d++) {
         const item = document.createElement("span");
         item.className = "legend-item";
         item.title = `Click to show/hide · ${MOD_KEY}+click to isolate · dbl-click to show all`;
@@ -1974,12 +1977,6 @@ function buildChartCard(type, data2d, names, normalized, ep, cmpData2d = null, n
         item.addEventListener("dblclick", setAllVisible);
         legendItems.push(item);
         legendDiv.appendChild(item);
-      }
-      if (dims > maxShow) {
-        const more = document.createElement("span");
-        more.className = "legend-item legend-more";
-        more.textContent = `+${dims - maxShow} more`;
-        legendDiv.appendChild(more);
       }
       body.appendChild(legendDiv);
     }
@@ -2038,10 +2035,10 @@ function makeChart(canvasId, labels, data2d, names, normalized, dims,
   const cc = chartColors();
   const yConfig = normalized
     ? { min: -1.05, max: 1.05,
-        ticks: { maxTicksLimit: isMini ? 3 : 5, font: { size: 9 }, color: cc.tick,
+        ticks: { maxTicksLimit: isMini ? 3 : 5, font: { size: CHART_FONT_SIZE }, color: cc.tick,
                  callback: v => v.toFixed(1) },
         grid: { color: cc.grid }, border: { color: cc.border } }
-    : { ticks: { maxTicksLimit: isMini ? 3 : 5, font: { size: 9 }, color: cc.tick,
+    : { ticks: { maxTicksLimit: isMini ? 3 : 5, font: { size: CHART_FONT_SIZE }, color: cc.tick,
                  callback: fmtAxisTick },
         grid: { color: cc.grid }, border: { color: cc.border } };
 
@@ -2091,7 +2088,7 @@ function makeChart(canvasId, labels, data2d, names, normalized, dims,
       },
       scales: {
         x: {
-          ticks: { maxTicksLimit: isMini ? 4 : 8, font: { size: 9 }, color: cc.tick },
+          ticks: { maxTicksLimit: isMini ? 4 : 8, font: { size: CHART_FONT_SIZE }, color: cc.tick },
           grid: { color: cc.grid }, border: { color: cc.border },
         },
         y: yConfig,
@@ -2185,7 +2182,7 @@ function makeHistChart(canvasId, data2d, names, dims, dimIndex = null) {
       animation: false, responsive: true, maintainAspectRatio: false,
       plugins: {
         legend: { display: !isMini && dims <= 6,
-          labels: { font: { size: 9 }, boxWidth: 10, padding: 6, color: cc.tick } },
+          labels: { font: { size: CHART_FONT_SIZE }, boxWidth: 10, padding: 6, color: cc.tick } },
         tooltip: {
           callbacks: {
             title: items => `≈${fmtAxisTick(parseFloat(items[0].label))}`,
@@ -2201,10 +2198,10 @@ function makeHistChart(canvasId, data2d, names, dims, dimIndex = null) {
         },
       },
       scales: {
-        x: { ticks: { maxTicksLimit: 6, font: { size: 9 }, color: cc.tick,
+        x: { ticks: { maxTicksLimit: 6, font: { size: CHART_FONT_SIZE }, color: cc.tick,
                       callback: v => fmtAxisTick(parseFloat(datasets[0]._edges[v] ?? v)) },
              grid: { display: false }, border: { color: cc.border } },
-        y: { ticks: { maxTicksLimit: 4, font: { size: 9 }, color: cc.tick },
+        y: { ticks: { maxTicksLimit: 4, font: { size: CHART_FONT_SIZE }, color: cc.tick },
              grid: { color: cc.grid }, border: { color: cc.border } },
       },
     },
@@ -2375,15 +2372,12 @@ function _heatmapColor(t) {
   return `rgb(${r},${g},${b})`;
 }
 
-const TIMEDIM_LABEL_W = 60;  // left label column width
 // Cell height adapts: 18px for ≤20 dims, 12px for ≤40, 8px for more
 function timedimCellH(dims) {
   if (dims <= 20) return 18;
   if (dims <= 40) return 12;
   return 8;
 }
-
-const TIMEDIM_MAX_DIMS = 128;  // hard limit to avoid canvas OOM
 
 function buildTimeDimHeatmap(ep) {
   const card = el("timedim-card");
