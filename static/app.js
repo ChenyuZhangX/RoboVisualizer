@@ -1,14 +1,25 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v43
+   LeRobot Visualizer — app.js  v44
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
 const PREFETCH_AHEAD = 8;
 const SEARCH_DEBOUNCE_MS = 160;
 const SPEEDS = [0.25, 0.5, 1, 2, 4];
-const SIDEBAR_BREAKPOINT = 720;  // px; auto-collapse sidebar below this width
-const MAX_RECENT = 8;            // number of recent episodes to show
-const FRAME_HISTORY_MAX = 40;    // max manual-navigation positions to remember
+const SIDEBAR_BREAKPOINT = 720;
+const MAX_RECENT = 8;
+const FRAME_HISTORY_MAX = 40;
+const MAX_LEGEND_DIMS = 20;
+const CHART_MINI_DIMS_THRESHOLD = 22;
+const FRAME_EXPORT_WIDTH = 480;
+const FRAME_EXPORT_HEIGHT_RATIO = 3 / 4;
+const FRAME_LABEL_HEIGHT = 28;
+const FRAME_LABEL_SIZE_PX = 11;
+const FULLSCREEN_LABEL_HEIGHT = 20;
+const HISTOGRAM_BIN_COUNT = 22;
+const API_TIMEOUT_MS = 30000;
+const FRAME_RETRY_DELAY_MS = 700;
+const FRAME_RETRY_DEBOUNCE_MS = 120;
 const PALETTE = [
   "#3B82F6","#10B981","#F59E0B","#EF4444","#8B5CF6",
   "#06B6D4","#F97316","#EC4899","#14B8A6","#6366F1",
@@ -62,13 +73,15 @@ let _lastFvUpdateMs = 0;
 /* ── Chart visibility (IntersectionObserver) ────────────── */
 const _visibleCharts = new Set();
 let _chartIntersectObs = null;
+let _allChartsCache = [];  // updated in _refreshChartObserver to avoid repeated spread
 
 function _refreshChartObserver() {
-  if (!('IntersectionObserver' in window)) return;
   _visibleCharts.clear();
   _chartIntersectObs?.disconnect();
   _chartIntersectObs = null;
-  const allCharts = [...state.stateCharts, ...state.actionCharts].filter(c => c?.canvas);
+  _allChartsCache = [...state.stateCharts, ...state.actionCharts].filter(c => c?.canvas);
+  const allCharts = _allChartsCache;
+  if (!('IntersectionObserver' in window)) return;
   if (!allCharts.length) return;
   // Build a canvas→chart map once for O(1) lookup in the callback
   const canvasMap = new Map(allCharts.map(c => [c.canvas, c]));
@@ -100,7 +113,7 @@ function debounce(fn, ms) {
   return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
 }
 
-async function apiFetch(path, timeoutMs = 30000, externalSignal = null) {
+async function apiFetch(path, timeoutMs = API_TIMEOUT_MS, externalSignal = null) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   // Propagate external cancellation
@@ -845,6 +858,8 @@ function applySearch(query) {
 
   const { text: textQ, filters } = parseSearchFilters(q);
   const hasFilter = filters.length > 0;
+  const isNumericQuery = textQ.length > 0 && /^\d+$/.test(textQ);
+  const textQPadded = isNumericQuery ? textQ.padStart(6, "0") : "";
 
   document.querySelectorAll(".task-group").forEach(group => {
     const taskMatches = !textQ || (group.dataset.task?.includes(textQ) ?? false);
@@ -856,10 +871,8 @@ function applySearch(query) {
       const epLabel = item.querySelector("span:nth-child(2)")?.textContent ?? "";
       // Also match episode index as plain number or padded (e.g. "42" or "000042")
       const epNum = String(parseInt(item.dataset.episode ?? "", 10));
-      const epNumPadded = epNum.padStart(6, "0");
-      const isNumericQuery = textQ.match(/^\d+$/);
       const textMatches = taskMatches || !textQ || epLabel.toLowerCase().includes(textQ) ||
-        (isNumericQuery && (epNum === textQ || epNumPadded === textQ.padStart(6, "0")));
+        (isNumericQuery && (epNum === textQ || epNum.padStart(6, "0") === textQPadded));
       const lenOk = !hasFilter || matchesLengthFilter(parseInt(item.dataset.length ?? "0", 10), filters);
       const epMatches = textMatches && lenOk;
       const isHidden = q && !epMatches;
@@ -885,8 +898,9 @@ function applySearch(query) {
   document.querySelectorAll(".ds-node").forEach(node => {
     const children = node.querySelector(".ds-children");
     if (!children) return;
-    const total   = children.querySelectorAll(".task-group").length;
-    const visible = children.querySelectorAll(".task-group:not(.search-hidden)").length;
+    const taskGroups = children.querySelectorAll(".task-group");
+    const total = taskGroups.length;
+    const visible = Array.from(taskGroups).filter(g => !g.classList.contains("search-hidden")).length;
     if (total > 0) {
       const show = (q && visible) || !q;
       node.style.display = show ? "" : "none";
@@ -1357,6 +1371,8 @@ function renderFrameData(keys, frames) {
     const src = frames[key];
     if (!src) { resetCam(i); return; }
 
+    const keyDisplay = key.replace(/_/g, " ");
+
     let img = slot.querySelector("img");
     if (!img) {
       slot.innerHTML = "";
@@ -1366,33 +1382,44 @@ function renderFrameData(keys, frames) {
       slot.appendChild(img);
       const lbl = document.createElement("div");
       lbl.className = "cam-label";
-      lbl.textContent = key.replace(/_/g, " ");
+      lbl.textContent = keyDisplay;
       slot.appendChild(lbl);
     }
     img.src = src;
     slot.tabIndex = 0;
     slot.setAttribute("role", "button");
-    slot.setAttribute("aria-label", `Camera view: ${key.replace(/_/g, " ")} — press Enter to expand`);
-    slot.title = key.replace(/_/g, " ") + " — click to expand · Ctrl+click to download · double-click for fullscreen · Enter to expand";
-    slot.onclick = e => {
-      if (e.ctrlKey || e.metaKey) {
-        e.preventDefault();
-        _downloadDataURI(src, `${key}_ep${state.activeEpIndex}_f${state.frame}.jpg`);
-        showCopyToast(`✓ Saved ${key} frame ${state.frame}`, "success");
-      } else {
-        openLightbox(src, key.replace(/_/g, " "), i);
-      }
-    };
-    slot.onkeydown = e => {
-      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openLightbox(src, key.replace(/_/g, " "), i); }
-    };
-    slot.ondblclick = e => {
-      e.stopPropagation();
-      if (document.fullscreenEnabled) {
-        if (document.fullscreenElement) document.exitFullscreen();
-        else slot.requestFullscreen?.();
-      }
-    };
+    slot.setAttribute("aria-label", `Camera view: ${keyDisplay} — press Enter to expand`);
+    slot.title = keyDisplay + " — click to expand · Ctrl+click to download · double-click for fullscreen · Enter to expand";
+
+    if (!slot.dataset.camEventsSet) {
+      slot.addEventListener("click", e => {
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          const curKey = el(`cam-${i}`)?.querySelector("img")?.alt;
+          const curSrc = frames[curKey];
+          if (curSrc) {
+            _downloadDataURI(curSrc, `${curKey}_ep${state.activeEpIndex}_f${state.frame}.jpg`);
+            showCopyToast(`✓ Saved ${curKey} frame ${state.frame}`, "success");
+          }
+        } else {
+          openLightbox(src, keyDisplay, i);
+        }
+      });
+
+      slot.addEventListener("keydown", e => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openLightbox(src, keyDisplay, i); }
+      });
+
+      slot.addEventListener("dblclick", e => {
+        e.stopPropagation();
+        if (document.fullscreenEnabled) {
+          if (document.fullscreenElement) document.exitFullscreen();
+          else slot.requestFullscreen?.();
+        }
+      });
+
+      slot.dataset.camEventsSet = "true";
+    }
   });
 }
 
@@ -1437,7 +1464,7 @@ async function updateImages() {
     try {
       const frames = await apiFetch(
         `/api/datasets/${encodeURIComponent(state.activeDataset)}/episodes/${state.activeEpIndex}/frame/${f}`,
-        10000, fetchController.signal
+        API_TIMEOUT_MS, fetchController.signal
       );
       if (fetchController.signal.aborted) return;
       if (state.frame === f) {
@@ -1453,13 +1480,13 @@ async function updateImages() {
       if (e.name === "AbortError") return;  // request was superseded by a newer frame
       if (state.frame === f) {
         el("fps-badge")?.classList.remove("loading");
-        // Auto-retry once after 700ms (transient network or server hiccup)
+        // Auto-retry once after FRAME_RETRY_DELAY_MS (transient network or server hiccup)
         if (!_frameRetryPending.has(f)) {
           _frameRetryPending.add(f);
           setTimeout(() => {
             _frameRetryPending.delete(f);
             if (state.frame === f && !state.frameCache.has(f)) updateImages();
-          }, 700);
+          }, FRAME_RETRY_DELAY_MS);
         } else {
           // Retry already failed — show error state
           keys.forEach((_, i) => {
@@ -1486,10 +1513,10 @@ function exportFrame() {
   }
   if (!imgs.length) { showCopyToast("No camera images loaded yet", "error"); return; }
 
-  const W = 480, H = Math.round(W * 3 / 4);
+  const W = FRAME_EXPORT_WIDTH, H = Math.round(W * FRAME_EXPORT_HEIGHT_RATIO);
   const canvas = document.createElement("canvas");
   canvas.width = imgs.length * W;
-  canvas.height = H + 28;
+  canvas.height = H + FRAME_LABEL_HEIGHT;
   const ctx = canvas.getContext("2d");
   ctx.fillStyle = "#0F172A";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1501,9 +1528,9 @@ function exportFrame() {
     tmp.onload = () => {
       ctx.drawImage(tmp, i * W, 0, W, H);
       ctx.fillStyle = "rgba(0,0,0,.5)";
-      ctx.fillRect(i * W, H - 20, W, 20);
+      ctx.fillRect(i * W, H - FULLSCREEN_LABEL_HEIGHT, W, FULLSCREEN_LABEL_HEIGHT);
       ctx.fillStyle = "#fff";
-      ctx.font = "bold 11px system-ui, sans-serif";
+      ctx.font = `bold ${FRAME_LABEL_SIZE_PX}px system-ui, sans-serif`;
       ctx.textAlign = "left";
       ctx.fillText(label.toUpperCase(), i * W + 8, H - 7);
       if (++loaded === imgs.length) {
@@ -1512,7 +1539,7 @@ function exportFrame() {
         ctx.textAlign = "right";
         ctx.fillText(
           `ep_${String(state.activeEpIndex).padStart(6,"0")}  frame ${state.frame}`,
-          canvas.width - 8, H + 18
+          canvas.width - 8, H + FULLSCREEN_LABEL_HEIGHT - 10
         );
         canvas.toBlob(blob => {
           if (!blob) { showCopyToast("Export failed: could not create image", "error"); return; }
@@ -1926,10 +1953,10 @@ function buildChartCard(type, data2d, names, normalized, ep, cmpData2d = null, n
     const mainChart = makeChart(`${type}-chart`, labels, data2d, names, normalized, dims, null, cmpData2d, null);
     charts.push(mainChart);
     // Compact legend below chart — click to toggle, Ctrl+click to isolate, dbl-click to show all
-    if (dims > 0 && dims <= 20) {
+    if (dims > 0 && dims <= MAX_LEGEND_DIMS) {
       const legendDiv = document.createElement("div");
       legendDiv.className = "chart-legend";
-      const maxShow = 20;
+      const maxShow = MAX_LEGEND_DIMS;
       const legendItems = [];
       const setAllVisible = () => {
         for (let i = 0; i < dims; i++) {
@@ -2129,7 +2156,7 @@ function makeChart(canvasId, labels, data2d, names, normalized, dims,
 }
 
 /* ── Histogram charts ────────────────────────────────────── */
-function computeBins(values, nBins = 22) {
+function computeBins(values, nBins = HISTOGRAM_BIN_COUNT) {
   if (!values.length) return { edges: [], counts: [] };
   let mn = values[0], mx = values[0];
   for (let i = 1; i < values.length; i++) {
@@ -2216,12 +2243,10 @@ function updateChartCursor() {
     _chartCursorThrottleMs = now;
   }
   _lastChartUpdateFrame = state.frame;
-  // Update only visible charts; if IntersectionObserver hasn't been set up yet,
-  // update all charts as a safe fallback.
-  const allCharts = [...state.stateCharts, ...state.actionCharts].filter(Boolean);
+  // Use cached chart list; fall back to all charts when IntersectionObserver unavailable
   const toUpdate = _chartIntersectObs !== null
-    ? allCharts.filter(c => _visibleCharts.has(c))
-    : allCharts;
+    ? _allChartsCache.filter(c => _visibleCharts.has(c))
+    : _allChartsCache;
   toUpdate.forEach(c => c.update("none"));
   // Update document title with frame info during playback (throttled)
   if (state.playing) {
@@ -2857,7 +2882,7 @@ function updateFrameValues() {
   // Throttle at high playback speeds to avoid layout thrash
   if (state.playing && state.speed >= 2) {
     const now = performance.now();
-    if (now - _lastFvUpdateMs < 120) return;
+    if (now - _lastFvUpdateMs < FRAME_RETRY_DEBOUNCE_MS) return;
     _lastFvUpdateMs = now;
   }
   const f = state.frame;
