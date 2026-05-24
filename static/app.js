@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v67
+   LeRobot Visualizer — app.js  v68
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -442,6 +442,10 @@ function chartColors() {
     ttTitle:    dark ? "#E2E8F0" : "#1E293B",
     ttBody:     dark ? "#94A3B8" : "#475569",
   };
+}
+
+function _axisConf(cc, maxTicks, tickExtra = {}, gridExtra = {}, outer = {}) {
+  return { ...outer, ticks: { maxTicksLimit: maxTicks, font: { size: CHART_FONT_SIZE }, color: cc.tick, ...tickExtra }, grid: { color: cc.grid, ...gridExtra }, border: { color: cc.border } };
 }
 
 /* ── Chart.js plugins ────────────────────────────────────── */
@@ -2050,13 +2054,8 @@ function makeChart(canvasId, labels, data2d, names, normalized, dims,
 
   const cc = chartColors();
   const yConfig = normalized
-    ? { min: -1.05, max: 1.05,
-        ticks: { maxTicksLimit: isMini ? 3 : 5, font: { size: CHART_FONT_SIZE }, color: cc.tick,
-                 callback: v => v.toFixed(1) },
-        grid: { color: cc.grid }, border: { color: cc.border } }
-    : { ticks: { maxTicksLimit: isMini ? 3 : 5, font: { size: CHART_FONT_SIZE }, color: cc.tick,
-                 callback: fmtAxisTick },
-        grid: { color: cc.grid }, border: { color: cc.border } };
+    ? _axisConf(cc, isMini ? 3 : 5, { callback: v => v.toFixed(1) }, {}, { min: -1.05, max: 1.05 })
+    : _axisConf(cc, isMini ? 3 : 5, { callback: fmtAxisTick });
 
   const chart = new Chart(ctx, {
     type: "line",
@@ -2103,10 +2102,7 @@ function makeChart(canvasId, labels, data2d, names, normalized, dims,
         cursor: {}, stdBand: {},
       },
       scales: {
-        x: {
-          ticks: { maxTicksLimit: isMini ? 4 : 8, font: { size: CHART_FONT_SIZE }, color: cc.tick },
-          grid: { color: cc.grid }, border: { color: cc.border },
-        },
+        x: _axisConf(cc, isMini ? 4 : 8),
         y: yConfig,
       },
     },
@@ -2214,11 +2210,8 @@ function makeHistChart(canvasId, data2d, names, dims, dimIndex = null) {
         },
       },
       scales: {
-        x: { ticks: { maxTicksLimit: 6, font: { size: CHART_FONT_SIZE }, color: cc.tick,
-                      callback: v => fmtAxisTick(parseFloat(datasets[0]._edges[v] ?? v)) },
-             grid: { display: false }, border: { color: cc.border } },
-        y: { ticks: { maxTicksLimit: 4, font: { size: CHART_FONT_SIZE }, color: cc.tick },
-             grid: { color: cc.grid }, border: { color: cc.border } },
+        x: _axisConf(cc, 6, { callback: v => fmtAxisTick(parseFloat(datasets[0]._edges[v] ?? v)) }, { display: false }),
+        y: _axisConf(cc, 4),
       },
     },
   });
