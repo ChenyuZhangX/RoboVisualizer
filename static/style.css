@@ -25,6 +25,10 @@
   --shadow-md: 0 4px 12px rgba(0,0,0,.08), 0 2px 4px rgba(0,0,0,.05);
 
   --radius:    8px;
+  --radius-lg: 10px;
+  --radius-md: 6px;
+  --radius-sm: 4px;
+  --radius-xs: 3px;
   --sidebar-w: 264px;
   --topbar-h:  46px;
   --ctrl-h:    46px;
@@ -82,7 +86,7 @@ body {
 
 /* ── Accessibility ────────────────────────────────────────── */
 :focus { outline: none; }
-:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 3px; }
+:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: var(--radius-xs); }
 
 /* ── Layout ───────────────────────────────────────────────── */
 #app { display: flex; flex-direction: column; height: 100vh; }
@@ -131,7 +135,7 @@ body.is-playing #topbar {
   cursor: pointer;
   color: var(--text-3);
   padding: 6px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   transition: color var(--transition), background var(--transition);
@@ -148,7 +152,7 @@ body.is-playing #topbar {
   cursor: pointer;
   color: var(--text-3);
   padding: 4px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   transition: color var(--transition), background var(--transition);
@@ -223,7 +227,7 @@ body.is-playing #topbar {
   width: 100%;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 5px 28px 5px 26px;
   font-size: 12px;
   color: var(--text);
@@ -240,7 +244,7 @@ body.is-playing #topbar {
   cursor: pointer;
   color: var(--text-3);
   padding: 2px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   display: flex;
   align-items: center;
   transition: color var(--transition);
@@ -330,7 +334,7 @@ mark.search-hl {
   cursor: pointer;
   color: var(--text-3);
   padding: 2px 4px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   display: flex;
   align-items: center;
   margin-right: 8px;
@@ -378,7 +382,7 @@ mark.search-hl {
   color: var(--text-3);
   background: var(--bg-3);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   padding: 1px 6px;
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
@@ -441,8 +445,8 @@ mark.search-hl {
 .ep-item:hover { background: var(--bg-3); color: var(--text); }
 .ep-item:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; border-radius: 2px; box-shadow: inset 0 0 0 1px rgba(59,130,246,.3); }
 .ep-item:disabled, .ep-item[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
-.task-header:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; border-radius: 3px; }
-.ds-header:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; border-radius: 3px; }
+.task-header:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; border-radius: var(--radius-xs); }
+.ds-header:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; border-radius: var(--radius-xs); }
 .ep-item.active,
 .ep-item[aria-selected="true"] {
   background: var(--blue-lt);
@@ -478,7 +482,7 @@ mark.search-hl {
   margin-left: auto;
   font-size: 10px;
   color: var(--text-3);
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 1px 5px;
 }
 .ep-len.len-short     { color: var(--red); background: var(--red-lt); }
@@ -521,14 +525,14 @@ html.dark .ep-len.len-long      { color: #22C55E; background: #0a2017; }
   background: var(--red-lt);
   border-left: 3px solid var(--red);
   margin: 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   line-height: 1.5;
 }
 .error-msg button {
   background: var(--red);
   color: #fff;
   border: none;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   padding: 3px 9px;
   font-size: var(--font-sm);
   cursor: pointer;
@@ -638,7 +642,7 @@ html.dark .ep-len.len-long      { color: #22C55E; background: #0a2017; }
   cursor: pointer;
   color: var(--amber-dk);
   padding: 2px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   display: flex;
   align-items: center;
   opacity: .7;
@@ -729,7 +733,7 @@ html.dark .ep-len.len-long      { color: #22C55E; background: #0a2017; }
   color: rgba(255,255,255,.88);
   background: var(--alpha-45);
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   text-transform: uppercase;
   letter-spacing: .4px;
   pointer-events: none;
@@ -773,6 +777,13 @@ html.dark .chart-card:hover { background: var(--bg-2); }
   align-items: center;
   gap: 6px;
 }
+.chart-title-sub {
+  color: var(--text-3);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 10px;
+}
 
 .norm-badge {
   font-size: 9.5px;
@@ -782,7 +793,7 @@ html.dark .chart-card:hover { background: var(--bg-2); }
   color: var(--green);
   background: #ECFDF5;
   border: 1px solid #A7F3D0;
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   padding: 1px 7px;
 }
 html.dark .norm-badge { background: #0d2e1f; border-color: #166534; }
@@ -823,7 +834,7 @@ html.dark .norm-badge { background: #0d2e1f; border-color: #166534; }
 .mini-chart-item {
   background: var(--bg-2);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 6px 8px 4px;
 }
 .mini-chart-label {
@@ -841,7 +852,7 @@ html.dark .norm-badge { background: #0d2e1f; border-color: #166534; }
   font-size: 9.5px;
   color: var(--text-3);
   background: var(--bg-3);
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 1px 5px;
   flex-shrink: 0;
 }
@@ -925,7 +936,7 @@ html.dark .norm-badge { background: #0d2e1f; border-color: #166534; }
   position: fixed;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 5px 9px;
   font-size: 11.5px;
   color: var(--text);
@@ -1008,7 +1019,7 @@ html.dark .norm-badge { background: #0d2e1f; border-color: #166534; }
 .ctrl-btn {
   background: none;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   padding: 5px 8px;
   color: var(--text-2);
@@ -1030,7 +1041,7 @@ html.dark .norm-badge { background: #0d2e1f; border-color: #166534; }
 #speed-select {
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 4px 6px;
   font-size: 11.5px;
   color: var(--text-2);
@@ -1110,7 +1121,7 @@ html.dark #speed-select:hover, html.dark #speed-select:focus { background: var(-
   font-size: 10px;
   color: var(--text-2);
   white-space: nowrap;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   padding: 1px 3px;
   transition: background var(--transition), opacity var(--transition), text-decoration-color var(--transition);
 }
@@ -1135,7 +1146,7 @@ html.dark #speed-select:hover, html.dark #speed-select:focus { background: var(-
 }
 .crumb-sep   { color: var(--text-3); }
 .crumb-ds    { color: var(--text-2); max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
-.crumb-ep    { color: var(--blue); font-weight: 600; border-radius: 3px; padding: 1px 3px; }
+.crumb-ep    { color: var(--blue); font-weight: 600; border-radius: var(--radius-xs); padding: 1px 3px; }
 .crumb-ep:hover  { background: var(--blue-lt); }
 .crumb-frame { color: var(--text-3); font-variant-numeric: tabular-nums; font-size: var(--font-sm); }
 
@@ -1146,7 +1157,7 @@ html.dark #speed-select:hover, html.dark #speed-select:focus { background: var(-
   color: var(--green);
   background: #ECFDF5;
   border: 1px solid #A7F3D0;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   padding: 1px 5px;
   flex-shrink: 0;
   white-space: nowrap;
@@ -1182,7 +1193,7 @@ html.dark .info-chip-orange { color: #FCD34D; background: #3d2a0a; border-color:
 /* ── Scrollbar ────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: var(--radius-lg); }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
 
 /* ── Modals (shared) ──────────────────────────────────────── */
@@ -1249,7 +1260,7 @@ kbd {
   background: var(--bg-3);
   border: 1px solid var(--border);
   border-bottom-width: 2px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   padding: 1px 5px;
   color: var(--text);
   line-height: 1.5;
@@ -1268,7 +1279,7 @@ kbd {
 #viewer-scroll::-webkit-scrollbar-thumb,
 #dataset-tree::-webkit-scrollbar-thumb {
   background: var(--border);
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
 }
 
 #sidebar::-webkit-scrollbar-thumb:hover,
@@ -1288,7 +1299,7 @@ html.dark #viewer-footer {
 .lightbox-box {
   position: relative;
   background: #000;
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
   max-width: 84vw;
   max-height: 84vh;
@@ -1329,7 +1340,7 @@ html.dark #viewer-footer {
   font-size: var(--font-sm);
   color: rgba(255,255,255,.6);
   background: rgba(0,0,0,.4);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   padding: 2px 8px;
   pointer-events: none;
 }
@@ -1363,7 +1374,7 @@ html.dark #viewer-footer {
   background: var(--alpha-45);
   border: none;
   color: rgba(255,255,255,.8);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   width: 32px;
   height: 32px;
   display: flex;
@@ -1441,7 +1452,7 @@ html.dark #viewer-footer {
 .frame-jump-input {
   background: var(--bg);
   border: 1px solid var(--blue);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--text);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
@@ -1579,7 +1590,7 @@ textarea:focus {
   gap: 4px;
   background: none;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   padding: 1px 7px;
   font-size: 10px;
   color: var(--text-3);
@@ -1653,7 +1664,7 @@ html.dark .cam-slot.loading::before {
 #corr-body canvas { font-smooth: always; -webkit-font-smoothing: antialiased; }
 
 /* ── Interactive canvas focus ────────────────────────────────── */
-#timedim-canvas:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 3px; }
+#timedim-canvas:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: var(--radius-xs); }
 
 /* ── Lightbox zoom badge ─────────────────────────────────────── */
 .lightbox-zoom-badge {

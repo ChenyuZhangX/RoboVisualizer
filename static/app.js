@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v44
+   LeRobot Visualizer — app.js  v45
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -3114,6 +3114,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   el("sidebar-toggle").addEventListener("click", toggleSidebar);
   el("dark-mode-btn").addEventListener("click", toggleDarkMode);
+  el("collapse-all-btn").addEventListener("click", collapseAllTasks);
+  el("refresh-btn").addEventListener("click", loadDatasets);
+  el("dl-state").addEventListener("click", () => downloadChart("state"));
+  el("dl-action").addEventListener("click", () => downloadChart("action"));
+  el("dl-corr").addEventListener("click", downloadCorr);
+  el("dl-timedim").addEventListener("click", downloadTimedim);
+  document.querySelector(".lightbox-prev")?.addEventListener("click", () => lightboxNavigate(-1));
+  document.querySelector(".lightbox-next")?.addEventListener("click", () => lightboxNavigate(1));
+  el("lightbox-dl")?.addEventListener("click", downloadLightboxFrame);
 
   el("btn-play").addEventListener("click", () => {
     if (state.playing) stopPlayback(); else startPlayback();
