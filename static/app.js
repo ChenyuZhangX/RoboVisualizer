@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v36
+   LeRobot Visualizer — app.js  v37
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -574,6 +574,10 @@ function buildDatasetNode(ds) {
         for (const task of tasks) {
           children.appendChild(buildTaskNode(ds.path, task, allLengths, ds.fps));
         }
+        // Update badge to reflect actual valid episode count (episodes with parquet files)
+        const actualEpCount = tasks.reduce((s, t) => s + t.episodes.length, 0);
+        const badge = node.querySelector(".ds-badge");
+        if (badge) badge.textContent = `${actualEpCount} ep`;
         // Auto-expand when only one task
         if (tasks.length === 1) {
           children.querySelector(".task-group")?.classList.add("open");
@@ -876,9 +880,9 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
     const ep = await apiFetch(`/api/datasets/${encodeURIComponent(dsPath)}/episodes/${epIndex}`);
     state.episode = ep;
     state.frame = 0;
-    // Clear any prior error messages
-    el("task-label").innerHTML = "";
-    el("task-label").title = "";
+    // Restore task text (replacing any prior error message markup)
+    el("task-label").textContent = displayTask;
+    el("task-label").title = taskText?.length > 80 ? taskText : "";
     updateEpInfoStrip(ep);
     // Update normalize btn tooltip based on stats availability
     const hasNormStats = !!state.normStats;
