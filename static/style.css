@@ -90,6 +90,18 @@ body {
   white-space: nowrap;
 }
 
+/* Playing state: subtle pulse on topbar border */
+body.is-playing #topbar {
+  border-bottom-color: rgba(59,130,246,.5);
+}
+@keyframes topbar-play-pulse {
+  0%, 100% { border-bottom-color: rgba(59,130,246,.2); }
+  50%       { border-bottom-color: rgba(59,130,246,.6); }
+}
+body.is-playing #topbar {
+  animation: topbar-play-pulse 2s ease-in-out infinite;
+}
+
 /* Topbar icon buttons */
 .icon-btn {
   background: none;
@@ -668,6 +680,22 @@ html.dark .error-msg button:hover { background: #DC2626; }
   );
 }
 
+/* Loading state on camera slot — subtle blue border hint */
+.cam-slot.loading {
+  border-color: rgba(59,130,246,.35);
+}
+
+.no-cam-notice {
+  padding: 12px;
+  font-size: 11px;
+  text-align: center;
+  background: var(--bg-2);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  line-height: 1.5;
+}
+
 .cam-label {
   position: absolute;
   bottom: 6px;
@@ -702,9 +730,7 @@ html.dark .error-msg button:hover { background: #DC2626; }
   transition: box-shadow var(--transition), border-color var(--transition), background var(--transition);
 }
 .chart-card:hover { box-shadow: var(--shadow-md); }
-@media (prefers-color-scheme: dark) {
-  .chart-card:hover { background: var(--bg-2); }
-}
+html.dark .chart-card:hover { background: var(--bg-2); }
 
 .chart-title-bar {
   display: flex;
@@ -1079,10 +1105,11 @@ html.dark #speed-select:hover, html.dark #speed-select:focus { background: var(-
   white-space: nowrap;
   overflow: hidden;
 }
-.crumb-sep { color: var(--text-3); }
-.crumb-ds  { color: var(--text-2); max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
-.crumb-ep  { color: var(--blue); font-weight: 600; border-radius: 3px; padding: 1px 3px; }
+.crumb-sep   { color: var(--text-3); }
+.crumb-ds    { color: var(--text-2); max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.crumb-ep    { color: var(--blue); font-weight: 600; border-radius: 3px; padding: 1px 3px; }
 .crumb-ep:hover  { background: var(--blue-lt); }
+.crumb-frame { color: var(--text-3); font-variant-numeric: tabular-nums; font-size: 11px; }
 
 /* ── FPS badge ────────────────────────────────────────────── */
 .fps-badge {
@@ -1269,6 +1296,9 @@ html.dark #viewer-footer {
   max-width: 84vw;
   max-height: 80vh;
   object-fit: contain;
+  cursor: zoom-in;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 #lightbox-label {
   padding: 6px 12px;
@@ -1623,24 +1653,23 @@ textarea:focus {
   .copy-toast, .viewer-loader { transition: none !important; }
 }
 
-/* ── Camera loading skeleton animation ───────────────────────── */
-.cam-slot[data-loading] img { opacity: 0.4; }
+/* ── Camera loading skeleton animation (uses .loading class) ─── */
 @keyframes cam-skeleton-pulse {
   0%   { background-position: -200% 0; }
   100% { background-position: 200% 0; }
 }
-.cam-slot[data-loading]::before {
+.cam-slot.loading::before {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,.08) 50%, transparent 100%);
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,.1) 50%, transparent 100%);
   background-size: 200% 100%;
   animation: cam-skeleton-pulse 1.5s ease infinite;
   pointer-events: none;
   z-index: 2;
 }
-html.dark .cam-slot[data-loading]::before {
-  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,.05) 50%, transparent 100%);
+html.dark .cam-slot.loading::before {
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,.06) 50%, transparent 100%);
   background-size: 200% 100%;
 }
 

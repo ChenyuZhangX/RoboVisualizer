@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LeRobot Visualizer</title>
-  <link rel="stylesheet" href="/style.css?v=37" />
+  <link rel="stylesheet" href="/style.css?v=38" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -239,22 +239,30 @@
         <tr><td><kbd>PgUp</kbd> <kbd>PgDn</kbd></td><td>Step 50 frames (⇧ = 100)</td></tr>
         <tr><td><kbd>Alt</kbd>+<kbd>←</kbd> <kbd>→</kbd></td><td>Navigate frame history</td></tr>
         <tr><td><kbd>Ctrl</kbd>+<kbd>J</kbd></td><td>Jump to specific frame</td></tr>
+        <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd> (frame jump)</td><td>Jump and play from frame</td></tr>
         <tr><td><kbd>R</kbd> / <kbd>Home</kbd></td><td>Rewind to start</td></tr>
         <tr><td><kbd>⇧R</kbd></td><td>Load a random episode</td></tr>
+        <tr><td><kbd>Ctrl</kbd>+<kbd>R</kbd></td><td>Reload current episode</td></tr>
+        <tr><td><kbd>Ctrl</kbd>+<kbd>M</kbd></td><td>Jump to midpoint</td></tr>
         <tr><td><kbd>Z</kbd></td><td>Rewind and play from start</td></tr>
         <tr><td><kbd>End</kbd></td><td>Jump to last frame</td></tr>
         <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>Prev / Next episode</td></tr>
         <tr><td><kbd>⇧[</kbd> <kbd>⇧]</kbd></td><td>First / Last episode</td></tr>
         <tr><td><kbd>←</kbd> <kbd>→</kbd> (lightbox)</td><td>Prev / next camera</td></tr>
-        <tr><td><kbd>+</kbd> <kbd>−</kbd> (lightbox)</td><td>Zoom in / out · Scroll wheel</td></tr>
+        <tr><td><kbd>+</kbd> <kbd>−</kbd> (lightbox)</td><td>Zoom in / out · Scroll wheel · Pinch</td></tr>
+        <tr><td>Click image (lightbox)</td><td>Zoom in to 2.5× · dbl-click to reset</td></tr>
         <tr><td><kbd>Ctrl</kbd>+click ep</td><td>Compare overlay</td></tr>
         <tr><td><kbd>Ctrl</kbd>+click camera</td><td>Download camera frame</td></tr>
+        <tr><td><kbd>Middle click</kbd> ep</td><td>Compare overlay</td></tr>
         <tr><td><kbd>D</kbd></td><td>Download current frame / lightbox image</td></tr>
         <tr><td><kbd>/</kbd> / <kbd>G</kbd> / <kbd>Ctrl</kbd>+<kbd>K</kbd></td><td>Focus search</td></tr>
         <tr><td><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>Toggle dark mode</td></tr>
         <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Export frame as PNG</td></tr>
         <tr><td><kbd>B</kbd></td><td>Toggle sidebar</td></tr>
         <tr><td><kbd>A</kbd></td><td>Scroll sidebar to current episode</td></tr>
+        <tr><td><kbd>O</kbd></td><td>Isolate current task (collapse others)</td></tr>
+        <tr><td><kbd>Alt</kbd>+<kbd>↑</kbd><kbd>↓</kbd></td><td>Navigate between task groups</td></tr>
+        <tr><td><kbd>←</kbd><kbd>→</kbd> (task header)</td><td>Expand / collapse task group</td></tr>
         <tr><td><kbd>+</kbd> / <kbd>−</kbd></td><td>Speed up / slow down</td></tr>
         <tr><td><kbd>L</kbd></td><td>Toggle loop</td></tr>
         <tr><td><kbd>H</kbd> / <kbd>⇧H</kbd></td><td>Toggle state / action histogram</td></tr>
@@ -298,6 +306,6 @@
     </button>
   </div>
 
-  <script src="/app.js?v=37"></script>
+  <script src="/app.js?v=38"></script>
 </body>
 </html>

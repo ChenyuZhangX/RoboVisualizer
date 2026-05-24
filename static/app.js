@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v37
+   LeRobot Visualizer — app.js  v38
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -52,6 +52,12 @@ const state = {
 const _frameHistory = [];        // positions visited via explicit navigation
 let _frameHistoryPos = -1;       // current index in _frameHistory (-1 = empty)
 let _navigatingHistory = false;  // true while traversing history (prevents re-push)
+
+/* ── Mirror mode ─────────────────────────────────────────── */
+let _mirrorMode = false;
+
+/* ── Frame values throttle ───────────────────────────────── */
+let _lastFvUpdateMs = 0;
 
 /* ── Utility helpers ─────────────────────────────────────── */
 const el = id => document.getElementById(id);
@@ -246,6 +252,7 @@ function _doSaveHash() {
     f:  state.frame,
     n:  state.normalizeEnabled ? "1" : "0",
   });
+  if (state.speed !== 1.0) params.set("speed", state.speed);
   history.replaceState(null, "", "#" + params.toString());
 }
 
@@ -295,6 +302,13 @@ async function loadHashState() {
 
     // Open the task group containing this episode
     epEntry.el.closest(".task-group")?.classList.add("open");
+    // Restore speed from URL if specified
+    const speedParam = parseFloat(params.get("speed") ?? "");
+    if (!isNaN(speedParam) && SPEEDS.includes(speedParam)) {
+      state.speed = speedParam;
+      el("speed-select").value = speedParam;
+      localStorage.setItem("speed", speedParam);
+    }
     // Restore normalize before loading so charts build with correct state
     const nParam = params.get("n");
     if (nParam !== null && (nParam === "1") !== state.normalizeEnabled) {
@@ -419,6 +433,7 @@ function setFrame(f) {
   }
   state.frame = newF;
   updateScrubber();
+  updateTopbarFrame();
   updateChartCursor();
   updateTimeDimCursor();
   updateFrameValues();
@@ -445,6 +460,18 @@ function lengthClass(len, sortedLengths) {
   if (pct < 0.60) return "len-medium";
   if (pct < 0.80) return "len-med-long";
   return "len-long";
+}
+
+/* ── Mirror mode ─────────────────────────────────────────── */
+function _applyMirrorMode(on) {
+  el("task-label")?.classList.toggle("hidden", on);
+  // Only affect ep-info-strip if episode is loaded (it starts hidden until load)
+  if (state.episode) el("ep-info-strip")?.classList.toggle("hidden", on);
+  // Only hide compare-banner if it's currently visible (don't reveal it)
+  if (on || !el("compare-banner")?.classList.contains("hidden")) {
+    el("compare-banner")?.classList.toggle("hidden", on);
+  }
+  document.querySelectorAll(".cam-label").forEach(lbl => lbl.classList.toggle("hidden", on));
 }
 
 /* ── Sidebar utilities ───────────────────────────────────── */
@@ -554,6 +581,17 @@ function buildDatasetNode(ds) {
   header.setAttribute("aria-expanded", "false");
   header.addEventListener("keydown", e => {
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); header.click(); }
+    else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      if (!node.classList.contains("open")) header.click();
+      else {
+        const first = children.querySelector(".task-header");
+        first?.focus();
+      }
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      if (node.classList.contains("open")) header.click();
+    }
   });
 
   header.addEventListener("click", async () => {
@@ -603,7 +641,9 @@ function buildTaskNode(dsPath, task, allLengths = [], fps = 10) {
   const minLen = epLengths.length ? Math.min(...epLengths) : 0;
   const maxLen = epLengths.length ? Math.max(...epLengths) : 0;
   const avgDur = formatDuration(avgLen / fps);
-  const statsTitle = `${task.task}\n\n${task.episodes.length} episodes · avg ${avgLen}f (${avgDur}) · min ${minLen}f · max ${maxLen}f`;
+  const totalFrames = epLengths.reduce((s, l) => s + l, 0);
+  const totalDur = formatDuration(totalFrames / fps);
+  const statsTitle = `${task.task}\n\n${task.episodes.length} episodes · avg ${avgLen}f (${avgDur}) · min ${minLen}f · max ${maxLen}f\nTotal: ${totalFrames}f (${totalDur})`;
 
   group.innerHTML = `
     <div class="task-header" title="${statsTitle.replace(/"/g, '&quot;').replace(/\n/g, '&#10;')}">
@@ -628,13 +668,15 @@ function buildTaskNode(dsPath, task, allLengths = [], fps = 10) {
       <span>ep_${String(ep.episode_index).padStart(6, "0")}</span>
       <span class="ep-len ${cls}">${ep.length}f</span>`;
 
+    const epPosInTask = task.episodes.indexOf(ep) + 1;
+    const epTotalInTask = task.episodes.length;
     item.tabIndex = 0;
     item.setAttribute("role", "option");
     item.setAttribute("aria-selected", "false");
-    item.setAttribute("aria-label", `Episode ${ep.episode_index}, ${ep.length} frames`);
+    item.setAttribute("aria-label", `Episode ${ep.episode_index}, ${ep.length} frames, ${epPosInTask} of ${epTotalInTask} in task`);
     item.dataset.length = ep.length;
     const epDurStr = formatDuration(ep.length / fps);
-    item.title = `ep_${String(ep.episode_index).padStart(6,"0")} · ${ep.length} frames · ${epDurStr} · double-click to play`;
+    item.title = `ep_${String(ep.episode_index).padStart(6,"0")} · ${ep.length}f · ${epDurStr} · ep ${epPosInTask}/${epTotalInTask} in task · double-click to play`;
 
     const handleActivate = (ctrlKey = false, autoPlay = false) => {
       if (ctrlKey) selectCompareEpisode(dsPath, ep.episode_index, item);
@@ -647,6 +689,12 @@ function buildTaskNode(dsPath, task, allLengths = [], fps = 10) {
     };
 
     item.addEventListener("click", e => handleActivate(e.ctrlKey || e.metaKey, false));
+    item.addEventListener("auxclick", e => {
+      if (e.button === 1) { e.preventDefault(); handleActivate(true, false); }
+    });
+    item.addEventListener("mousedown", e => {
+      if (e.button === 1) e.preventDefault(); // prevent middle-click scroll
+    });
     item.addEventListener("dblclick", e => {
       e.preventDefault();
       handleActivate(false, true);
@@ -690,6 +738,19 @@ function buildTaskNode(dsPath, task, allLengths = [], fps = 10) {
         const first = group.querySelector(".ep-item:not(.ep-search-hidden)");
         first?.focus();
       }
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      if (!group.classList.contains("open")) {
+        header.click();
+        const first = group.querySelector(".ep-item:not(.ep-search-hidden)");
+        first?.focus();
+      } else {
+        const first = group.querySelector(".ep-item:not(.ep-search-hidden)");
+        first?.focus();
+      }
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      if (group.classList.contains("open")) header.click();
     }
   });
   return group;
@@ -744,7 +805,12 @@ function applySearch(query) {
     const items = group.querySelectorAll(".ep-item");
     for (const item of items) {
       const epLabel = item.querySelector("span:nth-child(2)")?.textContent ?? "";
-      const textMatches = taskMatches || !textQ || epLabel.toLowerCase().includes(textQ);
+      // Also match episode index as plain number or padded (e.g. "42" or "000042")
+      const epNum = String(parseInt(item.dataset.episode ?? "", 10));
+      const epNumPadded = epNum.padStart(6, "0");
+      const isNumericQuery = textQ.match(/^\d+$/);
+      const textMatches = taskMatches || !textQ || epLabel.toLowerCase().includes(textQ) ||
+        (isNumericQuery && (epNum === textQ || epNumPadded === textQ.padStart(6, "0")));
       const lenOk = !hasFilter || matchesLengthFilter(parseInt(item.dataset.length ?? "0", 10), filters);
       const epMatches = textMatches && lenOk;
       const isHidden = q && !epMatches;
@@ -883,7 +949,9 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
     // Restore task text (replacing any prior error message markup)
     el("task-label").textContent = displayTask;
     el("task-label").title = taskText?.length > 80 ? taskText : "";
+    el("task-label").classList.toggle("hidden", _mirrorMode);
     updateEpInfoStrip(ep);
+    if (_mirrorMode) el("ep-info-strip").classList.add("hidden");
     // Update normalize btn tooltip based on stats availability
     const hasNormStats = !!state.normStats;
     el("btn-normalize")?.setAttribute("title",
@@ -1046,9 +1114,9 @@ async function selectCompareEpisode(dsPath, epIndex, clickedEl) {
     const cmpTaskEp = state.episodeList.find(e => e.dsPath === dsPath && e.epIndex === epIndex);
     const cmpTaskStr = cmpTaskEp?.taskText?.length > 36 ? cmpTaskEp.taskText.slice(0, 33) + "…" : (cmpTaskEp?.taskText ?? "");
     const taskHint = cmpTaskStr ? ` · ${cmpTaskStr}` : "";
-    const mainLastTs = state.episode?.timestamps?.[state.episode.timestamps.length - 1] ?? null;
-    const lenDiff = cmpEp.length - (state.episode?.length ?? cmpEp.length);
-    const lenDiffStr = lenDiff !== 0 ? ` (${lenDiff > 0 ? "+" : ""}${lenDiff}f)` : "";
+    const mainLen = state.episode?.length ?? cmpEp.length;
+    const lenDiff = cmpEp.length - mainLen;
+    const lenDiffStr = lenDiff !== 0 ? ` (${lenDiff > 0 ? "+" : ""}${lenDiff}f, ${lenDiff > 0 ? "+" : ""}${Math.round(lenDiff / mainLen * 100)}%)` : "";
     el("compare-label").textContent =
       `Comparing ep_${String(epIndex).padStart(6, "0")}${cmpDs} — ${cmpEp.length}f${cmpDurStr}${lenDiffStr}${taskHint} — dashed overlay`;
     showCopyToast(`✓ Comparing ep_${String(epIndex).padStart(6, "0")}`, "success");
@@ -1079,10 +1147,14 @@ function buildCameraGrid(ep) {
   cameras.className = count > 0 ? `cams-${count}` : "";
   cameras.innerHTML = "";
   if (count === 0) {
-    // Show note if episode has video keys but no image fallback
     if (ep.video_keys?.length > 0 && !ep.has_images) {
-      cameras.innerHTML = `<div style="padding:12px;color:var(--text-3);font-size:11px;text-align:center;background:var(--bg-2);border-radius:var(--radius);border:1px solid var(--border);">
-        Video cameras detected but frame extraction unavailable<br><span style="font-size:10px">Install opencv-python for video support</span>
+      cameras.innerHTML = `<div class="no-cam-notice">
+        Video cameras detected but frame extraction unavailable<br>
+        <span style="font-size:10px">Install opencv-python for video support</span>
+      </div>`;
+    } else if ((ep.image_keys?.length ?? 0) === 0) {
+      cameras.innerHTML = `<div class="no-cam-notice" style="color:var(--text-3)">
+        No camera data in this episode
       </div>`;
     }
     return;
@@ -1100,7 +1172,11 @@ const CAM_PLACEHOLDER_HTML = `<div class="cam-placeholder"><svg width="28" heigh
 
 function resetCam(i) {
   const slot = el(`cam-${i}`);
-  if (slot) slot.innerHTML = CAM_PLACEHOLDER_HTML;
+  if (slot) {
+    slot.innerHTML = CAM_PLACEHOLDER_HTML;
+    slot.classList.remove("loading");
+    delete slot.dataset.loading;
+  }
 }
 
 /* ── Frame prefetch cache ────────────────────────────────── */
@@ -1293,9 +1369,7 @@ async function updateImages() {
     // Dim existing images to signal loading
     keys.forEach((_, i) => {
       const slot = el(`cam-${i}`);
-      if (slot) slot.dataset.loading = "1";
-      const img = slot?.querySelector("img");
-      if (img) img.style.opacity = "0.5";
+      if (slot) { slot.dataset.loading = "1"; slot.classList.add("loading"); }
     });
     el("fps-badge")?.classList.add("loading");
     // Cancel any previous in-flight frame request
@@ -1313,9 +1387,7 @@ async function updateImages() {
         renderFrameData(keys, frames);
         keys.forEach((_, i) => {
           const slot = el(`cam-${i}`);
-          if (slot) delete slot.dataset.loading;
-          const img = slot?.querySelector("img");
-          if (img) img.style.opacity = "";
+          if (slot) { delete slot.dataset.loading; slot.classList.remove("loading"); }
         });
         el("fps-badge")?.classList.remove("loading");
       }
@@ -1325,9 +1397,7 @@ async function updateImages() {
         el("fps-badge")?.classList.remove("loading");
         keys.forEach((_, i) => {
           const slot = el(`cam-${i}`);
-          if (slot) delete slot.dataset.loading;
-          const img = slot?.querySelector("img");
-          if (img) img.style.opacity = "";
+          if (slot) { delete slot.dataset.loading; slot.classList.remove("loading"); }
           if (slot && !slot.querySelector("img")) {
             slot.innerHTML = `<div class="cam-placeholder"><span style="font-size:10px;color:var(--text-3);position:absolute;bottom:8px">Failed to load</span></div>`;
           }
@@ -1500,6 +1570,7 @@ async function copyEpisodeURL() {
     params.set("t", `${mins}:${String(secs).padStart(2, "0")}`);
   }
   if (state.playing) params.set("play", "1");
+  if (state.speed !== 1.0) params.set("speed", state.speed);
   const url = location.origin + location.pathname + "#" + params.toString();
   try {
     await navigator.clipboard.writeText(url);
@@ -1926,6 +1997,28 @@ function makeChart(canvasId, labels, data2d, names, normalized, dims,
     if (pts.length) setFrame(pts[0].index);
   });
 
+  // Drag-to-scrub: hold and drag across chart to seek
+  let _chartDragging = false;
+  canvas.addEventListener("pointerdown", e => {
+    if (e.button !== 0) return;
+    _chartDragging = true;
+    canvas.setPointerCapture(e.pointerId);
+    canvas.style.cursor = "ew-resize";
+  });
+  canvas.addEventListener("pointermove", e => {
+    if (!_chartDragging) return;
+    const pts = chart.getElementsAtEventForMode(e, "index", { intersect: false }, true);
+    if (pts.length) { stopPlayback(); setFrame(pts[0].index); }
+  });
+  canvas.addEventListener("pointerup", () => {
+    _chartDragging = false;
+    canvas.style.cursor = "";
+  });
+  canvas.addEventListener("pointercancel", () => {
+    _chartDragging = false;
+    canvas.style.cursor = "";
+  });
+
   return chart;
 }
 
@@ -2002,12 +2095,30 @@ function makeHistChart(canvasId, data2d, names, dims, dimIndex = null) {
 }
 
 let _lastChartUpdateFrame = -1;
+let _titleUpdateThrottle = 0;
+
+let _chartCursorThrottleMs = 0;
 
 function updateChartCursor() {
   if (_lastChartUpdateFrame === state.frame) return;
+  // At 2× speed or higher, throttle chart updates to ~15fps
+  if (state.playing && state.speed >= 2) {
+    const now = performance.now();
+    if (now - _chartCursorThrottleMs < 66) return;
+    _chartCursorThrottleMs = now;
+  }
   _lastChartUpdateFrame = state.frame;
   state.stateCharts.forEach(c => c?.update("none"));
   state.actionCharts.forEach(c => c?.update("none"));
+  // Update document title with frame info during playback (throttled)
+  if (state.playing) {
+    const now = performance.now();
+    if (now - _titleUpdateThrottle > 500) {
+      _titleUpdateThrottle = now;
+      const base = document.title.replace(/^\[\d+\] /, "");
+      document.title = `[${state.frame}] ${base}`;
+    }
+  }
 }
 
 /* ── Correlation heatmap ─────────────────────────────────── */
@@ -2378,6 +2489,8 @@ function _doUpdateTimeDimCursor() {
 }
 
 /* ── Topbar breadcrumb ───────────────────────────────────── */
+let _crumbEpListenerAttached = false;
+
 function updateTopbarBreadcrumb() {
   const crumb = el("topbar-ep-info");
   if (!crumb) return;
@@ -2387,16 +2500,32 @@ function updateTopbarBreadcrumb() {
     return;
   }
   const epStr = `ep_${String(state.activeEpIndex).padStart(6, "0")}`;
-  const dsShort = state.activeDataset.length > 28
-    ? state.activeDataset.slice(0, 25) + "…"
+  const dsShort = state.activeDataset.length > 24
+    ? state.activeDataset.slice(0, 21) + "…"
     : state.activeDataset;
+  const ep = state.episode;
+  const frameStr = ep ? `<span class="crumb-sep">·</span><span class="crumb-frame">${state.frame} / ${ep.length - 1}</span>` : "";
   crumb.innerHTML =
     `<span class="crumb-sep">›</span>` +
     `<span class="crumb-ds" title="${escapeHTML(state.activeDataset)}">${escapeHTML(dsShort)}</span>` +
     `<span class="crumb-sep">›</span>` +
-    `<span class="crumb-ep" title="Click to copy URL  (C)" style="cursor:pointer">${epStr}</span>`;
+    `<span class="crumb-ep" title="Click to copy URL  (C)" style="cursor:pointer">${epStr}</span>` +
+    frameStr;
   crumb.classList.remove("hidden");
-  crumb.querySelector(".crumb-ep")?.addEventListener("click", copyEpisodeURL);
+  if (!_crumbEpListenerAttached) {
+    crumb.addEventListener("click", e => {
+      if (e.target.classList.contains("crumb-ep")) copyEpisodeURL();
+    });
+    _crumbEpListenerAttached = true;
+  }
+}
+
+function updateTopbarFrame() {
+  const crumb = el("topbar-ep-info");
+  if (!crumb || crumb.classList.contains("hidden")) return;
+  const frameEl = crumb.querySelector(".crumb-frame");
+  const ep = state.episode;
+  if (frameEl && ep) frameEl.textContent = `${state.frame} / ${ep.length - 1}`;
 }
 
 /* ── Frame counter jump ──────────────────────────────────── */
@@ -2420,7 +2549,7 @@ function initFrameCounterJump() {
     counter.replaceWith(input);
     input.select();
 
-    const commit = () => {
+    const commit = (andPlay = false) => {
       const raw = input.value.trim();
       let f;
       // Support "M:SS" or "H:MM:SS" timestamp formats as well as frame numbers
@@ -2441,9 +2570,13 @@ function initFrameCounterJump() {
       stopPlayback();
       setFrame(f);
       saveHashState();
+      if (andPlay) setTimeout(() => startPlayback(), 50);
     };
     input.addEventListener("keydown", e => {
-      if (e.key === "Enter") { e.preventDefault(); commit(); }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        commit(e.ctrlKey || e.metaKey);
+      }
       if (e.key === "Escape") { input.replaceWith(counter); }
     });
     input.addEventListener("blur", commit);
@@ -2596,6 +2729,12 @@ function buildFrameValuesPanel(ep) {
 function updateFrameValues() {
   const ep = state.episode;
   if (!ep) return;
+  // Throttle at high playback speeds to avoid layout thrash
+  if (state.playing && state.speed >= 2) {
+    const now = performance.now();
+    if (now - _lastFvUpdateMs < 120) return;
+    _lastFvUpdateMs = now;
+  }
   const f = state.frame;
   const ns = state.normalizeEnabled ? state.normStats : null;
 
@@ -2681,6 +2820,9 @@ function stopPlayback() {
   el("play-icon")?.classList.remove("hidden");
   el("pause-icon")?.classList.add("hidden");
   el("fps-badge")?.classList.add("hidden");
+  document.body.classList.remove("is-playing");
+  // Strip frame prefix from title when stopped
+  document.title = document.title.replace(/^\[\d+\] /, "");
   saveHashState();
 }
 
@@ -2690,6 +2832,7 @@ function startPlayback() {
   state.loopCount = 0;
   el("play-icon").classList.add("hidden");
   el("pause-icon").classList.remove("hidden");
+  document.body.classList.add("is-playing");
 
   const interval = 1000 / ((state.episode.fps || 10) * state.speed);
   let fpsBucket = 0, fpsLast = 0;
@@ -2757,6 +2900,9 @@ document.addEventListener("DOMContentLoaded", () => {
   initPlaybackPreferences();
   loadRecentEpisodes();
   updateRecentSection();
+  // Restore mirror mode
+  _mirrorMode = localStorage.getItem("mirrorMode") === "1";
+  if (_mirrorMode) _applyMirrorMode(true);
 
   // Restore persisted chart UI states
   state.stateExpanded  = localStorage.getItem("expand_state")  === "1";
@@ -2912,6 +3058,24 @@ document.addEventListener("DOMContentLoaded", () => {
       e.preventDefault(); toggleSidebar(); return;
     }
 
+    // Alt+Up/Down: navigate between task group headers
+    if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+      e.preventDefault();
+      const headers = Array.from(document.querySelectorAll(
+        ".task-group:not(.search-hidden) .task-header, .ds-header"
+      ));
+      const focused = document.activeElement;
+      const idx = headers.indexOf(focused);
+      let next;
+      if (idx === -1) {
+        next = e.key === "ArrowDown" ? headers[0] : headers[headers.length - 1];
+      } else {
+        next = e.key === "ArrowDown" ? headers[idx + 1] : headers[idx - 1];
+      }
+      if (next) { next.focus(); next.scrollIntoView({ block: "nearest" }); }
+      return;
+    }
+
     const modKey = e.ctrlKey || e.metaKey;
     if (e.key === "/" || e.key === "g" || e.key === "G" || (modKey && e.key === "k")) {
       e.preventDefault();
@@ -2925,6 +3089,21 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
+    if (modKey && e.key === "r") {
+      e.preventDefault();
+      if (state.activeDataset && state.activeEpIndex != null) {
+        // Clear cache and reload current episode
+        state.frameCache.clear();
+        state.prefetchPending.clear();
+        const entry = state.episodeList.find(
+          e => e.dsPath === state.activeDataset && e.epIndex === state.activeEpIndex
+        );
+        selectEpisode(state.activeDataset, state.activeEpIndex,
+          entry?.taskText ?? null, document.querySelector(".ep-item.active"));
+        showCopyToast("Reloading episode…");
+      }
+      return;
+    }
     if (modKey && e.key === "s") {
       e.preventDefault();
       exportFrame();
@@ -3072,6 +3251,25 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       return;
     }
+    if (e.key === "o" || e.key === "O") {
+      e.preventDefault();
+      // Isolate: collapse all task groups except the one containing the active episode
+      const activeItem = document.querySelector(".ep-item.active");
+      const activeGroup = activeItem?.closest(".task-group");
+      const allGroups = document.querySelectorAll(".task-group");
+      let collapsed = 0;
+      allGroups.forEach(g => {
+        if (g !== activeGroup && g.classList.contains("open")) {
+          g.classList.remove("open");
+          collapsed++;
+        }
+      });
+      if (activeGroup && !activeGroup.classList.contains("open")) {
+        activeGroup.classList.add("open");
+      }
+      showCopyToast(collapsed > 0 ? `Collapsed ${collapsed} other task group${collapsed > 1 ? "s" : ""}` : "Isolated current task");
+      return;
+    }
     if (modKey && e.key === "j") {
       e.preventDefault();
       if (state.episode && !state.playing) el("frame-counter").click();
@@ -3094,14 +3292,21 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       return;
     }
+    if ((modKey) && (e.key === "m" || e.key === "M")) {
+      e.preventDefault();
+      if (state.episode) {
+        stopPlayback();
+        setFrame(Math.round((state.episode.length - 1) / 2));
+        showCopyToast(`Midpoint → frame ${state.frame}`);
+      }
+      return;
+    }
     if (e.key === "m" || e.key === "M") {
       e.preventDefault();
-      const hidden = el("task-label").classList.toggle("hidden");
-      el("ep-info-strip").classList.toggle("hidden");
-      el("compare-banner").classList.toggle("hidden");
-      // Also toggle camera labels for cleaner recordings
-      document.querySelectorAll(".cam-label").forEach(lbl => lbl.classList.toggle("hidden", hidden));
-      showCopyToast(hidden ? "Mirror mode on — labels hidden" : "Mirror mode off");
+      _mirrorMode = !_mirrorMode;
+      try { localStorage.setItem("mirrorMode", _mirrorMode ? "1" : "0"); } catch (_) {}
+      _applyMirrorMode(_mirrorMode);
+      showCopyToast(_mirrorMode ? "Mirror mode on — labels hidden" : "Mirror mode off");
       return;
     }
 
@@ -3208,6 +3413,22 @@ document.addEventListener("DOMContentLoaded", () => {
       requestAnimationFrame(() => box?.focus());
     }
   });
+  // Focus trap inside shortcuts modal
+  el("shortcuts-modal").addEventListener("keydown", e => {
+    if (el("shortcuts-modal").classList.contains("hidden")) return;
+    if (e.key === "Tab") {
+      const focusable = Array.from(el("shortcuts-modal").querySelectorAll(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      ));
+      if (!focusable.length) return;
+      const first = focusable[0], last = focusable[focusable.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+      } else {
+        if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    }
+  });
   el("shortcuts-modal").addEventListener("click", e => {
     if (e.target === el("shortcuts-modal")) {
       el("shortcuts-modal").classList.add("hidden");
@@ -3218,14 +3439,41 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.target === el("cam-lightbox")) el("cam-lightbox").classList.add("hidden");
   });
 
-  // Swipe to navigate cameras in lightbox
+  // Swipe to navigate cameras in lightbox; pinch to zoom
   {
     let _touchStartX = 0;
+    let _pinchStartDist = 0;
+    let _pinchStartZoom = 1;
+    let _isPinching = false;
     const lb = el("cam-lightbox");
-    lb.addEventListener("touchstart", e => { _touchStartX = e.touches[0].clientX; }, { passive: true });
+    lb.addEventListener("touchstart", e => {
+      if (e.touches.length === 2) {
+        _isPinching = true;
+        _pinchStartDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        _pinchStartZoom = _lbZoom;
+        e.preventDefault();
+      } else {
+        _isPinching = false;
+        _touchStartX = e.touches[0].clientX;
+      }
+    }, { passive: false });
+    lb.addEventListener("touchmove", e => {
+      if (e.touches.length === 2 && _isPinching && _pinchStartDist > 0) {
+        const dist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        _lbSetZoom(_pinchStartZoom * (dist / _pinchStartDist));
+        e.preventDefault();
+      }
+    }, { passive: false });
     lb.addEventListener("touchend", e => {
+      if (_isPinching) { _isPinching = false; return; }
       const dx = e.changedTouches[0].clientX - _touchStartX;
-      if (Math.abs(dx) > 40) lightboxNavigate(dx < 0 ? 1 : -1);
+      if (Math.abs(dx) > 40 && _lbZoom <= 1) lightboxNavigate(dx < 0 ? 1 : -1);
     }, { passive: true });
   }
 
@@ -3292,8 +3540,19 @@ document.addEventListener("DOMContentLoaded", () => {
     _lbSetZoom(_lbZoom * (e.deltaY < 0 ? 1.2 : 1 / 1.2), ox, oy);
   }, { passive: false });
 
+  el("lightbox-img").addEventListener("click", e => {
+    e.stopPropagation(); // don't close lightbox on image click
+    const box = el("cam-lightbox").querySelector(".lightbox-box");
+    const rect = box?.getBoundingClientRect() ?? { left: 0, top: 0, width: 1, height: 1 };
+    const ox = ((e.clientX - rect.left) / rect.width) * 100;
+    const oy = ((e.clientY - rect.top) / rect.height) * 100;
+    if (_lbZoom <= 1) {
+      _lbSetZoom(2.5, ox, oy);
+    }
+  });
   el("lightbox-img").addEventListener("dblclick", e => {
-    if (_lbZoom > 1) { e.stopPropagation(); _lbResetZoom(); }
+    e.stopPropagation();
+    if (_lbZoom > 1) { _lbResetZoom(); }
   });
 
   // ── Respond to browser back/forward (hash navigation) ──

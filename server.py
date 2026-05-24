@@ -276,6 +276,27 @@ def get_dataset_stats(dataset: str):
     }
 
 
+@app.get("/api/datasets/{dataset}/episodes")
+def list_episodes(dataset: str):
+    """List all episodes with their metadata (index, length, tasks)."""
+    base = get_dataset_path(dataset)
+    info = read_info_cached(base)
+    episodes = read_episodes_cached(base)
+    chunks_size = info.get("chunks_size", 1000)
+    result = []
+    for ep in episodes:
+        ep_idx = ep["episode_index"]
+        chunk = ep_idx // chunks_size
+        parquet = base / "data" / f"chunk-{chunk:03d}" / f"episode_{ep_idx:06d}.parquet"
+        result.append({
+            "episode_index": ep_idx,
+            "length": ep.get("length", 0),
+            "tasks": ep.get("tasks", []),
+            "has_data": parquet.exists(),
+        })
+    return result
+
+
 @app.get("/api/datasets/{dataset}/norm_stats")
 def get_norm_stats(dataset: str):
     base = get_dataset_path(dataset)
