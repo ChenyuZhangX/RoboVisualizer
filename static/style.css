@@ -34,9 +34,12 @@
   --ctrl-h:    46px;
   --transition: .15s ease;
 
+  --font-2xs:  10px;
   --font-xs:   10.5px;
   --font-sm:   11px;
+  --font-md:   12px;
   --font-base: 13px;
+  --font-lg:   14px;
 
   --alpha-8:   rgba(0,0,0,.08);
   --alpha-45:  rgba(0,0,0,.45);
@@ -115,7 +118,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
+  font-size: var(--font-lg);
   font-weight: 600;
   color: var(--text);
   letter-spacing: -0.2px;
@@ -235,7 +238,7 @@ body.is-playing #topbar {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 5px 28px 5px 26px;
-  font-size: 12px;
+  font-size: var(--font-md);
   color: var(--text);
   outline: none;
   transition: border-color var(--transition), background var(--transition);
@@ -273,7 +276,7 @@ body.is-playing #topbar {
 
 .sidebar-footer {
   padding: 7px 14px;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   color: var(--text-3);
   border-top: 1px solid var(--border);
   flex-shrink: 0;
@@ -384,7 +387,7 @@ mark.search-hl {
 }
 
 .ds-badge {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   color: var(--text-3);
   background: var(--bg-3);
   border: 1px solid var(--border);
@@ -486,7 +489,7 @@ mark.search-hl {
 
 .ep-len {
   margin-left: auto;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   color: var(--text-3);
   border-radius: var(--radius);
   padding: 1px 5px;
@@ -518,7 +521,7 @@ html.dark .ep-len.len-long      { color: #22C55E; background: #0a2017; }
 .loading-msg {
   padding: 16px 14px;
   color: var(--text-3);
-  font-size: 12px;
+  font-size: var(--font-md);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -535,7 +538,7 @@ html.dark .ep-len.len-long      { color: #22C55E; background: #0a2017; }
   border-radius: var(--radius-xs);
 }
 .empty-tree-msg small {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   margin-top: 4px;
   display: block;
 }
@@ -543,7 +546,7 @@ html.dark .ep-len.len-long      { color: #22C55E; background: #0a2017; }
 .error-msg {
   padding: 12px 14px;
   color: var(--red);
-  font-size: 12px;
+  font-size: var(--font-md);
   background: var(--red-lt);
   border-left: 3px solid var(--red);
   margin: 8px;
@@ -551,7 +554,7 @@ html.dark .ep-len.len-long      { color: #22C55E; background: #0a2017; }
   line-height: 1.5;
 }
 .error-msg-detail {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   color: var(--text-3);
   margin-top: 4px;
   display: block;
@@ -603,7 +606,7 @@ html.dark .ep-len.len-long      { color: #22C55E; background: #0a2017; }
   gap: 10px;
   flex: 1;
   color: var(--text-3);
-  font-size: 14px;
+  font-size: var(--font-lg);
 }
 .welcome-icon { color: var(--border); }
 .welcome-hint {
@@ -674,7 +677,7 @@ html.dark .ep-len.len-long      { color: #22C55E; background: #0a2017; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12px;
+  font-size: var(--font-md);
   font-weight: 500;
   color: var(--amber-dk);
   background: var(--amber-lt);
@@ -775,7 +778,7 @@ html.dark .ep-len.len-long      { color: #22C55E; background: #0a2017; }
   position: absolute;
   bottom: 6px;
   left: 8px;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 600;
   color: rgba(255,255,255,.88);
   background: var(--alpha-45);
@@ -830,7 +833,7 @@ html.dark .chart-card:hover { background: var(--bg-2); }
   font-weight: 400;
   text-transform: none;
   letter-spacing: 0;
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .norm-badge {
@@ -886,7 +889,7 @@ html.dark .norm-badge { background: #0d2e1f; border-color: #166534; }
   padding: 6px 8px 4px;
 }
 .mini-chart-label {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 600;
   margin-bottom: 3px;
   white-space: nowrap;
@@ -936,7 +939,7 @@ html.dark .norm-badge { background: #0d2e1f; border-color: #166534; }
   padding: 20px 0;
   text-align: center;
   color: var(--text-3);
-  font-size: 12px;
+  font-size: var(--font-md);
 }
 
 /* ── Correlation heatmap ──────────────────────────────────── */
@@ -965,7 +968,7 @@ html.dark .norm-badge { background: #0d2e1f; border-color: #166534; }
   flex-shrink: 0;
 }
 .timedim-note {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   color: var(--text-3);
   padding: 2px 8px 4px;
 }
@@ -1031,7 +1034,7 @@ html.dark .norm-badge { background: #0d2e1f; border-color: #166534; }
 
 .fv-section { display: flex; flex-direction: column; gap: 4px; }
 .fv-label {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .6px;
@@ -1059,7 +1062,7 @@ html.dark .norm-badge { background: #0d2e1f; border-color: #166534; }
 .fv-chip:hover { border-color: var(--blue); background: var(--blue-lt); }
 .fv-dim {
   font-weight: 600;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   max-width: 80px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1185,7 +1188,7 @@ html.dark #speed-select:hover, html.dark #speed-select:focus { background: var(-
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   color: var(--text-2);
   white-space: nowrap;
   border-radius: var(--radius-xs);
@@ -1219,7 +1222,7 @@ html.dark #speed-select:hover, html.dark #speed-select:focus { background: var(-
 
 /* ── FPS badge ────────────────────────────────────────────── */
 .fps-badge {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-variant-numeric: tabular-nums;
   color: var(--green);
   background: #ECFDF5;
@@ -1311,7 +1314,7 @@ html.dark .modal-overlay { background: var(--alpha-6); }
 .shortcuts-table { border-collapse: collapse; width: 100%; }
 .shortcuts-table tr + tr td { padding-top: 7px; }
 .shortcuts-table td:first-child { padding-right: 20px; white-space: nowrap; }
-.shortcuts-table td:last-child { font-size: 12px; color: var(--text-2); }
+.shortcuts-table td:last-child { font-size: var(--font-md); color: var(--text-2); }
 
 .modal-hint {
   margin-top: 16px;
@@ -1521,7 +1524,7 @@ html.dark #viewer-footer {
   border: 1px solid var(--blue);
   border-radius: var(--radius-sm);
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--font-md);
   font-variant-numeric: tabular-nums;
   padding: 1px 4px;
   text-align: center;
@@ -1645,7 +1648,7 @@ textarea:focus {
   margin-bottom: 2px;
 }
 .fv-panel-title {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .6px;
@@ -1659,7 +1662,7 @@ textarea:focus {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 1px 7px;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   color: var(--text-3);
   cursor: pointer;
   transition: color var(--transition), border-color var(--transition), background var(--transition);
@@ -1761,7 +1764,7 @@ html.dark .cam-slot.loading::before {
   bottom: 8px;
   left: 0; right: 0;
   text-align: center;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   color: var(--text-3);
 }
 

@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v48
+   LeRobot Visualizer — app.js  v49
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -2982,6 +2982,18 @@ function stopPlayback() {
   saveHashState();
 }
 
+function changeSpeed(delta) {
+  const cur = SPEEDS.indexOf(state.speed);
+  const next = cur + delta;
+  if (next < 0 || next >= SPEEDS.length) return;
+  state.speed = SPEEDS[next];
+  el("speed-select").value = state.speed;
+  localStorage.setItem("speed", state.speed);
+  if (state.playing) { stopPlayback(); startPlayback(); }
+  const efps = state.episode ? ` (${Math.round((state.episode.fps || 10) * state.speed)} fps)` : "";
+  showCopyToast(`Speed: ${state.speed}×${efps}`);
+}
+
 function startPlayback() {
   if (!state.episode) return;
   state.playing = true;
@@ -3331,15 +3343,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!el("cam-lightbox").classList.contains("hidden")) {
         _lbSetZoom(_lbZoom * 1.2);
       } else {
-        const cur = SPEEDS.indexOf(state.speed);
-        if (cur < SPEEDS.length - 1) {
-          state.speed = SPEEDS[cur + 1];
-          el("speed-select").value = state.speed;
-          localStorage.setItem("speed", state.speed);
-          if (state.playing) { stopPlayback(); startPlayback(); }
-          const efps = state.episode ? ` (${Math.round((state.episode.fps || 10) * state.speed)} fps)` : "";
-          showCopyToast(`Speed: ${state.speed}×${efps}`);
-        }
+        changeSpeed(+1);
       }
       return;
     }
@@ -3348,15 +3352,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!el("cam-lightbox").classList.contains("hidden")) {
         _lbSetZoom(_lbZoom / 1.2);
       } else {
-        const cur = SPEEDS.indexOf(state.speed);
-        if (cur > 0) {
-          state.speed = SPEEDS[cur - 1];
-          el("speed-select").value = state.speed;
-          localStorage.setItem("speed", state.speed);
-          if (state.playing) { stopPlayback(); startPlayback(); }
-          const efps = state.episode ? ` (${Math.round((state.episode.fps || 10) * state.speed)} fps)` : "";
-          showCopyToast(`Speed: ${state.speed}×${efps}`);
-        }
+        changeSpeed(-1);
       }
       return;
     }
