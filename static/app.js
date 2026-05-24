@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v66
+   LeRobot Visualizer — app.js  v67
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -133,6 +133,7 @@ const setDisabled = (ids, disabled) => ids.forEach(id => { const e = el(id); if 
 const unslug = s => s.replace(/_/g, " ");
 const dsSlug = () => (state.activeDataset ?? "").replace(/[^a-z0-9_-]/gi, "_").slice(0, 32);
 const epPad = (idx = state.activeEpIndex) => String(idx).padStart(6, "0");
+const apiDs = ds => `/api/datasets/${encodeURIComponent(ds)}`;
 
 function debounce(fn, ms) {
   let t;
@@ -343,7 +344,7 @@ async function loadHashState() {
     if (!dsInfo) return;
 
     // Open the dataset node and load tasks
-    const tasks = await apiFetch(`/api/datasets/${encodeURIComponent(ds)}/tasks`);
+    const tasks = await apiFetch(`${apiDs(ds)}/tasks`);
 
     // Build nodes silently so episodeList is populated
     const tree = el("dataset-tree");
@@ -690,7 +691,7 @@ function buildDatasetNode(ds) {
     if (!loaded) {
       loaded = true;
       try {
-        const tasks = await apiFetch(`/api/datasets/${encodeURIComponent(ds.path)}/tasks`);
+        const tasks = await apiFetch(`${apiDs(ds.path)}/tasks`);
         children.innerHTML = "";
         const allLengths = tasks
           .flatMap(t => t.episodes.map(e => e.length))
@@ -997,7 +998,7 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
   if (dsPath !== state.activeDataset) {
     state.normStats = null;
     try {
-      state.normStats = await apiFetch(`/api/datasets/${encodeURIComponent(dsPath)}/norm_stats`);
+      state.normStats = await apiFetch(`${apiDs(dsPath)}/norm_stats`);
     } catch (_) {}
   }
 
@@ -1029,7 +1030,7 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
   updatePrevNextButtons();
 
   try {
-    const ep = await apiFetch(`/api/datasets/${encodeURIComponent(dsPath)}/episodes/${epIndex}`);
+    const ep = await apiFetch(`${apiDs(dsPath)}/episodes/${epIndex}`);
     state.episode = ep;
     state.frame = 0;
     // Restore task text (replacing any prior error message markup)
@@ -1180,7 +1181,7 @@ async function selectCompareEpisode(dsPath, epIndex, clickedEl) {
   state.compareEpIndex = epIndex;
   try {
     state.compareEpisode = await apiFetch(
-      `/api/datasets/${encodeURIComponent(dsPath)}/episodes/${epIndex}`
+      `${apiDs(dsPath)}/episodes/${epIndex}`
     );
     buildCharts(state.episode);
     show("compare-banner");
@@ -1265,7 +1266,7 @@ function _doPrefetch(ds, epIdx, frame, speed) {
     if (state.frameCache.has(f) || state.prefetchPending.has(f)) continue;
     state.prefetchPending.add(f);
     const frameNo = f;
-    apiFetch(`/api/datasets/${encodeURIComponent(ds)}/episodes/${epIdx}/frame/${frameNo}`)
+    apiFetch(`${apiDs(ds)}/episodes/${epIdx}/frame/${frameNo}`)
       .then(data => {
         if (state.activeEpIndex === epIdx) state.frameCache.set(frameNo, data);
         state.prefetchPending.delete(frameNo);
@@ -1471,7 +1472,7 @@ async function updateImages() {
     const fetchController = _imageUpdateController;
     try {
       const frames = await apiFetch(
-        `/api/datasets/${encodeURIComponent(state.activeDataset)}/episodes/${state.activeEpIndex}/frame/${f}`,
+        `${apiDs(state.activeDataset)}/episodes/${state.activeEpIndex}/frame/${f}`,
         API_TIMEOUT_MS, fetchController.signal
       );
       if (fetchController.signal.aborted) return;
