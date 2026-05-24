@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v45
+   LeRobot Visualizer — app.js  v46
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -542,9 +542,9 @@ async function loadDatasets() {
   try {
     const datasets = await apiFetch("/api/datasets");
     if (!datasets.length) {
-      tree.innerHTML = `<div style="padding:12px;color:var(--text-3);font-size:11px;text-align:center;">
-        No datasets found in <code style="background:var(--bg-3);padding:2px 4px;border-radius:3px">./data/</code><br>
-        <span style="font-size:10px;margin-top:4px;display:block">Create dataset folders with <code>meta/</code> and <code>data/</code> subdirectories</span>
+      tree.innerHTML = `<div class="empty-tree-msg">
+        No datasets found in <code>./data/</code><br>
+        <small>Create dataset folders with <code>meta/</code> and <code>data/</code> subdirectories</small>
       </div>`;
       updateSidebarFooter(0, 0);
       return;
@@ -574,10 +574,10 @@ async function loadDatasets() {
     errDiv.setAttribute("role", "alert");
     errDiv.innerHTML =
       `Failed to load datasets<br>` +
-      `<span style="font-size:10px;color:var(--text-3);margin-top:4px;display:block">${escapeHTML(msg)}</span>`;
+      `<span class="error-msg-detail">${escapeHTML(msg)}</span>`;
     const retryBtn = document.createElement("button");
     retryBtn.textContent = "Retry";
-    retryBtn.style.cssText = "margin-top:6px;padding:2px 8px;font-size:11px;background:var(--blue);color:#fff;border:none;border-radius:3px;cursor:pointer";
+    retryBtn.className = "retry-btn-blue";
     retryBtn.addEventListener("click", loadDatasets);
     errDiv.appendChild(retryBtn);
     tree.innerHTML = "";
@@ -698,12 +698,17 @@ function buildTaskNode(dsPath, task, allLengths = [], fps = 10) {
   if (localStorage.getItem(_tgKey) === "1") group.classList.add("open");
   const shortTask = task.task.length > 72 ? task.task.slice(0, 72) + "…" : task.task;
   group.dataset.task = task.task.toLowerCase();
-  const epLengths = task.episodes.map(e => e.length);
-  const avgLen = epLengths.length ? Math.round(epLengths.reduce((a, b) => a + b, 0) / epLengths.length) : 0;
-  const minLen = epLengths.length ? Math.min(...epLengths) : 0;
-  const maxLen = epLengths.length ? Math.max(...epLengths) : 0;
+  let minLen = Infinity, maxLen = -Infinity, totalFrames = 0;
+  for (const ep of task.episodes) {
+    const l = ep.length;
+    if (l < minLen) minLen = l;
+    if (l > maxLen) maxLen = l;
+    totalFrames += l;
+  }
+  const n = task.episodes.length;
+  if (!n) { minLen = 0; maxLen = 0; }
+  const avgLen = n ? Math.round(totalFrames / n) : 0;
   const avgDur = formatDuration(avgLen / fps);
-  const totalFrames = epLengths.reduce((s, l) => s + l, 0);
   const totalDur = formatDuration(totalFrames / fps);
   const statsTitle = `${task.task}\n\n${task.episodes.length} episodes · avg ${avgLen}f (${avgDur}) · min ${minLen}f · max ${maxLen}f\nTotal: ${totalFrames}f (${totalDur})`;
 
@@ -1048,11 +1053,11 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
     el("viewer").setAttribute("aria-busy", "false");
     const taskLbl = el("task-label");
     taskLbl.innerHTML =
-      `<span style="color:var(--amber-dk)">Load failed:</span>` +
-      `<span style="font-weight:400;color:var(--text-2);margin-left:6px">${escapeHTML(e.message)}</span>`;
+      `<span class="load-fail-label">Load failed:</span>` +
+      `<span class="load-fail-msg">${escapeHTML(e.message)}</span>`;
     const retryBtn = document.createElement("button");
     retryBtn.textContent = "Retry";
-    retryBtn.style.cssText = "margin-left:10px;background:var(--bg-3);border:1px solid var(--border);border-radius:4px;padding:1px 8px;font-size:11px;cursor:pointer;color:var(--text-2)";
+    retryBtn.className = "retry-btn-inline";
     retryBtn.addEventListener("click", () =>
       selectEpisode(dsPath, epIndex, taskText, document.querySelector(".ep-item.active"))
     );

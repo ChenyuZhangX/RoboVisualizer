@@ -517,6 +517,22 @@ html.dark .ep-len.len-long      { color: #22C55E; background: #0a2017; }
   align-items: center;
   gap: 8px;
 }
+.empty-tree-msg {
+  padding: 12px;
+  color: var(--text-3);
+  font-size: var(--font-sm);
+  text-align: center;
+}
+.empty-tree-msg code {
+  background: var(--bg-3);
+  padding: 2px 4px;
+  border-radius: var(--radius-xs);
+}
+.empty-tree-msg small {
+  font-size: 10px;
+  margin-top: 4px;
+  display: block;
+}
 
 .error-msg {
   padding: 12px 14px;
@@ -527,6 +543,12 @@ html.dark .ep-len.len-long      { color: #22C55E; background: #0a2017; }
   margin: 8px;
   border-radius: var(--radius-sm);
   line-height: 1.5;
+}
+.error-msg-detail {
+  font-size: 10px;
+  color: var(--text-3);
+  margin-top: 4px;
+  display: block;
 }
 .error-msg button {
   background: var(--red);
@@ -539,6 +561,23 @@ html.dark .ep-len.len-long      { color: #22C55E; background: #0a2017; }
   transition: background .12s ease;
 }
 .error-msg button:hover { background: var(--red-dk); }
+.error-msg .retry-btn-blue {
+  background: var(--blue);
+  margin-top: 6px;
+  padding: 2px 8px;
+}
+.error-msg .retry-btn-blue:hover { background: var(--blue-dk); }
+.retry-btn-inline {
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1px 8px;
+  font-size: var(--font-sm);
+  cursor: pointer;
+  color: var(--text-2);
+  margin-left: 10px;
+}
+.retry-btn-inline:hover { background: var(--bg-2); }
 
 /* ── Main panel ───────────────────────────────────────────── */
 #panel {
@@ -614,6 +653,8 @@ html.dark .ep-len.len-long      { color: #22C55E; background: #0a2017; }
 }
 #task-label:hover { background: var(--alpha-12); }
 #task-label:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+.load-fail-label { color: var(--amber-dk); }
+.load-fail-msg { font-weight: 400; color: var(--text-2); margin-left: 6px; }
 
 #viewer-actions {
   display: flex;
