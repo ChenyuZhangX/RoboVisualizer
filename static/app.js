@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v51
+   LeRobot Visualizer — app.js  v52
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -74,9 +74,11 @@ let _lastFvUpdateMs = 0;
 const _visibleCharts = new Set();
 let _chartIntersectObs = null;
 let _allChartsCache = [];  // updated in _refreshChartObserver to avoid repeated spread
+let _visibleChartsArr = [];  // array version of visible charts, updated in observer callback
 
 function _refreshChartObserver() {
   _visibleCharts.clear();
+  _visibleChartsArr = [];
   _chartIntersectObs?.disconnect();
   _chartIntersectObs = null;
   _allChartsCache = [...state.stateCharts, ...state.actionCharts].filter(c => c?.canvas);
@@ -92,6 +94,8 @@ function _refreshChartObserver() {
       if (entry.isIntersecting) _visibleCharts.add(chart);
       else _visibleCharts.delete(chart);
     }
+    // Update _visibleChartsArr to avoid .filter() in hot updateChartCursor path
+    _visibleChartsArr = _allChartsCache.filter(c => _visibleCharts.has(c));
   }, { threshold: 0, rootMargin: '80px 0px' });
   allCharts.forEach(c => _chartIntersectObs.observe(c.canvas));
 }
@@ -991,6 +995,7 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
   _imageUpdateController = null;
   _frameHistory.length = 0;
   _frameHistoryPos = -1;
+  _tdimLayout = null;
 
   if (state.compareDataset === dsPath && state.compareEpIndex === epIndex) clearCompare();
 
@@ -2243,10 +2248,8 @@ function updateChartCursor() {
     _chartCursorThrottleMs = now;
   }
   _lastChartUpdateFrame = state.frame;
-  // Use cached chart list; fall back to all charts when IntersectionObserver unavailable
-  const toUpdate = _chartIntersectObs !== null
-    ? _allChartsCache.filter(c => _visibleCharts.has(c))
-    : _allChartsCache;
+  // Use pre-filtered visible charts array (updated in IntersectionObserver callback)
+  const toUpdate = _chartIntersectObs !== null ? _visibleChartsArr : _allChartsCache;
   toUpdate.forEach(c => c.update("none"));
   // Update document title with frame info during playback (throttled)
   if (state.playing) {
@@ -2411,13 +2414,16 @@ function buildTimeDimHeatmap(ep) {
   if (!card || !body) return;
 
   if (!ep?.actions?.length || ep.actions[0].length < 1) {
-    card.classList.add("hidden"); return;
+    card.classList.add("hidden");
+    _tdimLayout = null;
+    return;
   }
 
   // Defer render until expanded (avoids heavy canvas work on every episode switch)
   if (body.classList.contains("timedim-collapsed")) {
     card.classList.remove("hidden");
     body.innerHTML = "";
+    _tdimLayout = null;
     return;
   }
 
@@ -2572,12 +2578,16 @@ function buildTimeDimHeatmap(ep) {
     body.appendChild(note);
   }
 
+  // Cache layout for _doUpdateTimeDimCursor to avoid recomputation
+  _tdimLayout = { CELL_H, frames, cellW, CANVAS_W, TOTAL_W, CANVAS_H, TIME_AX_H: TIME_AX_H };
+
   card.classList.remove("hidden");
   if (!card.dataset.open) body.classList.add("timedim-collapsed");
 }
 
 let _timeDimRafPending = false;
 let _lastTimeDimFrame = -1;
+let _tdimLayout = null;  // cache layout values from buildTimeDimHeatmap
 
 function updateTimeDimCursor() {
   if (_timeDimRafPending || _lastTimeDimFrame === state.frame) return;
@@ -2588,20 +2598,11 @@ function updateTimeDimCursor() {
 function _doUpdateTimeDimCursor() {
   _timeDimRafPending = false;
   const canvas = el("timedim-canvas");
-  if (!canvas || !state.episode) return;
+  if (!canvas || !state.episode || !_tdimLayout) return;
   _lastTimeDimFrame = state.frame;
 
-  const ep = state.episode;
-  const dims = ep.actions[0]?.length ?? 0;
-  const CELL_H = timedimCellH(dims);
-  const frames = ep.length;
-  const CANVAS_W  = Math.min(frames, 900);
-  const TOTAL_W   = TIMEDIM_LABEL_W + CANVAS_W;
-  const CANVAS_H  = dims * CELL_H;
-  const TIME_AX_H = 18;
-  const TOTAL_H   = CANVAS_H + TIME_AX_H;
-
-  const cellW = CANVAS_W / frames;
+  const { CELL_H, frames, cellW, CANVAS_W, TOTAL_W, CANVAS_H, TIME_AX_H } = _tdimLayout;
+  const TOTAL_H = CANVAS_H + TIME_AX_H;
   const cursorX = TIMEDIM_LABEL_W + state.frame * cellW;
 
   // Overlay canvas: only covers the heatmap rows (not the time axis)

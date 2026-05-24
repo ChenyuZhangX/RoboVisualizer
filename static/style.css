@@ -1,3 +1,7 @@
+/* ──────────────────────────────────────────────────────────
+   LeRobot Visualizer — style.css  v52
+   ────────────────────────────────────────────────────────── */
+
 /* ── Reset & Base ─────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -637,6 +641,7 @@ html.dark .ep-len.len-long      { color: #22C55E; background: #0a2017; }
   padding: 0 14px 10px;
   background: var(--bg);
   border-top: 1px solid var(--border);
+  box-shadow: 0 -2px 8px rgba(0,0,0,.06);
 }
 
 /* Viewer header */
@@ -1176,6 +1181,10 @@ html.dark #speed-select:hover, html.dark #speed-select:focus { background: var(-
   font-variant-numeric: tabular-nums;
   min-width: 60px;
   text-align: right;
+  cursor: pointer;
+}
+.frame-count:hover {
+  color: var(--blue);
 }
 
 /* ── Chart legend ─────────────────────────────────────────── */
@@ -1260,9 +1269,6 @@ html.dark .info-chip-green { color: #6EE7B7; background: #0d2e1f; border-color: 
 }
 html.dark .info-chip-orange { color: #FCD34D; background: #3d2a0a; border-color: var(--alpha-3-amber); }
 
-/* ── Frame jump input ─────────────────────────────────────── */
-.frame-count { cursor: pointer; }
-.frame-count:hover { color: var(--blue); }
 
 /* ── Scrollbar ────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
@@ -1359,11 +1365,6 @@ kbd {
 #sidebar::-webkit-scrollbar-thumb:hover,
 #viewer-scroll::-webkit-scrollbar-thumb:hover,
 #dataset-tree::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
-
-/* Viewer footer shadow separator */
-#viewer-footer {
-  box-shadow: 0 -2px 8px rgba(0,0,0,.06);
-}
 
 html.dark #viewer-footer {
   box-shadow: 0 -2px 8px rgba(0,0,0,.25);
