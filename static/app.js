@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v68
+   LeRobot Visualizer — app.js  v69
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -134,6 +134,7 @@ const unslug = s => s.replace(/_/g, " ");
 const dsSlug = () => (state.activeDataset ?? "").replace(/[^a-z0-9_-]/gi, "_").slice(0, 32);
 const epPad = (idx = state.activeEpIndex) => String(idx).padStart(6, "0");
 const apiDs = ds => `/api/datasets/${encodeURIComponent(ds)}`;
+const hasActiveEp = () => !!(state.activeDataset && state.activeEpIndex != null);
 
 function debounce(fn, ms) {
   let t;
@@ -314,7 +315,7 @@ function initSidebarState() {
 const _saveHashDebounced = debounce(_doSaveHash, 600);
 
 function _doSaveHash() {
-  if (!state.activeDataset || state.activeEpIndex == null) return;
+  if (!hasActiveEp()) return;
   const params = new URLSearchParams({
     ds: state.activeDataset,
     ep: state.activeEpIndex,
@@ -446,6 +447,10 @@ function chartColors() {
 
 function _axisConf(cc, maxTicks, tickExtra = {}, gridExtra = {}, outer = {}) {
   return { ...outer, ticks: { maxTicksLimit: maxTicks, font: { size: CHART_FONT_SIZE }, color: cc.tick, ...tickExtra }, grid: { color: cc.grid, ...gridExtra }, border: { color: cc.border } };
+}
+
+function _ttConf(cc, extra = {}) {
+  return { bodyFont: { size: 11 }, padding: 6, backgroundColor: cc.ttBg, borderColor: cc.ttBorder, borderWidth: 1, titleColor: cc.ttTitle, bodyColor: cc.ttBody, cornerRadius: 5, ...extra };
 }
 
 /* ── Chart.js plugins ────────────────────────────────────── */
@@ -1641,7 +1646,7 @@ function exportCSV() {
 
 /* ── Copy episode URL to clipboard ───────────────────────── */
 async function copyEpisodeURL() {
-  if (!state.activeDataset || state.activeEpIndex == null) return;
+  if (!hasActiveEp()) return;
   const ep = state.episode;
   const ts = ep?.timestamps?.[state.frame];
   const params = new URLSearchParams({
@@ -2090,14 +2095,7 @@ function makeChart(canvasId, labels, data2d, names, normalized, dims,
               return ` ${item.dataset.label}: ${fmt}`;
             },
           },
-          bodyFont: { size: 11 }, padding: 6,
-          backgroundColor: cc.ttBg,
-          borderColor: cc.ttBorder,
-          borderWidth: 1,
-          titleColor: cc.ttTitle,
-          bodyColor: cc.ttBody,
-          titleFont: { size: 11, weight: "600" },
-          cornerRadius: 5,
+          ..._ttConf(cc, { titleFont: { size: 11, weight: "600" } }),
         },
         cursor: {}, stdBand: {},
       },
@@ -2200,13 +2198,7 @@ function makeHistChart(canvasId, data2d, names, dims, dimIndex = null) {
             title: items => `≈${fmtAxisTick(parseFloat(items[0].label))}`,
             label: item => ` ${item.dataset.label}: ${item.raw}`,
           },
-          bodyFont: { size: 11 }, padding: 6,
-          backgroundColor: cc.ttBg,
-          borderColor: cc.ttBorder,
-          borderWidth: 1,
-          titleColor: cc.ttTitle,
-          bodyColor: cc.ttBody,
-          cornerRadius: 5,
+          ..._ttConf(cc),
         },
       },
       scales: {
@@ -2615,7 +2607,7 @@ let _crumbEpListenerAttached = false;
 function updateTopbarBreadcrumb() {
   const crumb = el("topbar-ep-info");
   if (!crumb) return;
-  if (!state.activeDataset || state.activeEpIndex == null) {
+  if (!hasActiveEp()) {
     crumb.textContent = "";
     crumb.classList.add("hidden");
     return;
@@ -3282,7 +3274,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (modKey && e.key === "r") {
       e.preventDefault();
-      if (state.activeDataset && state.activeEpIndex != null) {
+      if (hasActiveEp()) {
         // Clear cache and reload current episode
         state.frameCache.clear();
         state.prefetchPending.clear();
