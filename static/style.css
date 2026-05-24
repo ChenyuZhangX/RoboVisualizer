@@ -945,15 +945,19 @@ html.dark .norm-badge { background: #0d2e1f; border-color: #166534; }
 }
 .fv-chip {
   display: inline-flex;
-  align-items: center;
-  gap: 4px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 5px;
-  padding: 2px 7px;
+  padding: 2px 7px 4px;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition);
 }
+.fv-chip:hover { border-color: var(--blue); background: var(--blue-lt); }
 .fv-dim {
   font-weight: 600;
   font-size: 10px;
@@ -964,8 +968,9 @@ html.dark .norm-badge { background: #0d2e1f; border-color: #166534; }
 }
 .fv-val {
   color: var(--text);
-  font-family: ui-monospace, monospace;
+  font-family: ui-monospace, "Cascadia Code", Menlo, monospace;
   font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── Playback Controls ────────────────────────────────────── */
@@ -1086,10 +1091,9 @@ html.dark #speed-select:hover, html.dark #speed-select:focus { background: var(-
   white-space: nowrap;
   border-radius: 3px;
   padding: 1px 3px;
-  transition: background var(--transition);
+  transition: background var(--transition), opacity var(--transition), text-decoration-color var(--transition);
 }
 .legend-item[data-dim]:hover { background: var(--bg-3); }
-.legend-item { transition: opacity var(--transition), text-decoration-color var(--transition); }
 .legend-item.legend-hidden { opacity: .4; text-decoration: line-through; text-decoration-color: var(--text-3); }
 .legend-dot {
   width: 8px; height: 8px;
@@ -1153,17 +1157,6 @@ html.dark .info-chip-orange { color: #FCD34D; background: #3d2a0a; border-color:
 /* ── Frame jump input ─────────────────────────────────────── */
 .frame-count { cursor: pointer; }
 .frame-count:hover { color: var(--blue); }
-.frame-jump-input {
-  background: var(--bg);
-  border: 1px solid var(--blue);
-  border-radius: 4px;
-  padding: 1px 5px;
-  font-size: 11.5px;
-  color: var(--text);
-  outline: none;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
 
 /* ── Scrollbar ────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
@@ -1240,22 +1233,6 @@ kbd {
   color: var(--text);
   line-height: 1.5;
 }
-
-/* ── Frame jump input ────────────────────────────────────────── */
-.frame-jump-input {
-  background: var(--bg);
-  border: 1px solid var(--blue);
-  border-radius: 4px;
-  padding: 1px 5px;
-  font-size: 11.5px;
-  color: var(--text);
-  outline: none;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  transition: box-shadow .12s ease;
-}
-.frame-jump-input:focus { box-shadow: 0 0 0 2px rgba(59,130,246,.2); }
-html.dark .frame-jump-input { background: var(--bg-2); }
 
 /* ── Custom scrollbars ────────────────────────────────────── */
 #viewer-scroll::-webkit-scrollbar,
@@ -1447,11 +1424,9 @@ html.dark #viewer-footer {
   text-align: center;
   outline: none;
   box-shadow: 0 0 0 2px rgba(59,130,246,.2);
+  transition: box-shadow .12s ease;
 }
-
-/* ── Frame values chip hover ────────────────────────────────── */
-.fv-chip { cursor: default; transition: border-color var(--transition), background var(--transition); }
-.fv-chip:hover { border-color: var(--blue); background: var(--blue-lt); }
+html.dark .frame-jump-input { background: var(--bg-2); }
 
 /* ── Mobile / narrow viewport ───────────────────────────────── */
 @media (max-width: 920px) {
@@ -1486,11 +1461,7 @@ html.dark #viewer-footer {
 .cam-slot:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--blue); }
 .cam-slot:hover:not(.loading) { box-shadow: inset 0 0 0 1px rgba(59,130,246,.3); }
 
-/* ── FV chip value: monospace ────────────────────────────────── */
-.fv-val { font-family: ui-monospace, "Cascadia Code", Menlo, monospace; font-size: 10.5px; font-variant-numeric: tabular-nums; }
-
 /* ── FV chip sparkline bar ───────────────────────────────────── */
-.fv-chip { flex-direction: column; gap: 0; align-items: stretch; padding-bottom: 4px; }
 .fv-top { display: flex; align-items: center; gap: 4px; }
 .fv-bar {
   width: 100%;
@@ -1537,9 +1508,6 @@ textarea:focus {
   }
 }
 
-
-/* ── fv-chip copyable cursor ────────────────────────────── */
-.fv-chip { cursor: pointer; }
 
 /* ── Viewer loading bar ────────────────────────────────────── */
 .viewer-loader {

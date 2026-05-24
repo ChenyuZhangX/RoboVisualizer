@@ -340,8 +340,12 @@ def get_episode(dataset: str, episode_index: int):
     # merge; video keys take priority when both present for same logical camera
     all_visual_keys = image_keys + [k for k in video_keys if k not in image_keys]
 
+    # Support both "action" (v1) and "actions" (v2) column names
+    action_col = "actions" if "actions" in df_dict else "action"
+
     state_names = features.get("state", {}).get("names") or [f"state_{i}" for i in range(len(df_dict.get("state", [[]])[0]))]
-    action_names = features.get("actions", {}).get("names") or [f"action_{i}" for i in range(len(df_dict.get("actions", [[]])[0]))]
+    action_feat_key = "actions" if "actions" in features else "action"
+    action_names = features.get(action_feat_key, {}).get("names") or [f"action_{i}" for i in range(len(df_dict.get(action_col, [[]])[0]))]
 
     # Flatten nested arrays if needed
     def to_list(col):
@@ -358,7 +362,7 @@ def get_episode(dataset: str, episode_index: int):
         "fps": info.get("fps", 10),
         "timestamps": [float(t[0]) if isinstance(t, (list, tuple)) else float(t) for t in df_dict.get("timestamp", [])],
         "state": to_list(df_dict.get("state", [])),
-        "actions": to_list(df_dict.get("actions", [])),
+        "actions": to_list(df_dict.get(action_col, [])),
         "state_names": state_names if isinstance(state_names, list) else list(state_names),
         "action_names": action_names if isinstance(action_names, list) else list(action_names),
         "image_keys": all_visual_keys,

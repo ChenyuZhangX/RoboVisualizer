@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v40
+   LeRobot Visualizer — app.js  v41
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -282,8 +282,8 @@ function _doSaveHash() {
     ds: state.activeDataset,
     ep: state.activeEpIndex,
     f:  state.frame,
-    n:  state.normalizeEnabled ? "1" : "0",
   });
+  if (!state.normalizeEnabled) params.set("n", "0");  // only serialize when non-default
   if (state.speed !== 1.0) params.set("speed", state.speed);
   history.replaceState(null, "", "#" + params.toString());
 }
@@ -308,7 +308,6 @@ async function loadHashState() {
 
     // Open the dataset node and load tasks
     const tasks = await apiFetch(`/api/datasets/${encodeURIComponent(ds)}/tasks`);
-    const allLengths = tasks.flatMap(t => t.episodes.map(e => e.length)).sort((a, b) => a - b);
 
     // Build nodes silently so episodeList is populated
     const tree = el("dataset-tree");
@@ -358,9 +357,9 @@ async function loadHashState() {
       else if (parts.length === 2) seconds = parts[0] * 60 + parts[1];
       else seconds = parts[0];
       // Convert seconds to frame index
-      const ep = state.episode;
-      if (ep?.timestamps?.length) {
-        const frameIdx = ep.timestamps.findIndex(ts => ts >= seconds);
+      const loadedEp = state.episode;
+      if (loadedEp?.timestamps?.length) {
+        const frameIdx = loadedEp.timestamps.findIndex(ts => ts >= seconds);
         if (frameIdx >= 0) setFrame(frameIdx);
       }
     } else if (f != null) {
@@ -700,7 +699,7 @@ function buildTaskNode(dsPath, task, allLengths = [], fps = 10) {
   const header = group.querySelector(".task-header");
   const epsContainer = group.querySelector(".task-eps");
 
-  for (const ep of task.episodes) {
+  task.episodes.forEach((ep, epIdx) => {
     const cls = lengthClass(ep.length, allLengths);
     const item = document.createElement("div");
     item.className = "ep-item";
@@ -711,7 +710,7 @@ function buildTaskNode(dsPath, task, allLengths = [], fps = 10) {
       <span>ep_${String(ep.episode_index).padStart(6, "0")}</span>
       <span class="ep-len ${cls}">${ep.length}f</span>`;
 
-    const epPosInTask = task.episodes.indexOf(ep) + 1;
+    const epPosInTask = epIdx + 1;
     const epTotalInTask = task.episodes.length;
     item.tabIndex = 0;
     item.setAttribute("role", "option");
@@ -761,7 +760,7 @@ function buildTaskNode(dsPath, task, allLengths = [], fps = 10) {
 
     state.episodeList.push({ dsPath, epIndex: ep.episode_index, taskText: task.task, el: item });
     epsContainer.appendChild(item);
-  }
+  });
 
   header.tabIndex = 0;
   header.setAttribute("role", "button");
@@ -1506,13 +1505,14 @@ function exportFrame() {
           canvas.width - 8, H + 18
         );
         canvas.toBlob(blob => {
+          const objectURL = URL.createObjectURL(blob);
           const a = document.createElement("a");
-          a.href = URL.createObjectURL(blob);
+          a.href = objectURL;
           const dsSlug = (state.activeDataset ?? "").replace(/[^a-z0-9_-]/gi, "_").slice(0, 32);
           const dlName = `${dsSlug}__ep${String(state.activeEpIndex).padStart(6,"0")}_f${String(state.frame).padStart(4,"0")}.png`;
           a.download = dlName;
           a.click();
-          URL.revokeObjectURL(a.href);
+          setTimeout(() => URL.revokeObjectURL(objectURL), 5000);
           showCopyToast(`✓ Saved ${dlName}`, "success");
         });
       }
@@ -1620,8 +1620,8 @@ async function copyEpisodeURL() {
     ds: state.activeDataset,
     ep: state.activeEpIndex,
     f:  state.frame,
-    n:  state.normalizeEnabled ? "1" : "0",
   });
+  if (!state.normalizeEnabled) params.set("n", "0");
   if (ts != null) {
     // Format as MM:SS for readability
     const mins = Math.floor(ts / 60);
@@ -2117,7 +2117,11 @@ function makeChart(canvasId, labels, data2d, names, normalized, dims,
 /* ── Histogram charts ────────────────────────────────────── */
 function computeBins(values, nBins = 22) {
   if (!values.length) return { edges: [], counts: [] };
-  const mn = Math.min(...values), mx = Math.max(...values);
+  let mn = values[0], mx = values[0];
+  for (let i = 1; i < values.length; i++) {
+    if (values[i] < mn) mn = values[i];
+    if (values[i] > mx) mx = values[i];
+  }
   const w = (mx - mn || 1) / nBins;
   const counts = Array(nBins).fill(0);
   for (const v of values) {
@@ -2505,6 +2509,7 @@ function buildTimeDimHeatmap(ep) {
     }
   });
   canvas.addEventListener("pointerup", () => { dragging = false; });
+  canvas.addEventListener("pointercancel", () => { dragging = false; });
   canvas.addEventListener("pointerleave", () => { dragging = false; hideTimeDimTooltip(); });
 
   // Colorbar legend (per-dimension normalization, so labels are generic)
@@ -2657,7 +2662,9 @@ function initFrameCounterJump() {
     counter.replaceWith(input);
     input.select();
 
+    let _jumpCancelled = false;
     const commit = (andPlay = false) => {
+      if (_jumpCancelled) return;
       const raw = input.value.trim();
       let f;
       // Support "M:SS" or "H:MM:SS" timestamp formats as well as frame numbers
@@ -2685,7 +2692,7 @@ function initFrameCounterJump() {
         e.preventDefault();
         commit(e.ctrlKey || e.metaKey);
       }
-      if (e.key === "Escape") { input.replaceWith(counter); }
+      if (e.key === "Escape") { _jumpCancelled = true; input.replaceWith(counter); }
     });
     input.addEventListener("blur", commit);
   });
@@ -2755,11 +2762,6 @@ function dimStats(data2d, d) {
   const variance = n > 1 ? sumSq / n - mean * mean : 0;
   const std = Math.sqrt(Math.max(0, variance));
   return { min, max, mean, std };
-}
-
-function dimMinMax(data2d, d) {
-  const { min, max } = dimStats(data2d, d);
-  return { min, max };
 }
 
 /* ── Frame values panel ──────────────────────────────────── */
@@ -3536,17 +3538,9 @@ document.addEventListener("DOMContentLoaded", () => {
           stopPlayback(); setFrame(0);
         }
         break;
-      case "Home":
-        e.preventDefault();
-        stopPlayback(); setFrame(0);
-        break;
       case "z": case "Z":
         e.preventDefault();
         stopPlayback(); setFrame(0); startPlayback();
-        break;
-      case "End":
-        e.preventDefault();
-        stopPlayback(); setFrame(state.episode.length - 1);
         break;
       case "Backspace":
         // Backspace navigates to previous episode (intuitive browser-back analogue)
@@ -3788,8 +3782,23 @@ document.addEventListener("DOMContentLoaded", () => {
     if (ds !== state.activeDataset || epIndex !== state.activeEpIndex) {
       loadHashState();
     } else {
+      // Same episode — restore frame, speed, and normalize from hash
       const f = params.get("f");
       if (f != null) setFrame(parseInt(f, 10));
+      const speedParam = parseFloat(params.get("speed") ?? "");
+      if (!isNaN(speedParam) && SPEEDS.includes(speedParam) && speedParam !== state.speed) {
+        state.speed = speedParam;
+        el("speed-select").value = speedParam;
+        localStorage.setItem("speed", speedParam);
+      }
+      const nParam = params.get("n");
+      const wantNorm = nParam === null || nParam === "1";
+      if (wantNorm !== state.normalizeEnabled) {
+        state.normalizeEnabled = wantNorm;
+        el("btn-normalize")?.classList.toggle("active", state.normalizeEnabled);
+        el("btn-normalize")?.setAttribute("aria-pressed", state.normalizeEnabled);
+        if (state.episode) { buildCharts(state.episode); updateFrameValues(); }
+      }
     }
   });
 });
