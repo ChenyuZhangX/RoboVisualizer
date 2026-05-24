@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v63
+   LeRobot Visualizer — app.js  v64
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -122,11 +122,14 @@ const show = id => el(id)?.classList.remove("hidden");
 const toggle = (id, cls, force) => el(id)?.classList.toggle(cls, force);
 const attr = (id, k, v) => el(id)?.setAttribute(k, v);
 const toggleSub = (id, sel, cls, force) => el(id)?.querySelector(sel)?.classList.toggle(cls, force);
+const all = sel => Array.from(document.querySelectorAll(sel));
 const truncate = (str, maxLen) => str?.length > maxLen ? str.slice(0, maxLen - 1) + "…" : (str ?? "");
 const capitalize = s => s ? s[0].toUpperCase() + s.slice(1) : s;
 const epStr = idx => `ep_${String(idx).padStart(6, "0")}`;
 const lsBool = k => localStorage.getItem(k) === "1";
 const lsFlag = (k, v) => localStorage.setItem(k, v ? "1" : "0");
+const isoNow = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+const setDisabled = (ids, disabled) => ids.forEach(id => { const e = el(id); if (e) e.disabled = disabled; });
 
 function debounce(fn, ms) {
   let t;
@@ -790,7 +793,7 @@ function buildTaskNode(dsPath, task, allLengths = [], fps = 10) {
         handleActivate(e.ctrlKey || e.metaKey, false);
       } else if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Home" || e.key === "End") {
         e.preventDefault();
-        const allItems = Array.from(document.querySelectorAll(".ep-item:not(.ep-search-hidden):not(.search-hidden .ep-item)"));
+        const allItems = all(".ep-item:not(.ep-search-hidden):not(.search-hidden .ep-item)");
         const idx = allItems.indexOf(item);
         let target;
         if (e.key === "ArrowDown") target = allItems[idx + 1];
@@ -1058,9 +1061,7 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
     hide("viewer-loader");
     viewerEl.setAttribute("aria-busy", "false");
     // Enable export buttons now that episode is loaded
-    el("btn-export").disabled = false;
-    el("btn-csv").disabled = false;
-    el("btn-frame-values").disabled = false;
+    setDisabled(["btn-export", "btn-csv", "btn-frame-values"], false);
   } catch (e) {
     hide("viewer-loader");
     viewerEl.setAttribute("aria-busy", "false");
@@ -1717,7 +1718,7 @@ function downloadChart(type) {
   const suffix = ep
     ? `_${state.activeDataset || "dataset"}_ep${String(state.activeEpIndex ?? 0).padStart(6, "0")}`
     : "";
-  const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+  const ts = isoNow();
 
   // If expanded (multiple mini-charts), zip them or just export each
   if (!charts.length) { showCopyToast("No chart to download", "error"); return; }
@@ -1740,7 +1741,7 @@ function downloadChart(type) {
 function downloadCorr() {
   const canvas = el("corr-canvas");
   if (!canvas) { showCopyToast("Show the correlation matrix first", "error"); return; }
-  const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+  const ts = isoNow();
   const fname = `lerobot_corr_${state.activeDataset || "dataset"}_ep${state.activeEpIndex ?? 0}_${ts}.png`;
   _exportCanvasPNG(canvas, fname);
   showCopyToast(`✓ Downloaded ${fname.split("/").pop()}`, "success");
@@ -1749,7 +1750,7 @@ function downloadCorr() {
 function downloadTimedim() {
   const canvas = el("timedim-canvas");
   if (!canvas) { showCopyToast("Show the action heatmap first", "error"); return; }
-  const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+  const ts = isoNow();
   const fname = `lerobot_heatmap_${state.activeDataset || "dataset"}_ep${state.activeEpIndex ?? 0}_${ts}.png`;
   _exportCanvasPNG(canvas, fname);
   showCopyToast(`✓ Downloaded ${fname.split("/").pop()}`, "success");
@@ -3139,9 +3140,7 @@ document.addEventListener("DOMContentLoaded", () => {
   el("btn-copy-url")?.addEventListener("click", copyEpisodeURL);
 
   // Disable export buttons initially
-  el("btn-export").disabled = true;
-  el("btn-csv").disabled = true;
-  el("btn-frame-values").disabled = true;
+  setDisabled(["btn-export", "btn-csv", "btn-frame-values"], true);
 
   el("speed-select").addEventListener("change", e => {
     state.speed = parseFloat(e.target.value);
