@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v39
+   LeRobot Visualizer — app.js  v40
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -87,6 +87,9 @@ let _lbPrevFocus = null;  // element to restore focus to when lightbox closes
 
 /* ── Scrubber hover tooltip ──────────────────────────────── */
 let _scrubTooltipEl = null;
+
+/* ── Frame fetch auto-retry tracking ────────────────────── */
+const _frameRetryPending = new Set();
 
 /* ── Utility helpers ─────────────────────────────────────── */
 const el = id => document.getElementById(id);
@@ -398,6 +401,11 @@ function chartColors() {
     tick:   dark ? "#64748B" : "#94A3B8",
     grid:   dark ? "rgba(51,65,85,.35)" : "rgba(226,232,240,.5)",
     border: dark ? "rgba(51,65,85,.7)"  : "rgba(226,232,240,.8)",
+    // Tooltip theme
+    ttBg:       dark ? "#1E293B" : "#FFFFFF",
+    ttBorder:   dark ? "rgba(51,65,85,.8)" : "rgba(226,232,240,.8)",
+    ttTitle:    dark ? "#E2E8F0" : "#1E293B",
+    ttBody:     dark ? "#94A3B8" : "#475569",
   };
 }
 
@@ -1171,7 +1179,7 @@ function clearCompare() {
   el("compare-banner").classList.add("hidden");
   if (state.episode) {
     buildCharts(state.episode);
-    showCopyToast("✓ Comparison cleared");
+    showCopyToast("✓ Comparison cleared", "success");
   }
 }
 
@@ -1336,6 +1344,7 @@ function renderFrameData(keys, frames) {
   keys.forEach((key, i) => {
     const slot = el(`cam-${i}`);
     if (!slot) return;
+    slot.classList.remove("loading");
     const src = frames[key];
     if (!src) { resetCam(i); return; }
 
@@ -1435,13 +1444,23 @@ async function updateImages() {
       if (e.name === "AbortError") return;  // request was superseded by a newer frame
       if (state.frame === f) {
         el("fps-badge")?.classList.remove("loading");
-        keys.forEach((_, i) => {
-          const slot = el(`cam-${i}`);
-          if (slot) { slot.classList.remove("loading"); }
-          if (slot && !slot.querySelector("img")) {
-            slot.innerHTML = `<div class="cam-placeholder"><span style="font-size:10px;color:var(--text-3);position:absolute;bottom:8px">Failed to load</span></div>`;
-          }
-        });
+        // Auto-retry once after 700ms (transient network or server hiccup)
+        if (!_frameRetryPending.has(f)) {
+          _frameRetryPending.add(f);
+          setTimeout(() => {
+            _frameRetryPending.delete(f);
+            if (state.frame === f && !state.frameCache.has(f)) updateImages();
+          }, 700);
+        } else {
+          // Retry already failed — show error state
+          keys.forEach((_, i) => {
+            const slot = el(`cam-${i}`);
+            if (slot) { slot.classList.remove("loading"); }
+            if (slot && !slot.querySelector("img")) {
+              slot.innerHTML = `<div class="cam-placeholder"><span class="cam-error-msg">Failed to load</span></div>`;
+            }
+          });
+        }
       }
     }
   }
@@ -1456,7 +1475,7 @@ function exportFrame() {
     const img = el(`cam-${i}`)?.querySelector("img");
     if (img?.src) imgs.push({ img, label: img.alt });
   }
-  if (!imgs.length) return;
+  if (!imgs.length) { showCopyToast("No camera images loaded yet", "error"); return; }
 
   const W = 480, H = Math.round(W * 3 / 4);
   const canvas = document.createElement("canvas");
@@ -1794,6 +1813,7 @@ function rebuildChartsFor(type) {
 
 function toggleNormalize() {
   state.normalizeEnabled = !state.normalizeEnabled;
+  localStorage.setItem("normalize", state.normalizeEnabled ? "1" : "0");
   el("btn-normalize")?.classList.toggle("active", state.normalizeEnabled);
   el("btn-normalize")?.setAttribute("aria-pressed", state.normalizeEnabled);
   if (state.episode) {
@@ -1883,25 +1903,45 @@ function buildChartCard(type, data2d, names, normalized, ep, cmpData2d = null, n
     body.innerHTML = `<div class="chart-wrap"><canvas id="${type}-chart"></canvas></div>`;
     const mainChart = makeChart(`${type}-chart`, labels, data2d, names, normalized, dims, null, cmpData2d, null);
     charts.push(mainChart);
-    // Compact legend below chart — click to toggle series visibility
+    // Compact legend below chart — click to toggle, Ctrl+click to isolate, dbl-click to show all
     if (dims > 0 && dims <= 20) {
       const legendDiv = document.createElement("div");
       legendDiv.className = "chart-legend";
       const maxShow = 20;
+      const legendItems = [];
+      const setAllVisible = () => {
+        for (let i = 0; i < dims; i++) {
+          const m = mainChart?.getDatasetMeta(i);
+          if (m) m.hidden = false;
+        }
+        legendItems.forEach(li => li.classList.remove("legend-hidden"));
+        mainChart?.update("none");
+      };
       for (let d = 0; d < Math.min(dims, maxShow); d++) {
         const item = document.createElement("span");
         item.className = "legend-item";
-        item.title = `Click to show/hide ${names[d] ?? `dim_${d}`}`;
+        item.title = `Click to show/hide · ${MOD_KEY}+click to isolate · dbl-click to show all`;
         item.style.cursor = "pointer";
         item.dataset.dim = d;
         item.innerHTML = `<span class="legend-dot" style="background:${PALETTE[d % PALETTE.length]}"></span>${names[d] ?? `dim_${d}`}`;
-        item.addEventListener("click", () => {
+        item.addEventListener("click", e => {
           if (!mainChart) return;
-          const meta = mainChart.getDatasetMeta(d);
-          meta.hidden = !meta.hidden;
+          if (e.ctrlKey || e.metaKey) {
+            // Isolate: hide all except this one
+            for (let i = 0; i < dims; i++) {
+              const m = mainChart.getDatasetMeta(i);
+              if (m) m.hidden = i !== d;
+            }
+            legendItems.forEach((li, i) => li.classList.toggle("legend-hidden", i !== d));
+          } else {
+            const meta = mainChart.getDatasetMeta(d);
+            meta.hidden = !meta.hidden;
+            item.classList.toggle("legend-hidden", !!meta.hidden);
+          }
           mainChart.update("none");
-          item.classList.toggle("legend-hidden", !!meta.hidden);
         });
+        item.addEventListener("dblclick", setAllVisible);
+        legendItems.push(item);
         legendDiv.appendChild(item);
       }
       if (dims > maxShow) {
@@ -2016,6 +2056,13 @@ function makeChart(canvasId, labels, data2d, names, normalized, dims,
             },
           },
           bodyFont: { size: 11 }, padding: 6,
+          backgroundColor: cc.ttBg,
+          borderColor: cc.ttBorder,
+          borderWidth: 1,
+          titleColor: cc.ttTitle,
+          bodyColor: cc.ttBody,
+          titleFont: { size: 11, weight: "600" },
+          cornerRadius: 5,
         },
         cursor: {}, stdBand: {},
       },
@@ -2048,6 +2095,7 @@ function makeChart(canvasId, labels, data2d, names, normalized, dims,
     _chartDragging = true;
     canvas.setPointerCapture(e.pointerId);
     canvas.style.cursor = "ew-resize";
+    stopPlayback();
   });
   canvas.addEventListener("pointermove", e => {
     if (!_chartDragging) return;
@@ -2125,6 +2173,12 @@ function makeHistChart(canvasId, data2d, names, dims, dimIndex = null) {
             label: item => ` ${item.dataset.label}: ${item.raw}`,
           },
           bodyFont: { size: 11 }, padding: 6,
+          backgroundColor: cc.ttBg,
+          borderColor: cc.ttBorder,
+          borderWidth: 1,
+          titleColor: cc.ttTitle,
+          bodyColor: cc.ttBody,
+          cornerRadius: 5,
         },
       },
       scales: {
@@ -2953,6 +3007,14 @@ function initPlaybackPreferences() {
   state.looping = savedLoop;
   el("btn-loop").classList.toggle("active", savedLoop);
   el("btn-loop").setAttribute("aria-pressed", savedLoop);
+
+  // Restore normalize preference (hash URL takes priority, but localStorage covers no-hash case)
+  const savedNorm = localStorage.getItem("normalize");
+  if (savedNorm !== null) {
+    state.normalizeEnabled = savedNorm === "1";
+    el("btn-normalize")?.classList.toggle("active", state.normalizeEnabled);
+    el("btn-normalize")?.setAttribute("aria-pressed", state.normalizeEnabled);
+  }
 }
 
 /* ── Platform detection ──────────────────────────────────── */
@@ -2985,11 +3047,13 @@ document.addEventListener("DOMContentLoaded", () => {
     el("corr-body")?.classList.remove("corr-collapsed");
     if (el("corr-section")) el("corr-section").dataset.open = "1";
     el("corr-close")?.classList.add("active");
+    el("corr-close")?.setAttribute("aria-expanded", "true");
   }
   if (localStorage.getItem("timedimOpen") === "1") {
     el("timedim-body")?.classList.remove("timedim-collapsed");
     if (el("timedim-card")) el("timedim-card").dataset.open = "1";
     el("timedim-toggle")?.classList.add("active");
+    el("timedim-toggle")?.setAttribute("aria-expanded", "true");
   }
 
   // Update welcome hint modifier key for platform
@@ -3111,6 +3175,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const nowCollapsed = body.classList.toggle("corr-collapsed");
     el("corr-section").dataset.open = nowCollapsed ? "" : "1";
     el("corr-close").classList.toggle("active", !nowCollapsed);
+    el("corr-close").setAttribute("aria-expanded", String(!nowCollapsed));
     localStorage.setItem("corrOpen", nowCollapsed ? "0" : "1");
     if (!nowCollapsed && state.episode) buildCorrelationHeatmap(state.episode);
   });
@@ -3121,6 +3186,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const nowCollapsed = body.classList.toggle("timedim-collapsed");
     card.dataset.open = nowCollapsed ? "" : "1";
     el("timedim-toggle").classList.toggle("active", !nowCollapsed);
+    el("timedim-toggle").setAttribute("aria-expanded", String(!nowCollapsed));
     localStorage.setItem("timedimOpen", nowCollapsed ? "0" : "1");
     if (!nowCollapsed && state.episode) buildTimeDimHeatmap(state.episode);
   });
@@ -3211,7 +3277,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    if (!state.episode && !["[", "]"].includes(e.key)) return;
+    if (!state.episode && !["[", "]", "Backspace"].includes(e.key)) return;
 
     if (e.key === "+" || e.key === "=") {
       e.preventDefault();
@@ -3224,7 +3290,8 @@ document.addEventListener("DOMContentLoaded", () => {
           el("speed-select").value = state.speed;
           localStorage.setItem("speed", state.speed);
           if (state.playing) { stopPlayback(); startPlayback(); }
-          showCopyToast(`Speed: ${state.speed}×`);
+          const efps = state.episode ? ` (${Math.round((state.episode.fps || 10) * state.speed)} fps)` : "";
+          showCopyToast(`Speed: ${state.speed}×${efps}`);
         }
       }
       return;
@@ -3240,7 +3307,8 @@ document.addEventListener("DOMContentLoaded", () => {
           el("speed-select").value = state.speed;
           localStorage.setItem("speed", state.speed);
           if (state.playing) { stopPlayback(); startPlayback(); }
-          showCopyToast(`Speed: ${state.speed}×`);
+          const efps = state.episode ? ` (${Math.round((state.episode.fps || 10) * state.speed)} fps)` : "";
+          showCopyToast(`Speed: ${state.speed}×${efps}`);
         }
       }
       return;
@@ -3363,9 +3431,11 @@ document.addEventListener("DOMContentLoaded", () => {
       // Scroll sidebar to active episode
       const activeItem = document.querySelector(".ep-item.active");
       if (activeItem) {
-        if (el("main").classList.contains("sidebar-collapsed")) toggleSidebar();
-        requestAnimationFrame(() => activeItem.scrollIntoView({ block: "center", behavior: "smooth" }));
-        showCopyToast("Scrolled to current episode");
+        const wasCollapsed = el("main").classList.contains("sidebar-collapsed");
+        if (wasCollapsed) toggleSidebar();
+        // Wait for sidebar animation (200ms) before scrolling
+        setTimeout(() => activeItem.scrollIntoView({ block: "center", behavior: "smooth" }), wasCollapsed ? 220 : 0);
+        showCopyToast("Scrolled to current episode", "success");
       }
       return;
     }
@@ -3477,6 +3547,13 @@ document.addEventListener("DOMContentLoaded", () => {
       case "End":
         e.preventDefault();
         stopPlayback(); setFrame(state.episode.length - 1);
+        break;
+      case "Backspace":
+        // Backspace navigates to previous episode (intuitive browser-back analogue)
+        if (!e.shiftKey && !modKey) {
+          e.preventDefault();
+          prevEpisode();
+        }
         break;
       case "[":
         e.preventDefault();
@@ -3639,11 +3716,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Also listen for explicit window resize to auto-expand if narrowing-then-widening
+  // Auto-collapse sidebar on orientation change (mobile)
   window.addEventListener("resize", () => {
-    const isNarrow = window.innerWidth < SIDEBAR_BREAKPOINT;
-    const isCollapsed = el("main").classList.contains("sidebar-collapsed");
-    // Don't auto-expand; user should control. Just ensure consistency with media query.
+    if (window.innerWidth < SIDEBAR_BREAKPOINT && !el("main").classList.contains("sidebar-collapsed")) {
+      el("main").classList.add("sidebar-collapsed");
+      el("sidebar-toggle").setAttribute("aria-pressed", "true");
+    }
   }, { passive: true });
 
   // Search input: Escape clears; Enter/ArrowDown jumps to first visible episode
@@ -3665,10 +3743,11 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
-      const first = document.querySelector(
+      const items = Array.from(document.querySelectorAll(
         ".ep-item:not(.ep-search-hidden):not(.search-hidden .ep-item)"
-      );
-      if (first) { first.focus(); first.scrollIntoView({ block: "nearest" }); }
+      ));
+      const target = e.key === "ArrowDown" ? items[0] : items[items.length - 1];
+      if (target) { target.focus(); target.scrollIntoView({ block: "nearest" }); }
     }
   });
 

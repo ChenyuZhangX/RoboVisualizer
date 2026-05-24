@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LeRobot Visualizer</title>
-  <link rel="stylesheet" href="/style.css?v=39" />
+  <link rel="stylesheet" href="/style.css?v=40" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -158,7 +158,7 @@
                   <button class="chart-tool-btn" id="dl-corr" title="Download correlation matrix as PNG" onclick="downloadCorr()" aria-label="Download correlation matrix">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                   </button>
-                  <button class="expand-btn" id="corr-close" title="Toggle correlation  K" aria-label="Toggle correlation matrix">
+                  <button class="expand-btn" id="corr-close" title="Toggle correlation  K" aria-label="Toggle correlation matrix" aria-expanded="false">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
                   </button>
                 </div>
@@ -177,7 +177,7 @@
                   <button class="chart-tool-btn" id="dl-timedim" title="Download heatmap as PNG" onclick="downloadTimedim()" aria-label="Download action heatmap">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                   </button>
-                  <button class="expand-btn" id="timedim-toggle" title="Toggle heatmap">
+                  <button class="expand-btn" id="timedim-toggle" title="Toggle heatmap  T" aria-label="Toggle action heatmap" aria-expanded="false">
                     <svg class="icon-expand" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
                   </button>
                 </div>
@@ -236,7 +236,6 @@
         <tr><td><kbd>Space</kbd></td><td>Play / Pause</td></tr>
         <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Step 1 frame</td></tr>
         <tr><td><kbd>⇧←</kbd> <kbd>⇧→</kbd></td><td>Step 10 frames</td></tr>
-        <tr><td><kbd>PgUp</kbd> <kbd>PgDn</kbd></td><td>Step 50 frames (⇧ = 100)</td></tr>
         <tr><td><kbd>Alt</kbd>+<kbd>←</kbd> <kbd>→</kbd></td><td>Navigate frame history</td></tr>
         <tr><td><kbd>Ctrl</kbd>+<kbd>J</kbd></td><td>Jump to specific frame</td></tr>
         <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd> (frame jump)</td><td>Jump and play from frame</td></tr>
@@ -248,6 +247,7 @@
         <tr><td><kbd>Ctrl</kbd>+<kbd>M</kbd></td><td>Jump to midpoint</td></tr>
         <tr><td><kbd>Z</kbd></td><td>Rewind and play from start</td></tr>
         <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>Prev / Next episode</td></tr>
+        <tr><td><kbd>Backspace</kbd></td><td>Previous episode</td></tr>
         <tr><td><kbd>⇧[</kbd> <kbd>⇧]</kbd></td><td>First / Last episode</td></tr>
         <tr><td><kbd>←</kbd> <kbd>→</kbd> (lightbox)</td><td>Prev / next camera</td></tr>
         <tr><td><kbd>+</kbd> <kbd>−</kbd> (lightbox)</td><td>Zoom in / out · Scroll wheel · Pinch</td></tr>
@@ -269,6 +269,8 @@
         <tr><td><kbd>L</kbd></td><td>Toggle loop</td></tr>
         <tr><td><kbd>H</kbd> / <kbd>⇧H</kbd></td><td>Toggle state / action histogram</td></tr>
         <tr><td><kbd>E</kbd> / <kbd>⇧E</kbd></td><td>Split state / action chart by dimension</td></tr>
+        <tr><td><kbd>Ctrl</kbd>+click legend item</td><td>Isolate that dimension (hide others)</td></tr>
+        <tr><td>Dbl-click legend item</td><td>Show all dimensions</td></tr>
         <tr><td><kbd>T</kbd></td><td>Toggle action heatmap</td></tr>
         <tr><td><kbd>K</kbd></td><td>Toggle correlation matrix</td></tr>
         <tr><td><kbd>N</kbd></td><td>Toggle normalization</td></tr>
@@ -311,6 +313,6 @@
     </button>
   </div>
 
-  <script src="/app.js?v=39"></script>
+  <script src="/app.js?v=40"></script>
 </body>
 </html>

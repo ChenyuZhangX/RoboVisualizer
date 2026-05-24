@@ -58,10 +58,6 @@ body {
 :focus { outline: none; }
 :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 3px; }
 
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { transition: none !important; animation: none !important; }
-}
-
 /* ── Layout ───────────────────────────────────────────────── */
 #app { display: flex; flex-direction: column; height: 100vh; }
 
@@ -116,6 +112,7 @@ body.is-playing #topbar {
   flex-shrink: 0;
 }
 .icon-btn:hover { color: var(--text); background: var(--bg-3); }
+.icon-btn:active { transform: scale(0.92); }
 .icon-btn:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
 
 /* Small icon button (sidebar header) */
@@ -133,6 +130,7 @@ body.is-playing #topbar {
 }
 .icon-btn-sm:hover { color: var(--blue); background: var(--blue-lt); }
 .icon-btn-sm.active { color: var(--blue); background: var(--blue-lt); }
+.icon-btn-sm:active { transform: scale(0.88); }
 .icon-btn-sm:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
 
 #main {
@@ -434,6 +432,11 @@ mark.search-hl {
   background: var(--amber-lt);
   color: var(--amber-dk);
   font-weight: 600;
+  animation: ep-compare-activate .2s ease;
+}
+@keyframes ep-compare-activate {
+  from { background: rgba(245,158,11,.3); }
+  to   { background: var(--amber-lt); }
 }
 .ep-item.compare .ep-dot { background: var(--amber); }
 
@@ -1534,13 +1537,6 @@ textarea:focus {
   }
 }
 
-/* ── Reduced motion support ────────────────────────────── */
-@media (prefers-reduced-motion: reduce) {
-  #fps-badge { animation: none !important; }
-  @keyframes cam-loading-pulse { 0%, 100%, 50% { opacity: 1; } }
-  @keyframes toast-slide-up { from { opacity: 1; } }
-  .modal-overlay, .modal-box { animation: none !important; }
-}
 
 /* ── fv-chip copyable cursor ────────────────────────────── */
 .fv-chip { cursor: pointer; }
@@ -1572,22 +1568,6 @@ textarea:focus {
   to   { left: 110%; }
 }
 
-/* ── Print styles ─────────────────────────────────────────── */
-@media print {
-  #topbar, #sidebar, #viewer-footer, #viewer-actions,
-  #btn-shortcuts, .modal-overlay, .copy-toast { display: none !important; }
-
-  body { overflow: visible; background: #fff; color: #000; }
-  #app, #main, #panel, #viewer, #viewer-scroll { overflow: visible; height: auto; }
-  #viewer-scroll { padding: 0; }
-
-  .chart-card { box-shadow: none; border: 1px solid #ccc; break-inside: avoid; }
-  #cameras { break-inside: avoid; }
-  .cam-slot { aspect-ratio: 4/3; break-inside: avoid; }
-  #task-label { border-left: 3px solid #3B82F6; background: #f0f7ff; }
-  .ep-info-strip { display: flex !important; }
-  #ep-info-strip.hidden { display: flex !important; }
-}
 
 /* ── Frame values panel header ─────────────────────────────── */
 .fv-panel-header {
@@ -1662,7 +1642,8 @@ textarea:focus {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
-  .copy-toast, .viewer-loader { transition: none !important; }
+  .copy-toast, .viewer-loader, #fps-badge { transition: none !important; }
+  .modal-overlay, .modal-box, .lightbox-box { animation: none !important; }
 }
 
 /* ── Camera loading skeleton animation (uses .loading class) ─── */
@@ -1716,6 +1697,16 @@ html.dark .cam-slot.loading::before {
 /* Smooth zoom transitions on lightbox image */
 #lightbox-img { transition: transform 0.12s ease, transform-origin 0.12s ease; }
 
+/* ── Camera slot error message ──────────────────────────────── */
+.cam-error-msg {
+  position: absolute;
+  bottom: 8px;
+  left: 0; right: 0;
+  text-align: center;
+  font-size: 10px;
+  color: var(--text-3);
+}
+
 /* ── Scrubber hover tooltip ──────────────────────────────────── */
 .scrub-tooltip {
   position: fixed;
@@ -1752,14 +1743,19 @@ html.dark #fps-badge[data-fast="1"] {
   #topbar, #sidebar, #viewer-footer, #viewer-actions,
   #compare-banner, #frame-values-panel, #shortcuts-modal,
   #cam-lightbox, .lightbox-dl-btn, .expand-btn, .chart-tool-btn,
-  .copy-toast, #sidebar-footer { display: none !important; }
+  .copy-toast, #sidebar-footer, .btn-shortcuts { display: none !important; }
+  body { background: #fff !important; color: #000 !important; }
   body, html { height: auto; overflow: visible; }
   #app, #main, #panel { display: block; height: auto; }
   #viewer { display: block !important; overflow: visible; }
-  #viewer-scroll { overflow: visible; }
+  #viewer-scroll { overflow: visible; padding: 0; }
   #cameras, #charts-area { break-inside: avoid; }
+  .cam-slot { aspect-ratio: 4/3; break-inside: avoid; }
   .cam-slot img { max-width: 100%; height: auto; }
-  .chart-card { break-inside: avoid; border: 1px solid #ccc; margin-bottom: 8px; }
-  #ep-info-strip { display: flex !important; }
-  #task-label { font-size: 11pt; font-weight: 600; margin-bottom: 6px; }
+  .chart-card { break-inside: avoid; border: 1px solid #ccc; box-shadow: none; margin-bottom: 8px; }
+  #ep-info-strip, #ep-info-strip.hidden { display: flex !important; }
+  #task-label {
+    font-size: 11pt; font-weight: 600; margin-bottom: 6px;
+    border-left: 3px solid #3B82F6; background: #f0f7ff; padding: 4px 8px;
+  }
 }
