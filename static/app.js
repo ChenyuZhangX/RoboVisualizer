@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v53
+   LeRobot Visualizer — app.js  v54
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -112,6 +112,8 @@ const _frameRetryPending = new Set();
 
 /* ── Utility helpers ─────────────────────────────────────── */
 const el = id => document.getElementById(id);
+const truncate = (str, maxLen) => str?.length > maxLen ? str.slice(0, maxLen - 1) + "…" : (str ?? "");
+const epStr = idx => `ep_${String(idx).padStart(6, "0")}`;
 
 function debounce(fn, ms) {
   let t;
@@ -219,8 +221,8 @@ function updateRecentSection() {
     item.tabIndex = 0;
     item.setAttribute("role", "option");
     item.setAttribute("aria-label", `Recent: ${r.dsPath} episode ${r.epIndex}${r.taskText ? ` - ${r.taskText}` : ""}`);
-    const epStr = `ep_${String(r.epIndex).padStart(6, "0")}`;
-    const shortTask = r.taskText?.length > 48 ? r.taskText.slice(0, 45) + "…" : (r.taskText ?? "");
+    const epStr = epStr(r.epIndex);
+    const shortTask = truncate(r.taskText, 48);
     item.innerHTML =
       `<span class="recent-ep">${epStr}</span>` +
       `<span class="recent-task">${escapeHTML(shortTask)}</span>`;
@@ -700,7 +702,7 @@ function buildTaskNode(dsPath, task, allLengths = [], fps = 10) {
   group.className = "task-group";
   const _tgKey = `tg-${dsPath}-${task.task_index ?? task.task.slice(0, 32)}`;
   if (localStorage.getItem(_tgKey) === "1") group.classList.add("open");
-  const shortTask = task.task.length > 72 ? task.task.slice(0, 72) + "…" : task.task;
+  const shortTask = truncate(task.task, 72);
   group.dataset.task = task.task.toLowerCase();
   let minLen = Infinity, maxLen = -Infinity, totalFrames = 0;
   for (const ep of task.episodes) {
@@ -1003,7 +1005,7 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
   el("viewer").classList.remove("hidden");
   el("viewer").setAttribute("aria-busy", "true");
   el("viewer-loader")?.classList.remove("hidden");
-  const displayTask = taskText?.length > 80 ? taskText.slice(0, 77) + "…" : (taskText ?? "");
+  const displayTask = truncate(taskText, 80);
   el("task-label").textContent = displayTask;
   el("task-label").title = taskText?.length > 80 ? taskText : "";
   el("ep-info-strip").innerHTML = `<span class="spinner"></span><span class="text-muted"> Loading…</span>`;
@@ -1040,7 +1042,7 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
     updateTopbarBreadcrumb();
     saveHashState();
     addToRecent(dsPath, epIndex, taskText);
-    const taskShort = taskText?.length > 48 ? taskText.slice(0, 45) + "…" : taskText;
+    const taskShort = truncate(taskText, 48);
     document.title = taskShort
       ? `ep_${String(epIndex).padStart(6, "0")} — ${taskShort} • LeRobot Visualizer`
       : `ep_${String(epIndex).padStart(6, "0")} • ${dsPath} • LeRobot Visualizer`;
@@ -1187,7 +1189,7 @@ async function selectCompareEpisode(dsPath, epIndex, clickedEl) {
     const cmpDurStr = cmpLastTs !== null ? ` / ${formatDuration(cmpLastTs)}` : "";
     const cmpDs = dsPath !== state.activeDataset ? ` (${dsPath})` : "";
     const cmpTaskEp = state.episodeList.find(e => e.dsPath === dsPath && e.epIndex === epIndex);
-    const cmpTaskStr = cmpTaskEp?.taskText?.length > 36 ? cmpTaskEp.taskText.slice(0, 33) + "…" : (cmpTaskEp?.taskText ?? "");
+    const cmpTaskStr = truncate(cmpTaskEp?.taskText, 36);
     const taskHint = cmpTaskStr ? ` · ${cmpTaskStr}` : "";
     const mainLen = state.episode?.length ?? cmpEp.length;
     const lenDiff = cmpEp.length - mainLen;
@@ -2307,7 +2309,7 @@ function buildCorrelationHeatmap(ep) {
   const cols = Array.from({ length: dims }, (_, d) => ep.actions.map(r => r[d]));
   const rawNames = ep.action_names ?? [];
   const rawLabels = Array.from({ length: dims }, (_, d) => rawNames[d] ?? `a${d}`);
-  const labels = rawLabels.map(n => n.length > 7 ? n.slice(0, 6) + "…" : n);
+  const labels = rawLabels.map(n => truncate(n, 7));
 
   const CELL = 24, LABEL_W = 56, TOP_H = 22, PAD = 2;
   const COLORBAR_H = 12, COLORBAR_GAP = 8, COLORBAR_LABEL_H = 12;
@@ -2441,7 +2443,7 @@ function buildTimeDimHeatmap(ep) {
   const rawNames = ep.action_names ?? [];
   const labels = Array.from({ length: dims }, (_, d) => {
     const n = rawNames[d] ?? `a${d}`;
-    return n.length > 9 ? n.slice(0, 8) + "…" : n;
+    return truncate(n, 9);
   });
 
   // Pre-compute min/max per dimension for scaling
