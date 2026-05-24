@@ -265,14 +265,16 @@ def get_dataset_stats(dataset: str):
     n = len(lengths_sorted)
     total = sum(lengths_sorted)
     p50 = lengths_sorted[n // 2]
+    fps = info.get("fps", 10) or 10
     return {
         "total_frames": total,
+        "total_duration_s": round(total / fps, 2),
         "episode_count": n,
         "length_min": lengths_sorted[0],
         "length_max": lengths_sorted[-1],
         "length_mean": round(total / n, 1),
         "length_p50": p50,
-        "fps": info.get("fps", 10),
+        "fps": fps,
     }
 
 

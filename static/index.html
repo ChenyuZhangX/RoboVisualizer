@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LeRobot Visualizer</title>
-  <link rel="stylesheet" href="/style.css?v=38" />
+  <link rel="stylesheet" href="/style.css?v=39" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -241,16 +241,18 @@
         <tr><td><kbd>Ctrl</kbd>+<kbd>J</kbd></td><td>Jump to specific frame</td></tr>
         <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd> (frame jump)</td><td>Jump and play from frame</td></tr>
         <tr><td><kbd>R</kbd> / <kbd>Home</kbd></td><td>Rewind to start</td></tr>
+        <tr><td><kbd>End</kbd></td><td>Jump to last frame</td></tr>
+        <tr><td><kbd>PgUp</kbd> / <kbd>PgDn</kbd></td><td>Jump ±10% of episode (⇧ for ±25%)</td></tr>
         <tr><td><kbd>⇧R</kbd></td><td>Load a random episode</td></tr>
         <tr><td><kbd>Ctrl</kbd>+<kbd>R</kbd></td><td>Reload current episode</td></tr>
         <tr><td><kbd>Ctrl</kbd>+<kbd>M</kbd></td><td>Jump to midpoint</td></tr>
         <tr><td><kbd>Z</kbd></td><td>Rewind and play from start</td></tr>
-        <tr><td><kbd>End</kbd></td><td>Jump to last frame</td></tr>
         <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>Prev / Next episode</td></tr>
         <tr><td><kbd>⇧[</kbd> <kbd>⇧]</kbd></td><td>First / Last episode</td></tr>
         <tr><td><kbd>←</kbd> <kbd>→</kbd> (lightbox)</td><td>Prev / next camera</td></tr>
         <tr><td><kbd>+</kbd> <kbd>−</kbd> (lightbox)</td><td>Zoom in / out · Scroll wheel · Pinch</td></tr>
-        <tr><td>Click image (lightbox)</td><td>Zoom in to 2.5× · dbl-click to reset</td></tr>
+        <tr><td>Click image (lightbox)</td><td>Zoom in to 2.5× · dbl-click / Esc to reset</td></tr>
+        <tr><td>Swipe down (lightbox)</td><td>Close lightbox</td></tr>
         <tr><td><kbd>Ctrl</kbd>+click ep</td><td>Compare overlay</td></tr>
         <tr><td><kbd>Ctrl</kbd>+click camera</td><td>Download camera frame</td></tr>
         <tr><td><kbd>Middle click</kbd> ep</td><td>Compare overlay</td></tr>
@@ -289,7 +291,10 @@
   </div>
 
   <!-- Camera lightbox -->
-  <div id="cam-lightbox" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-label="Camera frame viewer">
+  <div id="cam-lightbox" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="lightbox-label">
+    <button class="lightbox-close-btn" id="lightbox-close-btn" title="Close lightbox (Esc)" aria-label="Close lightbox">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
     <button class="lightbox-nav lightbox-prev" onclick="lightboxNavigate(-1)" title="Previous camera (←)" aria-label="Previous camera">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
     </button>
@@ -306,6 +311,6 @@
     </button>
   </div>
 
-  <script src="/app.js?v=38"></script>
+  <script src="/app.js?v=39"></script>
 </body>
 </html>

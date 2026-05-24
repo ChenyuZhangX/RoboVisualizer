@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v38
+   LeRobot Visualizer — app.js  v39
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -58,6 +58,35 @@ let _mirrorMode = false;
 
 /* ── Frame values throttle ───────────────────────────────── */
 let _lastFvUpdateMs = 0;
+
+/* ── Chart visibility (IntersectionObserver) ────────────── */
+const _visibleCharts = new Set();
+let _chartIntersectObs = null;
+
+function _refreshChartObserver() {
+  if (!('IntersectionObserver' in window)) return;
+  _visibleCharts.clear();
+  _chartIntersectObs?.disconnect();
+  _chartIntersectObs = null;
+  const allCharts = [...state.stateCharts, ...state.actionCharts].filter(c => c?.canvas);
+  if (!allCharts.length) return;
+  _chartIntersectObs = new IntersectionObserver(entries => {
+    for (const entry of entries) {
+      const chart = [...state.stateCharts, ...state.actionCharts]
+        .find(c => c?.canvas === entry.target);
+      if (!chart) return;
+      if (entry.isIntersecting) _visibleCharts.add(chart);
+      else _visibleCharts.delete(chart);
+    }
+  }, { threshold: 0, rootMargin: '80px 0px' });
+  allCharts.forEach(c => _chartIntersectObs.observe(c.canvas));
+}
+
+/* ── Lightbox focus tracking ─────────────────────────────── */
+let _lbPrevFocus = null;  // element to restore focus to when lightbox closes
+
+/* ── Scrubber hover tooltip ──────────────────────────────── */
+let _scrubTooltipEl = null;
 
 /* ── Utility helpers ─────────────────────────────────────── */
 const el = id => document.getElementById(id);
@@ -382,13 +411,19 @@ const cursorPlugin = {
     const x = scales.x.getPixelForValue(state.frame);
     if (x < chartArea.left || x > chartArea.right) return;
     ctx.save();
+    // Solid vertical line — more legible than dashed
     ctx.beginPath();
     ctx.moveTo(x, chartArea.top);
     ctx.lineTo(x, chartArea.bottom);
-    ctx.strokeStyle = "rgba(239,68,68,.75)";
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([4, 3]);
+    ctx.strokeStyle = "rgba(239,68,68,.88)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([]);
     ctx.stroke();
+    // Small anchor dot at top of cursor
+    ctx.beginPath();
+    ctx.arc(x, chartArea.top + 3, 3, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(239,68,68,.88)";
+    ctx.fill();
     ctx.restore();
   },
 };
@@ -861,6 +896,8 @@ function applySearch(query) {
     countEl = document.createElement("div");
     countEl.id = "search-count";
     countEl.className = "search-count";
+    countEl.setAttribute("aria-live", "polite");
+    countEl.setAttribute("aria-atomic", "true");
     el("dataset-tree").before(countEl);
   }
   let visibleEps = 0;
@@ -1175,7 +1212,6 @@ function resetCam(i) {
   if (slot) {
     slot.innerHTML = CAM_PLACEHOLDER_HTML;
     slot.classList.remove("loading");
-    delete slot.dataset.loading;
   }
 }
 
@@ -1215,6 +1251,7 @@ function prefetchFrames() {
 
 /* ── Camera rendering ────────────────────────────────────── */
 function openLightbox(src, label, camIdx = -1) {
+  _lbPrevFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   _lbResetZoom();
   el("lightbox-img").src = src;
   const ts = state.episode?.timestamps?.[state.frame];
@@ -1234,6 +1271,9 @@ function openLightbox(src, label, camIdx = -1) {
   document.querySelectorAll(".lightbox-nav").forEach(btn => {
     btn.style.display = showNav ? "" : "none";
   });
+
+  // Move focus into lightbox for keyboard accessibility
+  requestAnimationFrame(() => el("lightbox-close-btn")?.focus());
 }
 
 function downloadLightboxFrame() {
@@ -1369,7 +1409,7 @@ async function updateImages() {
     // Dim existing images to signal loading
     keys.forEach((_, i) => {
       const slot = el(`cam-${i}`);
-      if (slot) { slot.dataset.loading = "1"; slot.classList.add("loading"); }
+      if (slot) { slot.classList.add("loading"); }
     });
     el("fps-badge")?.classList.add("loading");
     // Cancel any previous in-flight frame request
@@ -1387,7 +1427,7 @@ async function updateImages() {
         renderFrameData(keys, frames);
         keys.forEach((_, i) => {
           const slot = el(`cam-${i}`);
-          if (slot) { delete slot.dataset.loading; slot.classList.remove("loading"); }
+          if (slot) { slot.classList.remove("loading"); }
         });
         el("fps-badge")?.classList.remove("loading");
       }
@@ -1397,7 +1437,7 @@ async function updateImages() {
         el("fps-badge")?.classList.remove("loading");
         keys.forEach((_, i) => {
           const slot = el(`cam-${i}`);
-          if (slot) { delete slot.dataset.loading; slot.classList.remove("loading"); }
+          if (slot) { slot.classList.remove("loading"); }
           if (slot && !slot.querySelector("img")) {
             slot.innerHTML = `<div class="cam-placeholder"><span style="font-size:10px;color:var(--text-3);position:absolute;bottom:8px">Failed to load</span></div>`;
           }
@@ -1727,6 +1767,8 @@ function buildCharts(ep) {
 
   state.stateCharts  = buildChartCard("state",  stateData,  ep.state_names,  sNorm, ep, cmpState,  nsState);
   state.actionCharts = buildChartCard("action", actionData, ep.action_names, aNorm, ep, cmpAction, nsAction);
+  _visibleCharts.clear();
+  _refreshChartObserver();
 }
 
 /**
@@ -1746,6 +1788,8 @@ function rebuildChartsFor(type) {
   const cmpData = cmpRaw ? normalizeData(cmpRaw, ns?.[nsKey]).data : null;
   const nsNorm  = normalized ? normalizeMeanStd(ns?.[nsKey]) : null;
   state[`${type}Charts`] = buildChartCard(type, normData, names, normalized, ep, cmpData, nsNorm);
+  _visibleCharts.clear();
+  _refreshChartObserver();
 }
 
 function toggleNormalize() {
@@ -2108,8 +2152,13 @@ function updateChartCursor() {
     _chartCursorThrottleMs = now;
   }
   _lastChartUpdateFrame = state.frame;
-  state.stateCharts.forEach(c => c?.update("none"));
-  state.actionCharts.forEach(c => c?.update("none"));
+  // Update only visible charts; if IntersectionObserver hasn't been set up yet,
+  // update all charts as a safe fallback.
+  const allCharts = [...state.stateCharts, ...state.actionCharts].filter(Boolean);
+  const toUpdate = _chartIntersectObs !== null
+    ? allCharts.filter(c => _visibleCharts.has(c))
+    : allCharts;
+  toUpdate.forEach(c => c.update("none"));
   // Update document title with frame info during playback (throttled)
   if (state.playing) {
     const now = performance.now();
@@ -2534,6 +2583,11 @@ function initFrameCounterJump() {
   if (!counter) return;
   counter.title = "Click to jump to frame or timestamp (e.g. 1:30 = 1 min 30s)  Ctrl+J";
   counter.style.cursor = "pointer";
+  counter.tabIndex = 0;
+  counter.setAttribute("role", "button");
+  counter.addEventListener("keydown", e => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); counter.click(); }
+  });
   counter.addEventListener("click", () => {
     if (!state.episode || state.playing) return;
     const current = state.frame;
@@ -2588,6 +2642,7 @@ let _fvSortActive = false;
 
 function toggleFrameValuesSort() {
   _fvSortActive = !_fvSortActive;
+  localStorage.setItem("fvSort", _fvSortActive ? "1" : "0");
   const btn = document.getElementById("fv-sort-btn");
   if (btn) {
     btn.classList.toggle("active", _fvSortActive);
@@ -2789,6 +2844,15 @@ function setupControls(ep) {
   scrubber.setAttribute("aria-valuenow", "0");
   scrubber.setAttribute("aria-valuetext", "frame 0");
   el("frame-counter").textContent = `0 / ${ep.length - 1}`;
+  // Update speed select tooltip with per-speed effective fps
+  const speedSel = el("speed-select");
+  if (speedSel && ep.fps) {
+    speedSel.title = `Playback speed · Base: ${ep.fps} fps`;
+    Array.from(speedSel.options).forEach(opt => {
+      const s = parseFloat(opt.value);
+      opt.title = `${s}× speed = ${Math.round(ep.fps * s)} fps`;
+    });
+  }
 }
 
 function updateScrubber() {
@@ -2819,7 +2883,8 @@ function stopPlayback() {
   state.lastTick = null;
   el("play-icon")?.classList.remove("hidden");
   el("pause-icon")?.classList.add("hidden");
-  el("fps-badge")?.classList.add("hidden");
+  const fpsBadge = el("fps-badge");
+  if (fpsBadge) { fpsBadge.classList.add("hidden"); fpsBadge.dataset.fast = ""; }
   document.body.classList.remove("is-playing");
   // Strip frame prefix from title when stopped
   document.title = document.title.replace(/^\[\d+\] /, "");
@@ -2850,8 +2915,10 @@ function startPlayback() {
           const diff = fpsBucket - Math.round(targetFps);
           const lagStr = diff < -2 ? ` ⚠${diff}` : "";
           const loopStr = state.looping && state.loopCount > 0 ? ` ×${state.loopCount}` : "";
-          badge.textContent = `${fpsBucket}/${Math.round(targetFps)} fps${lagStr}${loopStr}`;
-          badge.title = `Actual / target fps${lagStr ? " — ⚠ rendering lag" : ""}${loopStr ? `  •  looped ${state.loopCount}×` : ""}`;
+          const speedStr = state.speed !== 1 ? ` @${state.speed}×` : "";
+          badge.textContent = `${fpsBucket}/${Math.round(targetFps)}fps${speedStr}${lagStr}${loopStr}`;
+          badge.dataset.fast = state.speed >= 2 ? "1" : "";
+          badge.title = `Actual / target fps${speedStr ? ` @ ${state.speed}× speed` : ""}${lagStr ? " — ⚠ rendering lag" : ""}${loopStr ? `  •  looped ${state.loopCount}×` : ""}`;
           badge.classList.remove("hidden");
         }
         fpsBucket = 0;
@@ -2909,6 +2976,9 @@ document.addEventListener("DOMContentLoaded", () => {
   state.actionExpanded = localStorage.getItem("expand_action") === "1";
   state.histState  = localStorage.getItem("hist_state")  === "1";
   state.histAction = localStorage.getItem("hist_action") === "1";
+
+  // Restore frame values sort preference
+  _fvSortActive = localStorage.getItem("fvSort") === "1";
 
   // Restore corr/timedim open state (will take effect after episode loads)
   if (localStorage.getItem("corrOpen") === "1") {
@@ -2977,7 +3047,9 @@ document.addEventListener("DOMContentLoaded", () => {
   el("speed-select").addEventListener("change", e => {
     state.speed = parseFloat(e.target.value);
     localStorage.setItem("speed", state.speed);
-    showCopyToast(`Speed: ${state.speed}×`);
+    const effectiveFps = state.episode ? Math.round((state.episode.fps || 10) * state.speed) : null;
+    const fpsHint = effectiveFps ? ` (${effectiveFps} fps)` : "";
+    showCopyToast(`Speed: ${state.speed}×${fpsHint}`);
     if (state.playing) {
       stopPlayback();
       startPlayback();
@@ -2988,6 +3060,30 @@ document.addEventListener("DOMContentLoaded", () => {
     stopPlayback();
     setFrame(parseInt(e.target.value, 10));
     saveHashState();
+  });
+
+  // Scrubber hover tooltip — shows frame number + timestamp
+  el("scrubber").addEventListener("mousemove", e => {
+    const ep = state.episode;
+    if (!ep) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pct = clamp((e.clientX - rect.left) / rect.width, 0, 1);
+    const hoverFrame = Math.round(pct * (ep.length - 1));
+    const ts = ep.timestamps?.[hoverFrame];
+    const fmt = v => v >= 60 ? formatDuration(v) : v.toFixed(2) + "s";
+    const tsStr = ts != null ? ` · ${fmt(ts)}` : "";
+    if (!_scrubTooltipEl) {
+      _scrubTooltipEl = document.createElement("div");
+      _scrubTooltipEl.className = "scrub-tooltip hidden";
+      document.body.appendChild(_scrubTooltipEl);
+    }
+    _scrubTooltipEl.textContent = `Frame ${hoverFrame}${tsStr}`;
+    _scrubTooltipEl.style.left = `${e.clientX}px`;
+    _scrubTooltipEl.style.top = `${rect.top - 30}px`;
+    _scrubTooltipEl.classList.remove("hidden");
+  });
+  el("scrubber").addEventListener("mouseleave", () => {
+    _scrubTooltipEl?.classList.add("hidden");
   });
 
   el("expand-state").addEventListener("click",  () => toggleExpand("state"));
@@ -3190,6 +3286,28 @@ document.addEventListener("DOMContentLoaded", () => {
       setFrame(Math.round(parseInt(e.key) / 10 * (state.episode.length - 1)));
       return;
     }
+    // Home/End: jump to first / last frame
+    if (e.key === "Home" && state.episode) {
+      e.preventDefault();
+      stopPlayback();
+      setFrame(0);
+      return;
+    }
+    if (e.key === "End" && state.episode) {
+      e.preventDefault();
+      stopPlayback();
+      setFrame(state.episode.length - 1);
+      return;
+    }
+    // PageUp/PageDown: jump ±10% (or ±25% with Shift) of episode length
+    if ((e.key === "PageUp" || e.key === "PageDown") && state.episode) {
+      e.preventDefault();
+      const pct = e.shiftKey ? 0.25 : 0.1;
+      const step = Math.max(1, Math.round(state.episode.length * pct));
+      stopPlayback();
+      setFrame(state.frame + (e.key === "PageDown" ? step : -step));
+      return;
+    }
     if (e.key === "n" || e.key === "N") {
       e.preventDefault();
       toggleNormalize();
@@ -3340,16 +3458,6 @@ document.addEventListener("DOMContentLoaded", () => {
           setFrame(state.frame + (e.shiftKey ? 10 : 1));
         }
         break;
-      case "PageUp":
-        e.preventDefault();
-        stopPlayback();
-        setFrame(state.frame - (e.shiftKey ? 100 : 50));
-        break;
-      case "PageDown":
-        e.preventDefault();
-        stopPlayback();
-        setFrame(state.frame + (e.shiftKey ? 100 : 50));
-        break;
       case "r": case "R":
         e.preventDefault();
         if (e.shiftKey) {
@@ -3395,8 +3503,12 @@ document.addEventListener("DOMContentLoaded", () => {
         el("shortcuts-modal").classList.add("hidden");
         el("btn-shortcuts").setAttribute("aria-expanded", "false");
         if (!el("cam-lightbox").classList.contains("hidden")) {
-          _lbResetZoom();
-          el("cam-lightbox").classList.add("hidden");
+          if (_lbZoom > 1) {
+            _lbResetZoom(); // First Esc: clear zoom; second Esc: close
+          } else {
+            el("cam-lightbox").classList.add("hidden");
+            _lbPrevFocus?.focus();
+          }
         }
         break;
     }
@@ -3435,13 +3547,36 @@ document.addEventListener("DOMContentLoaded", () => {
       el("btn-shortcuts").setAttribute("aria-expanded", "false");
     }
   });
+  // Focus trap inside lightbox
+  el("cam-lightbox").addEventListener("keydown", e => {
+    if (el("cam-lightbox").classList.contains("hidden")) return;
+    if (e.key !== "Tab") return;
+    const focusable = Array.from(el("cam-lightbox").querySelectorAll(
+      'button:not([style*="display: none"]):not([style*="display:none"])'
+    ));
+    if (!focusable.length) return;
+    const first = focusable[0], last = focusable[focusable.length - 1];
+    if (e.shiftKey) {
+      if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+    } else {
+      if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+  });
   el("cam-lightbox").addEventListener("click", e => {
-    if (e.target === el("cam-lightbox")) el("cam-lightbox").classList.add("hidden");
+    if (e.target === el("cam-lightbox")) {
+      el("cam-lightbox").classList.add("hidden");
+      _lbPrevFocus?.focus();
+    }
+  });
+  el("lightbox-close-btn")?.addEventListener("click", () => {
+    el("cam-lightbox").classList.add("hidden");
+    _lbPrevFocus?.focus();
   });
 
-  // Swipe to navigate cameras in lightbox; pinch to zoom
+  // Swipe to navigate cameras in lightbox; pinch to zoom; swipe-down to close
   {
     let _touchStartX = 0;
+    let _touchStartY = 0;
     let _pinchStartDist = 0;
     let _pinchStartZoom = 1;
     let _isPinching = false;
@@ -3458,6 +3593,7 @@ document.addEventListener("DOMContentLoaded", () => {
       } else {
         _isPinching = false;
         _touchStartX = e.touches[0].clientX;
+        _touchStartY = e.touches[0].clientY;
       }
     }, { passive: false });
     lb.addEventListener("touchmove", e => {
@@ -3473,6 +3609,13 @@ document.addEventListener("DOMContentLoaded", () => {
     lb.addEventListener("touchend", e => {
       if (_isPinching) { _isPinching = false; return; }
       const dx = e.changedTouches[0].clientX - _touchStartX;
+      const dy = e.changedTouches[0].clientY - _touchStartY;
+      // Swipe-down to close (dominant vertical movement, not zoomed)
+      if (dy > 80 && Math.abs(dy) > Math.abs(dx) && _lbZoom <= 1) {
+        el("cam-lightbox").classList.add("hidden");
+        _lbPrevFocus?.focus();
+        return;
+      }
       if (Math.abs(dx) > 40 && _lbZoom <= 1) lightboxNavigate(dx < 0 ? 1 : -1);
     }, { passive: true });
   }

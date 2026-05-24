@@ -1290,6 +1290,11 @@ html.dark #viewer-footer {
   box-shadow: 0 16px 48px rgba(0,0,0,.55);
   display: flex;
   flex-direction: column;
+  animation: lightbox-scale-in .18s cubic-bezier(0.34, 1.3, 0.64, 1);
+}
+@keyframes lightbox-scale-in {
+  from { transform: scale(0.93); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
 }
 .lightbox-box img {
   display: block;
@@ -1366,6 +1371,28 @@ html.dark #viewer-footer {
 }
 .lightbox-box:hover .lightbox-dl-btn { opacity: 1; }
 .lightbox-dl-btn:hover { background: rgba(0,0,0,.7); color: #fff; }
+
+/* ── Lightbox close button ────────────────────────────────── */
+.lightbox-close-btn {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  background: rgba(0,0,0,.55);
+  border: none;
+  color: rgba(255,255,255,.85);
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 10002;
+  transition: background .15s, color .15s, opacity .15s;
+  opacity: 0.7;
+}
+.lightbox-close-btn:hover { background: rgba(0,0,0,.8); color: #fff; opacity: 1; }
+#cam-lightbox:not(.hidden) .lightbox-close-btn { opacity: .7; }
 
 /* ── Camera fullscreen ──────────────────────────────────────── */
 .cam-slot:fullscreen,
@@ -1451,25 +1478,10 @@ html.dark #viewer-footer {
 .chart-wrap canvas:active,
 .mini-chart-wrap canvas:active { cursor: col-resize; }
 
-/* ── Camera slot loading pulse ──────────────────────────────── */
-.cam-slot[data-loading] { outline: 2px solid var(--blue); outline-offset: -2px; }
-.cam-slot[data-loading]::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: rgba(59,130,246,.04);
-  animation: cam-loading-pulse 1s ease-in-out infinite;
-  pointer-events: none;
-}
-@keyframes cam-loading-pulse {
-  0%, 100% { opacity: 0; }
-  50%       { opacity: 1; }
-}
-
 /* ── Camera slot focus and hover ─────────────────────────────── */
 .cam-slot { transition: box-shadow .15s ease, transform .15s ease; }
 .cam-slot:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--blue); }
-.cam-slot:hover:not([data-loading]) { box-shadow: inset 0 0 0 1px rgba(59,130,246,.3); }
+.cam-slot:hover:not(.loading) { box-shadow: inset 0 0 0 1px rgba(59,130,246,.3); }
 
 /* ── FV chip value: monospace ────────────────────────────────── */
 .fv-val { font-family: ui-monospace, "Cascadia Code", Menlo, monospace; font-size: 10.5px; font-variant-numeric: tabular-nums; }
@@ -1703,6 +1715,37 @@ html.dark .cam-slot.loading::before {
 
 /* Smooth zoom transitions on lightbox image */
 #lightbox-img { transition: transform 0.12s ease, transform-origin 0.12s ease; }
+
+/* ── Scrubber hover tooltip ──────────────────────────────────── */
+.scrub-tooltip {
+  position: fixed;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  padding: 3px 8px;
+  border-radius: 5px;
+  pointer-events: none;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  z-index: 300;
+  box-shadow: var(--shadow-md);
+  transition: opacity .1s ease;
+}
+.scrub-tooltip.hidden { opacity: 0; pointer-events: none; }
+
+/* ── FPS badge: highlight non-1× speed ──────────────────────── */
+#fps-badge[data-fast="1"] {
+  color: var(--amber-dk);
+  background: var(--amber-lt);
+  border-color: rgba(245,158,11,.4);
+}
+html.dark #fps-badge[data-fast="1"] {
+  color: #FCD34D;
+  background: var(--amber-lt);
+  border-color: rgba(245,158,11,.3);
+}
 
 /* ── Print styles ─────────────────────────────────────────────── */
 @media print {
