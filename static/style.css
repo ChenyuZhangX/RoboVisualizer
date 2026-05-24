@@ -950,6 +950,25 @@ html.dark .norm-badge { background: #0d2e1f; border-color: #166534; }
 #timedim-body { overflow-x: auto; padding-top: 4px; }
 #timedim-body.timedim-collapsed { display: none; }
 .timedim-wrap { position: relative; display: inline-block; }
+.timedim-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0 0 60px;
+  font-size: 9px;
+  color: var(--text-3);
+}
+.timedim-swatch {
+  width: 80px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.timedim-note {
+  font-size: 10px;
+  color: var(--text-3);
+  padding: 2px 8px 4px;
+}
 
 /* ── Copy toast notification ──────────────────────────────── */
 .copy-toast {

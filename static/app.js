@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v47
+   LeRobot Visualizer — app.js  v48
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -2547,11 +2547,11 @@ function buildTimeDimHeatmap(ep) {
     const legend = document.createElement("div");
     legend.className = "timedim-colorbar";
     const isDark = document.documentElement.classList.contains("dark");
-    legend.style.cssText = `display:flex;align-items:center;gap:6px;padding:3px 0 0 ${TIMEDIM_LABEL_W}px;font-size:9px;color:${isDark ? "#64748B" : "#94A3B8"};`;
+    legend.className = "timedim-legend";
     // Draw gradient swatch using a small canvas
     const swatch = document.createElement("canvas");
     swatch.width = 80; swatch.height = 8;
-    swatch.style.cssText = "width:80px;height:8px;border-radius:2px;flex-shrink:0;";
+    swatch.className = "timedim-swatch";
     const sc = swatch.getContext("2d");
     for (let x = 0; x < 80; x++) {
       sc.fillStyle = _heatmapColor(x / 79);
@@ -2565,7 +2565,7 @@ function buildTimeDimHeatmap(ep) {
 
   if (truncated) {
     const note = document.createElement("div");
-    note.style.cssText = "font-size:10px;color:var(--text-3);padding:2px 8px 4px;";
+    note.className = "timedim-note";
     note.textContent = `Showing first ${TIMEDIM_MAX_DIMS} of ${dimsRaw} dimensions`;
     body.appendChild(note);
   }
