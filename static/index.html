@@ -6,7 +6,7 @@
   <meta name="description" content="Interactive visualizer for LeRobot robot learning datasets — browse episodes, inspect state/action trajectories, and view camera frames." />
   <meta name="color-scheme" content="light dark" />
   <title>LeRobot Visualizer</title>
-  <link rel="stylesheet" href="/style.css?v=50" />
+  <link rel="stylesheet" href="/style.css?v=51" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -219,7 +219,7 @@
               </select>
               <input type="range" id="scrubber" min="0" value="0" step="1" role="slider" aria-label="Frame position scrubber" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" />
               <span id="fps-badge" class="fps-badge hidden" aria-live="off" title="Click to toggle loop"></span>
-              <span id="frame-counter" class="frame-count" role="status" aria-label="Frame position">0 / 0</span>
+              <span id="frame-counter" class="frame-count" role="button" tabindex="0" aria-label="Frame position — click to jump to frame" title="Click to jump to frame or timestamp (e.g. 1:30 = 1 min 30s)  Ctrl+J">0 / 0</span>
               <button id="btn-shortcuts" class="ctrl-btn" title="Keyboard shortcuts  ?" aria-label="Show keyboard shortcuts" aria-expanded="false" aria-controls="shortcuts-modal">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/></svg>
               </button>
@@ -315,6 +315,6 @@
     </button>
   </div>
 
-  <script src="/app.js?v=50"></script>
+  <script src="/app.js?v=51"></script>
 </body>
 </html>

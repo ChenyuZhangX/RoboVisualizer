@@ -757,6 +757,7 @@ html.dark .ep-len.len-long      { color: #22C55E; background: #0a2017; }
     var(--bg-2) 6px, var(--bg-2) 12px
   );
 }
+.cam-placeholder svg { opacity: .3; }
 
 /* Loading state on camera slot — subtle blue border hint */
 .cam-slot.loading {
@@ -1195,6 +1196,7 @@ html.dark #speed-select:hover, html.dark #speed-select:focus { background: var(-
   white-space: nowrap;
   border-radius: var(--radius-xs);
   padding: 1px 3px;
+  cursor: pointer;
   transition: background var(--transition), opacity var(--transition), text-decoration-color var(--transition);
 }
 .legend-item[data-dim]:hover { background: var(--bg-3); }
@@ -1218,7 +1220,7 @@ html.dark #speed-select:hover, html.dark #speed-select:focus { background: var(-
 }
 .crumb-sep   { color: var(--text-3); }
 .crumb-ds    { color: var(--text-2); max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
-.crumb-ep    { color: var(--blue); font-weight: 600; border-radius: var(--radius-xs); padding: 1px 3px; }
+.crumb-ep    { color: var(--blue); font-weight: 600; border-radius: var(--radius-xs); padding: 1px 3px; cursor: pointer; }
 .crumb-ep:hover  { background: var(--blue-lt); }
 .crumb-frame { color: var(--text-3); font-variant-numeric: tabular-nums; font-size: var(--font-sm); }
 
@@ -1738,7 +1740,9 @@ html.dark .cam-slot.loading::before {
 #corr-body canvas { font-smooth: always; -webkit-font-smoothing: antialiased; }
 
 /* ── Interactive canvas focus ────────────────────────────────── */
+#timedim-canvas { cursor: crosshair; }
 #timedim-canvas:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: var(--radius-xs); }
+#timedim-overlay { position: absolute; top: 0; left: 0; pointer-events: none; }
 
 /* ── Lightbox zoom badge ─────────────────────────────────────── */
 .lightbox-zoom-badge {

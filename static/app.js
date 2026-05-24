@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v50
+   LeRobot Visualizer — app.js  v51
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -1236,7 +1236,7 @@ function buildCameraGrid(ep) {
   }
 }
 
-const CAM_PLACEHOLDER_HTML = `<div class="cam-placeholder"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" style="opacity:.3"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></div>`;
+const CAM_PLACEHOLDER_HTML = `<div class="cam-placeholder"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></div>`;
 
 function resetCam(i) {
   const slot = el(`cam-${i}`);
@@ -1971,7 +1971,6 @@ function buildChartCard(type, data2d, names, normalized, ep, cmpData2d = null, n
         const item = document.createElement("span");
         item.className = "legend-item";
         item.title = `Click to show/hide · ${MOD_KEY}+click to isolate · dbl-click to show all`;
-        item.style.cursor = "pointer";
         item.dataset.dim = d;
         item.innerHTML = `<span class="legend-dot" style="background:${PALETTE[d % PALETTE.length]}"></span>${names[d] ?? `dim_${d}`}`;
         item.addEventListener("click", e => {
@@ -2375,7 +2374,7 @@ function buildCorrelationHeatmap(ep) {
       const dir = r >= 0 ? "positive" : "negative";
       showTimeDimTooltip(e.clientX, e.clientY,
         `<b>${rawLabels[j]}</b> ↔ <b>${rawLabels[i]}</b><br>` +
-        `r = ${r.toFixed(4)} <span style="color:#94A3B8">(${strength} ${dir})</span>`);
+        `r = ${r.toFixed(4)} <span class="text-muted">(${strength} ${dir})</span>`);
     } else {
       hideTimeDimTooltip();
     }
@@ -2458,7 +2457,8 @@ function buildTimeDimHeatmap(ep) {
   const canvas = document.createElement("canvas");
   canvas.width  = TOTAL_W * dpr;
   canvas.height = TOTAL_H * dpr;
-  canvas.style.cssText = `width:${TOTAL_W}px;height:${TOTAL_H}px;cursor:crosshair;`;
+  canvas.style.width = TOTAL_W + "px";
+  canvas.style.height = TOTAL_H + "px";
   canvas.id = "timedim-canvas";
   canvas.setAttribute("role", "img");
   canvas.setAttribute("aria-label", `Action heatmap: time × ${dims} dimensions`);
@@ -2537,7 +2537,7 @@ function buildTimeDimHeatmap(ep) {
       const ts = ep.timestamps?.[f];
       const tsStr = ts != null ? ` • ${ts.toFixed(3)}s` : "";
       showTimeDimTooltip(e.clientX, e.clientY,
-        `<b>${labels[d]}</b>  ${val}<br><span style="color:#94A3B8">frame ${f}${tsStr}</span>`);
+        `<b>${labels[d]}</b>  ${val}<br><span class="text-muted">frame ${f}${tsStr}</span>`);
     } else {
       hideTimeDimTooltip();
     }
@@ -2612,8 +2612,8 @@ function _doUpdateTimeDimCursor() {
     overlay.id = "timedim-overlay";
     overlay.width  = TOTAL_W * dpr2;
     overlay.height = CANVAS_H * dpr2;
-    overlay.style.cssText = `position:absolute;top:0;left:0;width:${TOTAL_W}px;height:${CANVAS_H}px;pointer-events:none;`;
-    canvas.parentElement.style.position = "relative";
+    overlay.style.width = TOTAL_W + "px";
+    overlay.style.height = CANVAS_H + "px";
     canvas.parentElement.appendChild(overlay);
     overlay.getContext("2d").scale(dpr2, dpr2);
   }
@@ -2645,7 +2645,7 @@ function updateTopbarBreadcrumb() {
     `<span class="crumb-sep">›</span>` +
     `<span class="crumb-ds" title="${escapeHTML(state.activeDataset)}">${escapeHTML(dsShort)}</span>` +
     `<span class="crumb-sep">›</span>` +
-    `<span class="crumb-ep" title="Click to copy URL  (C)" style="cursor:pointer">${epStr}</span>` +
+    `<span class="crumb-ep" title="Click to copy URL  (C)">${epStr}</span>` +
     frameStr;
   crumb.classList.remove("hidden");
   if (!_crumbEpListenerAttached) {
@@ -2668,10 +2668,6 @@ function updateTopbarFrame() {
 function initFrameCounterJump() {
   const counter = el("frame-counter");
   if (!counter) return;
-  counter.title = "Click to jump to frame or timestamp (e.g. 1:30 = 1 min 30s)  Ctrl+J";
-  counter.style.cursor = "pointer";
-  counter.tabIndex = 0;
-  counter.setAttribute("role", "button");
   counter.addEventListener("keydown", e => {
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); counter.click(); }
   });
