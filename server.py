@@ -1,51 +1,12 @@
 from __future__ import annotations
 
-import json
 import base64
 import io
+import json
 import time
 from collections import OrderedDict
 from pathlib import Path
 from typing import Optional
-
-_SERVER_START_TIME = time.time()
-
-# ── Info.json cache (small dict, no eviction needed) ─────────────────────────
-_INFO_CACHE: dict[str, dict] = {}
-_TASKS_CACHE: dict[str, list] = {}   # dataset path → list[task dict]
-_EPISODES_CACHE: dict[str, list] = {}  # dataset path → list[episode dict]
-
-
-def read_info_cached(base: Path) -> dict:
-    """Read and cache meta/info.json for a dataset directory."""
-    key = str(base)
-    if key not in _INFO_CACHE:
-        _INFO_CACHE[key] = json.loads((base / "meta" / "info.json").read_text())
-    return _INFO_CACHE[key]
-
-
-def read_tasks_cached(base: Path) -> list[dict]:
-    """Read and cache meta/tasks.jsonl."""
-    key = str(base)
-    if key not in _TASKS_CACHE:
-        tasks = []
-        for line in (base / "meta" / "tasks.jsonl").read_text().splitlines():
-            if line.strip():
-                tasks.append(json.loads(line))
-        _TASKS_CACHE[key] = tasks
-    return _TASKS_CACHE[key]
-
-
-def read_episodes_cached(base: Path) -> list[dict]:
-    """Read and cache meta/episodes.jsonl."""
-    key = str(base)
-    if key not in _EPISODES_CACHE:
-        episodes = []
-        for line in (base / "meta" / "episodes.jsonl").read_text().splitlines():
-            if line.strip():
-                episodes.append(json.loads(line))
-        _EPISODES_CACHE[key] = episodes
-    return _EPISODES_CACHE[key]
 
 import pyarrow.parquet as pq
 from fastapi import FastAPI, HTTPException, Response
@@ -62,6 +23,39 @@ try:
 except ImportError:
     _cv2 = None
     _HAS_CV2 = False
+
+_SERVER_START_TIME = time.time()
+
+# ── Metadata caches (keyed by dataset path string) ───────────────────────────
+_INFO_CACHE: dict[str, dict] = {}
+_TASKS_CACHE: dict[str, list] = {}
+_EPISODES_CACHE: dict[str, list] = {}
+
+
+def _read_jsonl_cached(cache: dict, base: Path, filename: str) -> list[dict]:
+    key = str(base)
+    if key not in cache:
+        cache[key] = [
+            json.loads(line)
+            for line in (base / "meta" / filename).read_text().splitlines()
+            if line.strip()
+        ]
+    return cache[key]
+
+
+def read_info_cached(base: Path) -> dict:
+    key = str(base)
+    if key not in _INFO_CACHE:
+        _INFO_CACHE[key] = json.loads((base / "meta" / "info.json").read_text())
+    return _INFO_CACHE[key]
+
+
+def read_tasks_cached(base: Path) -> list[dict]:
+    return _read_jsonl_cached(_TASKS_CACHE, base, "tasks.jsonl")
+
+
+def read_episodes_cached(base: Path) -> list[dict]:
+    return _read_jsonl_cached(_EPISODES_CACHE, base, "episodes.jsonl")
 
 DATA_DIR = Path(__file__).parent / "data"
 STATIC_DIR = Path(__file__).parent / "static"
@@ -114,6 +108,15 @@ def get_dataset_path(dataset: str) -> Path:
 
 
 # ── Video helpers ────────────────────────────────────────────────────────────
+
+def episode_chunk(info: dict, episode_index: int) -> int:
+    return episode_index // info.get("chunks_size", 1000)
+
+
+def parquet_path_for(base: Path, episode_index: int, info: dict) -> Path:
+    chunk = episode_chunk(info, episode_index)
+    return base / "data" / f"chunk-{chunk:03d}" / f"episode_{episode_index:06d}.parquet"
+
 
 def video_path_for(base: Path, key: str, chunk: int, episode_index: int) -> Path:
     return base / "videos" / f"chunk-{chunk:03d}" / f"{key}_episode_{episode_index:06d}.mp4"
@@ -226,16 +229,13 @@ def list_tasks(dataset: str):
         tasks[t["task_index"]] = {"task_index": t["task_index"], "task": t["task"], "episodes": []}
 
     info = read_info_cached(base)
-    chunks_size = info.get("chunks_size", 1000)
 
     # Build task → name lookup for O(1) matching
     task_by_name: dict[str, int] = {tv["task"]: ti for ti, tv in tasks.items()}
 
     for ep in read_episodes_cached(base):
         ep_idx = ep["episode_index"]
-        chunk = ep_idx // chunks_size
-        parquet = base / "data" / f"chunk-{chunk:03d}" / f"episode_{ep_idx:06d}.parquet"
-        if not parquet.exists():
+        if not parquet_path_for(base, ep_idx, info).exists():
             continue
         task_name = ep["tasks"][0] if ep.get("tasks") else ""
         ti = task_by_name.get(task_name)
@@ -283,20 +283,15 @@ def list_episodes(dataset: str):
     """List all episodes with their metadata (index, length, tasks)."""
     base = get_dataset_path(dataset)
     info = read_info_cached(base)
-    episodes = read_episodes_cached(base)
-    chunks_size = info.get("chunks_size", 1000)
-    result = []
-    for ep in episodes:
-        ep_idx = ep["episode_index"]
-        chunk = ep_idx // chunks_size
-        parquet = base / "data" / f"chunk-{chunk:03d}" / f"episode_{ep_idx:06d}.parquet"
-        result.append({
-            "episode_index": ep_idx,
+    return [
+        {
+            "episode_index": ep["episode_index"],
             "length": ep.get("length", 0),
             "tasks": ep.get("tasks", []),
-            "has_data": parquet.exists(),
-        })
-    return result
+            "has_data": parquet_path_for(base, ep["episode_index"], info).exists(),
+        }
+        for ep in read_episodes_cached(base)
+    ]
 
 
 @app.get("/api/datasets/{dataset}/norm_stats")
@@ -313,8 +308,8 @@ def get_episode(dataset: str, episode_index: int):
     base = get_dataset_path(dataset)
     info = read_info_cached(base)
 
-    chunk = episode_index // info.get("chunks_size", 1000)
-    parquet_path = base / "data" / f"chunk-{chunk:03d}" / f"episode_{episode_index:06d}.parquet"
+    chunk = episode_chunk(info, episode_index)
+    parquet_path = parquet_path_for(base, episode_index, info)
 
     if not parquet_path.exists():
         raise HTTPException(404, f"Episode {episode_index} not found")
@@ -324,12 +319,11 @@ def get_episode(dataset: str, episode_index: int):
 
     features = info.get("features", {})
 
-    # detect image keys (embedded bytes in parquet)
-    image_keys = [k for k, v in features.items() if v.get("dtype") == "image"]
-    if not image_keys:
-        for field in table.schema:
-            if "binary" in str(field.type).lower():
-                image_keys.append(field.name)
+    # detect image keys (embedded bytes in parquet); fall back to schema inspection
+    image_keys = (
+        [k for k, v in features.items() if v.get("dtype") == "image"]
+        or [f.name for f in table.schema if "binary" in str(f.type).lower()]
+    )
 
     # detect video keys (separate MP4 files)
     video_keys = [
@@ -378,8 +372,8 @@ def get_frame(dataset: str, episode_index: int, frame_index: int, response: Resp
     base = get_dataset_path(dataset)
     info = read_info_cached(base)
 
-    chunk = episode_index // info.get("chunks_size", 1000)
-    parquet_path = base / "data" / f"chunk-{chunk:03d}" / f"episode_{episode_index:06d}.parquet"
+    chunk = episode_chunk(info, episode_index)
+    parquet_path = parquet_path_for(base, episode_index, info)
 
     if not parquet_path.exists():
         raise HTTPException(404, f"Episode {episode_index} not found")

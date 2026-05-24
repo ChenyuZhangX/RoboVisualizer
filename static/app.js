@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v59
+   LeRobot Visualizer — app.js  v60
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -814,14 +814,8 @@ function buildTaskNode(dsPath, task, allLengths = [], fps = 10) {
       }
     } else if (e.key === "ArrowRight") {
       e.preventDefault();
-      if (!group.classList.contains("open")) {
-        header.click();
-        const first = group.querySelector(".ep-item:not(.ep-search-hidden)");
-        first?.focus();
-      } else {
-        const first = group.querySelector(".ep-item:not(.ep-search-hidden)");
-        first?.focus();
-      }
+      if (!group.classList.contains("open")) header.click();
+      group.querySelector(".ep-item:not(.ep-search-hidden)")?.focus();
     } else if (e.key === "ArrowLeft") {
       e.preventDefault();
       if (group.classList.contains("open")) header.click();
@@ -1003,12 +997,14 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
   if (state.compareDataset === dsPath && state.compareEpIndex === epIndex) clearCompare();
 
   el("welcome").classList.add("hidden");
-  el("viewer").classList.remove("hidden");
-  el("viewer").setAttribute("aria-busy", "true");
+  const viewerEl = el("viewer");
+  const taskLblEl = el("task-label");
+  viewerEl.classList.remove("hidden");
+  viewerEl.setAttribute("aria-busy", "true");
   el("viewer-loader")?.classList.remove("hidden");
   const displayTask = truncate(taskText, 80);
-  el("task-label").textContent = displayTask;
-  el("task-label").title = taskText?.length > 80 ? taskText : "";
+  taskLblEl.textContent = displayTask;
+  taskLblEl.title = taskText?.length > 80 ? taskText : "";
   el("ep-info-strip").innerHTML = `<span class="spinner"></span><span class="text-muted"> Loading…</span>`;
   el("ep-info-strip").classList.remove("hidden");
   el("charts-area").classList.add("charts-loading");
@@ -1020,9 +1016,9 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
     state.episode = ep;
     state.frame = 0;
     // Restore task text (replacing any prior error message markup)
-    el("task-label").textContent = displayTask;
-    el("task-label").title = taskText?.length > 80 ? taskText : "";
-    el("task-label").classList.toggle("hidden", _mirrorMode);
+    taskLblEl.textContent = displayTask;
+    taskLblEl.title = taskText?.length > 80 ? taskText : "";
+    taskLblEl.classList.toggle("hidden", _mirrorMode);
     updateEpInfoStrip(ep);
     if (_mirrorMode) el("ep-info-strip").classList.add("hidden");
     // Update normalize btn tooltip based on stats availability
@@ -1049,16 +1045,15 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
       : `${epStr(epIndex)} • ${dsPath} • LeRobot Visualizer`;
     el("charts-area").classList.remove("charts-loading");
     el("viewer-loader")?.classList.add("hidden");
-    el("viewer").setAttribute("aria-busy", "false");
+    viewerEl.setAttribute("aria-busy", "false");
     // Enable export buttons now that episode is loaded
     el("btn-export").disabled = false;
     el("btn-csv").disabled = false;
     el("btn-frame-values").disabled = false;
   } catch (e) {
     el("viewer-loader")?.classList.add("hidden");
-    el("viewer").setAttribute("aria-busy", "false");
-    const taskLbl = el("task-label");
-    taskLbl.innerHTML =
+    viewerEl.setAttribute("aria-busy", "false");
+    taskLblEl.innerHTML =
       `<span class="load-fail-label">Load failed:</span>` +
       `<span class="load-fail-msg">${escapeHTML(e.message)}</span>`;
     const retryBtn = document.createElement("button");
@@ -1067,7 +1062,7 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
     retryBtn.addEventListener("click", () =>
       selectEpisode(dsPath, epIndex, taskText, document.querySelector(".ep-item.active"))
     );
-    taskLbl.appendChild(retryBtn);
+    taskLblEl.appendChild(retryBtn);
     el("ep-info-strip").classList.add("hidden");
     el("charts-area").classList.remove("charts-loading");
     state.episode = null;
@@ -1109,6 +1104,13 @@ function updateEpInfoStrip(ep) {
     (aDims ? `<span class="info-chip">action ${aDims}D</span>` : "");
 }
 
+function _activateEpisodeEntry(entry) {
+  entry.el?.closest(".task-group")?.classList.add("open");
+  entry.el?.closest(".ds-node")?.classList.add("open");
+  selectEpisode(entry.dsPath, entry.epIndex, entry.taskText, entry.el);
+  requestAnimationFrame(() => entry.el?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+}
+
 function randomEpisode() {
   const list = state.episodeList;
   if (!list.length) return;
@@ -1121,53 +1123,35 @@ function randomEpisode() {
   } else {
     idx = 0;
   }
-  const entry = list[idx];
-  entry.el?.closest(".task-group")?.classList.add("open");
-  entry.el?.closest(".ds-node")?.classList.add("open");
-  selectEpisode(entry.dsPath, entry.epIndex, entry.taskText, entry.el);
-  requestAnimationFrame(() => entry.el?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+  _activateEpisodeEntry(list[idx]);
 }
 
 function prevEpisode() {
   const idx = state.currentEpListIdx;
   if (idx <= 0) return;
-  const entry = state.episodeList[idx - 1];
-  entry.el.closest(".task-group")?.classList.add("open");
-  entry.el.closest(".ds-node")?.classList.add("open");
-  selectEpisode(entry.dsPath, entry.epIndex, entry.taskText, entry.el);
-  requestAnimationFrame(() => entry.el.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+  _activateEpisodeEntry(state.episodeList[idx - 1]);
 }
 
 function nextEpisode() {
   const idx = state.currentEpListIdx;
   if (idx < 0 || idx >= state.episodeList.length - 1) return;
-  const entry = state.episodeList[idx + 1];
-  entry.el.closest(".task-group")?.classList.add("open");
-  entry.el.closest(".ds-node")?.classList.add("open");
-  selectEpisode(entry.dsPath, entry.epIndex, entry.taskText, entry.el);
-  requestAnimationFrame(() => entry.el.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+  _activateEpisodeEntry(state.episodeList[idx + 1]);
 }
 
 function updatePrevNextButtons() {
   const idx = state.currentEpListIdx;
   const hasPrev = idx > 0;
   const hasNext = idx >= 0 && idx < state.episodeList.length - 1;
-  el("btn-prev-ep").disabled = !hasPrev;
-  el("btn-prev-ep").setAttribute("aria-disabled", !hasPrev);
-  el("btn-next-ep").disabled = !hasNext;
-  el("btn-next-ep").setAttribute("aria-disabled", !hasNext);
-  if (hasPrev) {
-    const prev = state.episodeList[idx - 1];
-    el("btn-prev-ep").title = `Previous episode: ${epStr(prev.epIndex)}  [`;
-  } else {
-    el("btn-prev-ep").title = "Previous episode  [";
-  }
-  if (hasNext) {
-    const next = state.episodeList[idx + 1];
-    el("btn-next-ep").title = `Next episode: ${epStr(next.epIndex)}  ]`;
-  } else {
-    el("btn-next-ep").title = "Next episode  ]";
-  }
+  const prevBtn = el("btn-prev-ep");
+  const nextBtn = el("btn-next-ep");
+  prevBtn.disabled = !hasPrev;
+  prevBtn.setAttribute("aria-disabled", !hasPrev);
+  nextBtn.disabled = !hasNext;
+  nextBtn.setAttribute("aria-disabled", !hasNext);
+  const prev = hasPrev ? state.episodeList[idx - 1] : null;
+  const next = hasNext ? state.episodeList[idx + 1] : null;
+  prevBtn.title = prev ? `Previous episode: ${epStr(prev.epIndex)}  [` : "Previous episode  [";
+  nextBtn.title = next ? `Next episode: ${epStr(next.epIndex)}  ]` : "Next episode  ]";
 }
 
 /* ── Comparison episode ──────────────────────────────────── */
@@ -1586,16 +1570,9 @@ function exportJSON() {
     state: ep.state,
     actions: ep.actions,
   };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
   const dsSlug = (state.activeDataset ?? "").replace(/[^a-z0-9_-]/gi, "_").slice(0, 32);
-  a.download = `${dsSlug}__ep${String(state.activeEpIndex).padStart(6,"0")}.json`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  const fname = `${dsSlug}__ep${String(state.activeEpIndex).padStart(6,"0")}.json`;
+  _downloadBlob(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }), fname);
   showCopyToast("✓ JSON exported", "success");
 }
 
@@ -1604,15 +1581,10 @@ function exportTimestamps() {
   const ep = state.episode;
   if (!ep?.timestamps?.length) return;
   const lines = ep.timestamps.map((t, i) => `${i}\t${t.toFixed(6)}`);
-  const blob = new Blob([lines.join("\n")], { type: "text/plain" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${state.activeDataset}__ep${String(state.activeEpIndex).padStart(6,"0")}_timestamps.txt`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  _downloadBlob(
+    new Blob([lines.join("\n")], { type: "text/plain" }),
+    `${state.activeDataset}__ep${String(state.activeEpIndex).padStart(6,"0")}_timestamps.txt`
+  );
   showCopyToast("✓ Timestamps exported", "success");
 }
 
@@ -1645,16 +1617,8 @@ function exportCSV() {
   }
 
   const dsSlug = (state.activeDataset ?? "").replace(/[^a-z0-9_-]/gi, "_").slice(0, 32);
-  const blob = new Blob([lines.join("\n")], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
   const fname = `${dsSlug}__ep${String(state.activeEpIndex).padStart(6,"0")}.csv`;
-  a.download = fname;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  _downloadBlob(new Blob([lines.join("\n")], { type: "text/csv" }), fname);
   showCopyToast(`✓ Exported ${fname}`, "success");
 }
 
@@ -1798,6 +1762,12 @@ function _downloadDataURI(dataURI, filename) {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+}
+
+function _downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  _downloadDataURI(url, filename);
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
 function showCopyToast(msg = "Copied to clipboard", type = "info") {
