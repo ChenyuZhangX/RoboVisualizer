@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v58
+   LeRobot Visualizer — app.js  v59
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -113,6 +113,7 @@ const _frameRetryPending = new Set();
 
 /* ── Utility helpers ─────────────────────────────────────── */
 const el = id => document.getElementById(id);
+const isHidden = id => el(id)?.classList.contains("hidden") ?? true;
 const truncate = (str, maxLen) => str?.length > maxLen ? str.slice(0, maxLen - 1) + "…" : (str ?? "");
 const epStr = idx => `ep_${String(idx).padStart(6, "0")}`;
 
@@ -149,15 +150,10 @@ async function apiFetch(path, timeoutMs = API_TIMEOUT_MS, externalSignal = null)
 
 function formatDuration(secs) {
   if (secs < 60) return secs.toFixed(1) + "s";
-  if (secs < 3600) {
-    const m = Math.floor(secs / 60);
-    const s = Math.floor(secs % 60).toString().padStart(2, "0");
-    return `${m}:${s}`;
-  }
-  const h = Math.floor(secs / 3600);
-  const m = Math.floor((secs % 3600) / 60).toString().padStart(2, "0");
-  const s = Math.floor(secs % 60).toString().padStart(2, "0");
-  return `${h}:${m}:${s}`;
+  const h  = Math.floor(secs / 3600);
+  const mm = String(Math.floor((secs % 3600) / 60)).padStart(h ? 2 : 1, "0");
+  const ss = String(Math.floor(secs % 60)).padStart(2, "0");
+  return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
 function escapeHTML(str) {
@@ -197,7 +193,7 @@ function clearRecentEpisodes() {
 }
 
 function updateRecentSection() {
-  const section = document.getElementById("sidebar-recent");
+  const section = el("sidebar-recent");
   if (!section || !state.recentEpisodes.length) {
     if (section) section.classList.add("hidden");
     return;
@@ -260,15 +256,16 @@ function initDarkMode() {
 
 function applyDark(isDark, save = true) {
   document.documentElement.classList.toggle("dark", isDark);
-  el("dark-mode-btn").querySelector(".icon-moon").classList.toggle("hidden", isDark);
-  el("dark-mode-btn").querySelector(".icon-sun").classList.toggle("hidden", !isDark);
-  el("dark-mode-btn").setAttribute("aria-pressed", isDark);
+  const dmBtn = el("dark-mode-btn");
+  dmBtn.querySelector(".icon-moon").classList.toggle("hidden", isDark);
+  dmBtn.querySelector(".icon-sun").classList.toggle("hidden", !isDark);
+  dmBtn.setAttribute("aria-pressed", isDark);
   if (save) {
     localStorage.setItem("darkMode", isDark ? "1" : "0");
     if (state.episode) {
       buildCharts(state.episode);
-      if (!el("timedim-card").classList.contains("hidden")) buildTimeDimHeatmap(state.episode);
-      if (!el("corr-section").classList.contains("hidden")) buildCorrelationHeatmap(state.episode);
+      if (!isHidden("timedim-card")) buildTimeDimHeatmap(state.episode);
+      if (!isHidden("corr-section")) buildCorrelationHeatmap(state.episode);
     }
   }
 }
@@ -597,7 +594,7 @@ async function loadDatasets() {
 }
 
 function updateSidebarFooter(numDatasets, totalEps, datasets = []) {
-  let footer = document.getElementById("sidebar-footer");
+  let footer = el("sidebar-footer");
   if (!footer) {
     footer = document.createElement("div");
     footer.id = "sidebar-footer";
@@ -607,9 +604,12 @@ function updateSidebarFooter(numDatasets, totalEps, datasets = []) {
     el("sidebar")?.appendChild(footer);
   }
   if (numDatasets > 0) {
-    const knownFrames = datasets.reduce((s, d) => d.total_frames != null ? s + d.total_frames : s, 0);
+    let knownFrames = 0, taskCount = 0;
+    for (const d of datasets) {
+      if (d.total_frames != null) knownFrames += d.total_frames;
+      taskCount += d.total_tasks;
+    }
     const framesHint = knownFrames > 0 ? ` · ${(knownFrames / 1e6).toFixed(1)}M f` : "";
-    const taskCount = datasets.reduce((s, d) => s + d.total_tasks, 0);
     const taskHint = taskCount > 0 && taskCount > 1 ? ` · ${taskCount} tasks` : "";
     footer.textContent = `${numDatasets} dataset${numDatasets > 1 ? "s" : ""} · ${totalEps} ep${totalEps !== 1 ? "s" : ""}${taskHint}${framesHint}`;
     footer.title = datasets.map(d => `${d.name}: ${d.total_episodes} eps${d.total_frames != null ? ` · ${(d.total_frames / 1e6).toFixed(1)}M f` : ""}`).join("\n");
@@ -927,7 +927,7 @@ function applySearch(query) {
   });
 
   // Show/hide search result count
-  let countEl = document.getElementById("search-count");
+  let countEl = el("search-count");
   if (!countEl) {
     countEl = document.createElement("div");
     countEl.id = "search-count";
@@ -1443,7 +1443,7 @@ async function updateImages() {
   const keys = ep.image_keys.slice(0, MAX_CAMS);
 
   // Update lightbox label if open (shows current frame timestamp)
-  if (!el("cam-lightbox").classList.contains("hidden")) {
+  if (!isHidden("cam-lightbox")) {
     const lbl = el("lightbox-label");
     if (lbl && state.episode) {
       const camIdx = parseInt(el("cam-lightbox").dataset.camIdx ?? "-1", 10);
@@ -1801,7 +1801,7 @@ function _downloadDataURI(dataURI, filename) {
 }
 
 function showCopyToast(msg = "Copied to clipboard", type = "info") {
-  let toast = document.getElementById("copy-toast");
+  let toast = el("copy-toast");
   if (!toast) {
     toast = document.createElement("div");
     toast.id = "copy-toast";
@@ -2763,7 +2763,7 @@ function toggleFrameValuesPanel() {
 
 /* ── TimeDim tooltip ─────────────────────────────────────── */
 function showTimeDimTooltip(x, y, html) {
-  let tt = document.getElementById("timedim-tooltip");
+  let tt = el("timedim-tooltip");
   if (!tt) {
     tt = document.createElement("div");
     tt.id = "timedim-tooltip";
@@ -2784,7 +2784,7 @@ function showTimeDimTooltip(x, y, html) {
 }
 
 function hideTimeDimTooltip() {
-  document.getElementById("timedim-tooltip")?.classList.add("hidden");
+  el("timedim-tooltip")?.classList.add("hidden");
 }
 
 /* ── Episode per-dim statistics ─────────────────────────── */
@@ -3345,7 +3345,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (e.key === "+" || e.key === "=") {
       e.preventDefault();
-      if (!el("cam-lightbox").classList.contains("hidden")) {
+      if (!isHidden("cam-lightbox")) {
         _lbSetZoom(_lbZoom * 1.2);
       } else {
         changeSpeed(+1);
@@ -3354,7 +3354,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (e.key === "-" || e.key === "_") {
       e.preventDefault();
-      if (!el("cam-lightbox").classList.contains("hidden")) {
+      if (!isHidden("cam-lightbox")) {
         _lbSetZoom(_lbZoom / 1.2);
       } else {
         changeSpeed(-1);
@@ -3462,7 +3462,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.key === "d" || e.key === "D") {
       e.preventDefault();
       // D in lightbox: download current camera frame; outside lightbox: download current frame as PNG
-      if (!el("cam-lightbox").classList.contains("hidden")) {
+      if (!isHidden("cam-lightbox")) {
         downloadLightboxFrame();
       } else {
         exportFrame();
@@ -3512,7 +3512,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     if (e.key === "f" || e.key === "F") {
-      if (!el("cam-lightbox").classList.contains("hidden")) {
+      if (!isHidden("cam-lightbox")) {
         e.preventDefault();
         // Fullscreen the lightbox image box
         const box = el("cam-lightbox").querySelector(".lightbox-box");
@@ -3556,7 +3556,7 @@ document.addEventListener("DOMContentLoaded", () => {
         break;
       case "ArrowLeft":
         e.preventDefault();
-        if (!el("cam-lightbox").classList.contains("hidden")) {
+        if (!isHidden("cam-lightbox")) {
           lightboxNavigate(-1);
         } else if (e.altKey) {
           navigateFrameHistory(-1);
@@ -3567,7 +3567,7 @@ document.addEventListener("DOMContentLoaded", () => {
         break;
       case "ArrowRight":
         e.preventDefault();
-        if (!el("cam-lightbox").classList.contains("hidden")) {
+        if (!isHidden("cam-lightbox")) {
           lightboxNavigate(1);
         } else if (e.altKey) {
           navigateFrameHistory(1);
@@ -3619,7 +3619,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (state.compareEpisode) { e.preventDefault(); clearCompare(); }
         el("shortcuts-modal").classList.add("hidden");
         el("btn-shortcuts").setAttribute("aria-expanded", "false");
-        if (!el("cam-lightbox").classList.contains("hidden")) {
+        if (!isHidden("cam-lightbox")) {
           if (_lbZoom > 1) {
             _lbResetZoom(); // First Esc: clear zoom; second Esc: close
           } else {
@@ -3644,7 +3644,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   // Focus trap inside shortcuts modal
   el("shortcuts-modal").addEventListener("keydown", e => {
-    if (el("shortcuts-modal").classList.contains("hidden")) return;
+    if (isHidden("shortcuts-modal")) return;
     if (e.key === "Tab") {
       const focusable = Array.from(el("shortcuts-modal").querySelectorAll(
         'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
@@ -3666,7 +3666,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   // Focus trap inside lightbox
   el("cam-lightbox").addEventListener("keydown", e => {
-    if (el("cam-lightbox").classList.contains("hidden")) return;
+    if (isHidden("cam-lightbox")) return;
     if (e.key !== "Tab") return;
     const focusable = Array.from(el("cam-lightbox").querySelectorAll(
       'button:not([style*="display: none"]):not([style*="display:none"])'
@@ -3793,7 +3793,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ── Lightbox wheel zoom ──────────────────────────────────
   el("cam-lightbox").addEventListener("wheel", e => {
-    if (el("cam-lightbox").classList.contains("hidden")) return;
+    if (isHidden("cam-lightbox")) return;
     e.preventDefault();
     const box = el("cam-lightbox").querySelector(".lightbox-box");
     const rect = box?.getBoundingClientRect() ?? { left: 0, top: 0, width: 1, height: 1 };
