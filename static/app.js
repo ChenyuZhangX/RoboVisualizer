@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v52
+   LeRobot Visualizer — app.js  v53
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -17,6 +17,7 @@ const FRAME_LABEL_HEIGHT = 28;
 const FRAME_LABEL_SIZE_PX = 11;
 const FULLSCREEN_LABEL_HEIGHT = 20;
 const HISTOGRAM_BIN_COUNT = 22;
+const TIMEDIM_MAX_CANVAS_W = 900;
 const API_TIMEOUT_MS = 30000;
 const FRAME_RETRY_DELAY_MS = 700;
 const FRAME_RETRY_DEBOUNCE_MS = 120;
@@ -362,8 +363,7 @@ async function loadHashState() {
     const nParam = params.get("n");
     if (nParam !== null && (nParam === "1") !== state.normalizeEnabled) {
       state.normalizeEnabled = nParam === "1";
-      el("btn-normalize")?.classList.toggle("active", state.normalizeEnabled);
-      el("btn-normalize")?.setAttribute("aria-pressed", state.normalizeEnabled);
+      _updateNormalizeButtonUI();
     }
     await selectEpisode(ds, epIndex, epEntry.taskText, epEntry.el);
     // Parse frame: prefer 't' (time), fallback to 'f' (frame index)
@@ -1868,11 +1868,17 @@ function rebuildChartsFor(type) {
   _refreshChartObserver();
 }
 
+function _updateNormalizeButtonUI() {
+  const btn = el("btn-normalize");
+  if (!btn) return;
+  btn.classList.toggle("active", state.normalizeEnabled);
+  btn.setAttribute("aria-pressed", state.normalizeEnabled);
+}
+
 function toggleNormalize() {
   state.normalizeEnabled = !state.normalizeEnabled;
   localStorage.setItem("normalize", state.normalizeEnabled ? "1" : "0");
-  el("btn-normalize")?.classList.toggle("active", state.normalizeEnabled);
-  el("btn-normalize")?.setAttribute("aria-pressed", state.normalizeEnabled);
+  _updateNormalizeButtonUI();
   if (state.episode) {
     buildCharts(state.episode);
     updateFrameValues();
@@ -2448,7 +2454,7 @@ function buildTimeDimHeatmap(ep) {
     }
   }
 
-  const CANVAS_W  = Math.min(frames, 900);
+  const CANVAS_W  = Math.min(frames, TIMEDIM_MAX_CANVAS_W);
   const CANVAS_H  = dims * CELL_H;
   const TIME_AX_H = 18;                    // time axis row at bottom
   const TOTAL_W   = TIMEDIM_LABEL_W + CANVAS_W;
@@ -2565,9 +2571,13 @@ function buildTimeDimHeatmap(ep) {
       sc.fillStyle = _heatmapColor(x / 79);
       sc.fillRect(x, 0, 1, 8);
     }
-    legend.appendChild(Object.assign(document.createElement("span"), { textContent: "low" }));
+    const spanLow = document.createElement("span");
+    spanLow.textContent = "low";
+    legend.appendChild(spanLow);
     legend.appendChild(swatch);
-    legend.appendChild(Object.assign(document.createElement("span"), { textContent: "high (per dim)" }));
+    const spanHigh = document.createElement("span");
+    spanHigh.textContent = "high (per dim)";
+    legend.appendChild(spanHigh);
     body.appendChild(legend);
   }
 
@@ -3058,8 +3068,7 @@ function initPlaybackPreferences() {
   const savedNorm = localStorage.getItem("normalize");
   if (savedNorm !== null) {
     state.normalizeEnabled = savedNorm === "1";
-    el("btn-normalize")?.classList.toggle("active", state.normalizeEnabled);
-    el("btn-normalize")?.setAttribute("aria-pressed", state.normalizeEnabled);
+    _updateNormalizeButtonUI();
   }
 }
 
@@ -3831,8 +3840,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const wantNorm = nParam === null || nParam === "1";
       if (wantNorm !== state.normalizeEnabled) {
         state.normalizeEnabled = wantNorm;
-        el("btn-normalize")?.classList.toggle("active", state.normalizeEnabled);
-        el("btn-normalize")?.setAttribute("aria-pressed", state.normalizeEnabled);
+        _updateNormalizeButtonUI();
         if (state.episode) { buildCharts(state.episode); updateFrameValues(); }
       }
     }

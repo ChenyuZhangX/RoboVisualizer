@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   LeRobot Visualizer — style.css  v52
+   LeRobot Visualizer — style.css  v53
    ────────────────────────────────────────────────────────── */
 
 /* ── Reset & Base ─────────────────────────────────────────── */
@@ -46,13 +46,17 @@
   --font-lg:   14px;
 
   --alpha-8:   rgba(0,0,0,.08);
+  --alpha-3-black: rgba(0,0,0,.3);
+  --alpha-4-black: rgba(0,0,0,.4);
+  --alpha-5:   rgba(0,0,0,.05);
   --alpha-45:  rgba(0,0,0,.45);
   --alpha-55:  rgba(0,0,0,.55);
   --alpha-6:   rgba(0,0,0,.6);
   --alpha-7:   rgba(0,0,0,.7);
   --alpha-12:  rgba(59,130,246,.12);
   --alpha-2:   rgba(59,130,246,.2);
-  --alpha-4:   rgba(59,130,246,.4);
+  --alpha-3-blue:  rgba(59,130,246,.3);
+  --alpha-4-blue:   rgba(59,130,246,.4);
   --alpha-6-blue:  rgba(59,130,246,.6);
   --alpha-3-amber: rgba(245,158,11,.3);
   --alpha-4-amber: rgba(245,158,11,.4);
@@ -76,8 +80,8 @@ html.dark {
   --amber-lt:  #3d2a0a;
   --red-lt:    #3b0f0f;
   --red:       #F87171;
-  --shadow:    0 1px 3px rgba(0,0,0,.3), 0 1px 2px rgba(0,0,0,.2);
-  --shadow-md: 0 4px 12px rgba(0,0,0,.4), 0 2px 4px rgba(0,0,0,.3);
+  --shadow:    0 1px 3px var(--alpha-3-black), 0 1px 2px rgba(0,0,0,.2);
+  --shadow-md: 0 4px 12px var(--alpha-4-black), 0 2px 4px var(--alpha-3-black);
 }
 
 html, body { height: 100%; }
@@ -456,7 +460,7 @@ mark.search-hl {
   font-size: 11.5px;
 }
 .ep-item:hover { background: var(--bg-3); color: var(--text); }
-.ep-item:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; border-radius: 2px; box-shadow: inset 0 0 0 1px rgba(59,130,246,.3); }
+.ep-item:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; border-radius: 2px; box-shadow: inset 0 0 0 1px var(--alpha-3-blue); }
 .ep-item:disabled, .ep-item[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
 .task-header:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; border-radius: var(--radius-xs); }
 .ds-header:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; border-radius: var(--radius-xs); }
@@ -468,7 +472,7 @@ mark.search-hl {
   animation: ep-activate .2s ease;
 }
 @keyframes ep-activate {
-  from { background: rgba(59,130,246,.3); }
+  from { background: var(--alpha-3-blue); }
   to   { background: var(--blue-lt); }
 }
 .ep-item.compare {
@@ -1251,7 +1255,7 @@ html.dark .fps-badge { background: #0d2e1f; border-color: #166534; }
 .info-chip-blue {
   color: var(--blue-dk);
   background: var(--blue-lt);
-  border-color: rgba(59,130,246,.4);
+  border-color: var(--alpha-4-blue);
 }
 html.dark .info-chip-blue { color: #93c5fd; }
 
@@ -1413,8 +1417,8 @@ html.dark #viewer-footer {
   top: 10px;
   right: 12px;
   font-size: var(--font-sm);
-  color: rgba(255,255,255,.6);
-  background: rgba(0,0,0,.4);
+  color: var(--alpha-6-white);
+  background: var(--alpha-4-black);
   border-radius: var(--radius-lg);
   padding: 2px 8px;
   pointer-events: none;
@@ -1570,7 +1574,7 @@ html.dark .frame-jump-input { background: var(--bg-2); }
 
 /* ── Camera slot focus and hover ─────────────────────────────── */
 .cam-slot:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--blue); }
-.cam-slot:hover:not(.loading) { box-shadow: inset 0 0 0 1px rgba(59,130,246,.3); }
+.cam-slot:hover:not(.loading) { box-shadow: inset 0 0 0 1px var(--alpha-3-blue); }
 
 /* ── FV chip sparkline bar ───────────────────────────────────── */
 .fv-top { display: flex; align-items: center; gap: 4px; }
