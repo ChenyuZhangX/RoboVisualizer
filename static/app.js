@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v62
+   LeRobot Visualizer — app.js  v63
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -117,6 +117,11 @@ const _frameRetryPending = new Set();
 /* ── Utility helpers ─────────────────────────────────────── */
 const el = id => document.getElementById(id);
 const isHidden = id => el(id)?.classList.contains("hidden") ?? true;
+const hide = id => el(id)?.classList.add("hidden");
+const show = id => el(id)?.classList.remove("hidden");
+const toggle = (id, cls, force) => el(id)?.classList.toggle(cls, force);
+const attr = (id, k, v) => el(id)?.setAttribute(k, v);
+const toggleSub = (id, sel, cls, force) => el(id)?.querySelector(sel)?.classList.toggle(cls, force);
 const truncate = (str, maxLen) => str?.length > maxLen ? str.slice(0, maxLen - 1) + "…" : (str ?? "");
 const capitalize = s => s ? s[0].toUpperCase() + s.slice(1) : s;
 const epStr = idx => `ep_${String(idx).padStart(6, "0")}`;
@@ -201,7 +206,7 @@ function clearRecentEpisodes() {
 function updateRecentSection() {
   const section = el("sidebar-recent");
   if (!section || !state.recentEpisodes.length) {
-    if (section) section.classList.add("hidden");
+    if (section) section.classList.add("hidden");  // TODO: convert to hide() when safe
     return;
   }
   section.classList.remove("hidden");
@@ -263,8 +268,8 @@ function initDarkMode() {
 function applyDark(isDark, save = true) {
   document.documentElement.classList.toggle("dark", isDark);
   const dmBtn = el("dark-mode-btn");
-  dmBtn.querySelector(".icon-moon").classList.toggle("hidden", isDark);
-  dmBtn.querySelector(".icon-sun").classList.toggle("hidden", !isDark);
+  toggleSub("dark-mode-btn", ".icon-moon", "hidden", isDark);
+  toggleSub("dark-mode-btn", ".icon-sun", "hidden", !isDark);
   dmBtn.setAttribute("aria-pressed", isDark);
   if (save) {
     lsFlag("darkMode", isDark);
@@ -283,7 +288,7 @@ function toggleDarkMode() {
 /* ── Sidebar ─────────────────────────────────────────────── */
 function toggleSidebar() {
   const collapsed = el("main").classList.toggle("sidebar-collapsed");
-  el("sidebar-toggle").setAttribute("aria-pressed", collapsed);
+  attr("sidebar-toggle", "aria-pressed", collapsed);
   lsFlag("sidebarCollapsed", collapsed);
 }
 
@@ -530,11 +535,11 @@ function lengthClass(len, sortedLengths) {
 
 /* ── Mirror mode ─────────────────────────────────────────── */
 function _applyMirrorMode(on) {
-  el("task-label")?.classList.toggle("hidden", on);
-  if (state.episode) el("ep-info-strip")?.classList.toggle("hidden", on);
+  toggle("task-label", "hidden", on);
+  if (state.episode) toggle("ep-info-strip", "hidden", on);
   // Restore compare banner when turning off only if comparison is active
-  if (on) el("compare-banner")?.classList.add("hidden");
-  else if (state.compareEpisode) el("compare-banner")?.classList.remove("hidden");
+  if (on) hide("compare-banner");
+  else if (state.compareEpisode) show("compare-banner");
   document.querySelectorAll(".cam-label").forEach(lbl => lbl.classList.toggle("hidden", on));
 }
 
@@ -866,7 +871,7 @@ function matchesLengthFilter(len, filters) {
 
 function applySearch(query) {
   const q = query.trim().toLowerCase();
-  el("search-clear").classList.toggle("hidden", !q);
+  toggle("search-clear", "hidden", !q);
 
   const { text: textQ, filters } = parseSearchFilters(q);
   const hasFilter = filters.length > 0;
@@ -1002,17 +1007,17 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
 
   if (state.compareDataset === dsPath && state.compareEpIndex === epIndex) clearCompare();
 
-  el("welcome").classList.add("hidden");
+  hide("welcome");
   const viewerEl = el("viewer");
   const taskLblEl = el("task-label");
   viewerEl.classList.remove("hidden");
   viewerEl.setAttribute("aria-busy", "true");
-  el("viewer-loader")?.classList.remove("hidden");
+  show("viewer-loader");
   const displayTask = truncate(taskText, 80);
   taskLblEl.textContent = displayTask;
   taskLblEl.title = taskText?.length > 80 ? taskText : "";
   el("ep-info-strip").innerHTML = `<span class="spinner"></span><span class="text-muted"> Loading…</span>`;
-  el("ep-info-strip").classList.remove("hidden");
+  show("ep-info-strip");
   el("charts-area").classList.add("charts-loading");
 
   updatePrevNextButtons();
@@ -1026,7 +1031,7 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
     taskLblEl.title = taskText?.length > 80 ? taskText : "";
     taskLblEl.classList.toggle("hidden", _mirrorMode);
     updateEpInfoStrip(ep);
-    if (_mirrorMode) el("ep-info-strip").classList.add("hidden");
+    if (_mirrorMode) hide("ep-info-strip");
     // Update normalize btn tooltip based on stats availability
     const hasNormStats = !!state.normStats;
     el("btn-normalize")?.setAttribute("title",
@@ -1050,14 +1055,14 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
       ? `${epStr(epIndex)} — ${taskShort} • LeRobot Visualizer`
       : `${epStr(epIndex)} • ${dsPath} • LeRobot Visualizer`;
     el("charts-area").classList.remove("charts-loading");
-    el("viewer-loader")?.classList.add("hidden");
+    hide("viewer-loader");
     viewerEl.setAttribute("aria-busy", "false");
     // Enable export buttons now that episode is loaded
     el("btn-export").disabled = false;
     el("btn-csv").disabled = false;
     el("btn-frame-values").disabled = false;
   } catch (e) {
-    el("viewer-loader")?.classList.add("hidden");
+    hide("viewer-loader");
     viewerEl.setAttribute("aria-busy", "false");
     taskLblEl.innerHTML =
       `<span class="load-fail-label">Load failed:</span>` +
@@ -1069,7 +1074,7 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
       selectEpisode(dsPath, epIndex, taskText, document.querySelector(".ep-item.active"))
     );
     taskLblEl.appendChild(retryBtn);
-    el("ep-info-strip").classList.add("hidden");
+    hide("ep-info-strip");
     el("charts-area").classList.remove("charts-loading");
     state.episode = null;
   } finally {
@@ -1174,7 +1179,7 @@ async function selectCompareEpisode(dsPath, epIndex, clickedEl) {
       `/api/datasets/${encodeURIComponent(dsPath)}/episodes/${epIndex}`
     );
     buildCharts(state.episode);
-    el("compare-banner").classList.remove("hidden");
+    show("compare-banner");
     const cmpEp = state.compareEpisode;
     const cmpLastTs = cmpEp.timestamps?.[cmpEp.timestamps.length - 1] ?? null;
     const cmpDurStr = cmpLastTs !== null ? ` / ${formatDuration(cmpLastTs)}` : "";
@@ -1199,7 +1204,7 @@ function clearCompare() {
   state.compareDataset = null;
   state.compareEpIndex = null;
   document.querySelectorAll(".ep-item.compare").forEach(e => e.classList.remove("compare"));
-  el("compare-banner").classList.add("hidden");
+  hide("compare-banner");
   if (state.episode) {
     buildCharts(state.episode);
     showCopyToast("✓ Comparison cleared", "success");
@@ -1286,7 +1291,7 @@ function openLightbox(src, label, camIdx = -1) {
     ? ` · ${ts >= 60 ? formatDuration(ts) : ts.toFixed(3) + "s"}  (f${state.frame})`
     : ` (f${state.frame})`;
   el("lightbox-label").textContent = label + tsStr;
-  el("cam-lightbox").classList.remove("hidden");
+  show("cam-lightbox");
   el("cam-lightbox").dataset.camIdx = camIdx;
 
   // Update camera counter and nav visibility
@@ -1878,8 +1883,8 @@ function toggleHistogram(type) {
 
 function toggleLooping() {
   state.looping = !state.looping;
-  el("btn-loop").classList.toggle("active", state.looping);
-  el("btn-loop").setAttribute("aria-pressed", state.looping);
+  toggle("btn-loop", "active", state.looping);
+  attr("btn-loop", "aria-pressed", state.looping);
   lsFlag("loop", state.looping);
 }
 
@@ -2730,8 +2735,8 @@ function toggleFrameValuesPanel() {
   const panel = el("frame-values-panel");
   if (!panel) return;
   const hidden = panel.classList.toggle("fv-collapsed");
-  el("btn-frame-values")?.classList.toggle("active", !hidden);
-  el("btn-frame-values")?.setAttribute("aria-pressed", String(!hidden));
+  toggle("btn-frame-values", "active", !hidden);
+  attr("btn-frame-values", "aria-pressed", String(!hidden));
 }
 
 /* ── TimeDim tooltip ─────────────────────────────────────── */
@@ -2979,8 +2984,8 @@ function startPlayback() {
   if (!state.episode) return;
   state.playing = true;
   state.loopCount = 0;
-  el("play-icon").classList.add("hidden");
-  el("pause-icon").classList.remove("hidden");
+  hide("play-icon");
+  show("pause-icon");
   document.body.classList.add("is-playing");
 
   const interval = 1000 / ((state.episode.fps || 10) * state.speed);
@@ -3034,8 +3039,8 @@ function initPlaybackPreferences() {
     el("speed-select").value = savedSpeed;
   }
   state.looping = lsBool("loop");
-  el("btn-loop").classList.toggle("active", state.looping);
-  el("btn-loop").setAttribute("aria-pressed", state.looping);
+  toggle("btn-loop", "active", state.looping);
+  attr("btn-loop", "aria-pressed", state.looping);
 
   // Restore normalize preference (hash URL takes priority, but localStorage covers no-hash case)
   const savedNorm = localStorage.getItem("normalize");
@@ -3075,13 +3080,13 @@ document.addEventListener("DOMContentLoaded", () => {
     el("corr-body")?.classList.remove("corr-collapsed");
     if (el("corr-section")) el("corr-section").dataset.open = "1";
     el("corr-close")?.classList.add("active");
-    el("corr-close")?.setAttribute("aria-expanded", "true");
+    attr("corr-close", "aria-expanded", "true");
   }
   if (lsBool("timedimOpen")) {
     el("timedim-body")?.classList.remove("timedim-collapsed");
     if (el("timedim-card")) el("timedim-card").dataset.open = "1";
     el("timedim-toggle")?.classList.add("active");
-    el("timedim-toggle")?.setAttribute("aria-expanded", "true");
+    attr("timedim-toggle", "aria-expanded", "true");
   }
 
   // Update welcome hint modifier key for platform
@@ -3204,8 +3209,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const body = el("corr-body");
     const nowCollapsed = body.classList.toggle("corr-collapsed");
     el("corr-section").dataset.open = nowCollapsed ? "" : "1";
-    el("corr-close").classList.toggle("active", !nowCollapsed);
-    el("corr-close").setAttribute("aria-expanded", String(!nowCollapsed));
+    toggle("corr-close", "active", !nowCollapsed);
+    attr("corr-close", "aria-expanded", String(!nowCollapsed));
     lsFlag("corrOpen", !nowCollapsed);
     if (!nowCollapsed && state.episode) buildCorrelationHeatmap(state.episode);
   });
@@ -3215,8 +3220,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const body = el("timedim-body");
     const nowCollapsed = body.classList.toggle("timedim-collapsed");
     card.dataset.open = nowCollapsed ? "" : "1";
-    el("timedim-toggle").classList.toggle("active", !nowCollapsed);
-    el("timedim-toggle").setAttribute("aria-expanded", String(!nowCollapsed));
+    toggle("timedim-toggle", "active", !nowCollapsed);
+    attr("timedim-toggle", "aria-expanded", String(!nowCollapsed));
     lsFlag("timedimOpen", !nowCollapsed);
     if (!nowCollapsed && state.episode) buildTimeDimHeatmap(state.episode);
   });
@@ -3241,7 +3246,7 @@ document.addEventListener("DOMContentLoaded", () => {
       e.preventDefault();
       const modal = el("shortcuts-modal");
       const nowHidden = modal.classList.toggle("hidden");
-      el("btn-shortcuts").setAttribute("aria-expanded", String(!nowHidden));
+      attr("btn-shortcuts", "aria-expanded", String(!nowHidden));
       return;
     }
 
@@ -3435,7 +3440,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (e.key === "i" || e.key === "I") {
       e.preventDefault();
-      el("ep-info-strip").classList.toggle("hidden");
+      toggle("ep-info-strip", "hidden");
       return;
     }
     if (e.key === "a" || e.key === "A") {
@@ -3581,13 +3586,13 @@ document.addEventListener("DOMContentLoaded", () => {
         break;
       case "Escape":
         if (state.compareEpisode) { e.preventDefault(); clearCompare(); }
-        el("shortcuts-modal").classList.add("hidden");
-        el("btn-shortcuts").setAttribute("aria-expanded", "false");
+        hide("shortcuts-modal");
+        attr("btn-shortcuts", "aria-expanded", "false");
         if (!isHidden("cam-lightbox")) {
           if (_lbZoom > 1) {
             _lbResetZoom(); // First Esc: clear zoom; second Esc: close
           } else {
-            el("cam-lightbox").classList.add("hidden");
+            hide("cam-lightbox");
             _lbPrevFocus?.focus();
           }
         }
@@ -3598,7 +3603,7 @@ document.addEventListener("DOMContentLoaded", () => {
   el("btn-shortcuts").addEventListener("click", () => {
     const modal = el("shortcuts-modal");
     const nowHidden = modal.classList.toggle("hidden"); // true = modal is now hidden
-    el("btn-shortcuts").setAttribute("aria-expanded", String(!nowHidden));
+    attr("btn-shortcuts", "aria-expanded", String(!nowHidden));
     if (!nowHidden) {
       // Modal just opened — focus the box for keyboard nav
       const box = modal.querySelector(".modal-box");
@@ -3624,7 +3629,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   el("shortcuts-modal").addEventListener("click", e => {
     if (e.target === el("shortcuts-modal")) {
-      el("shortcuts-modal").classList.add("hidden");
+      hide("shortcuts-modal");
       el("btn-shortcuts").setAttribute("aria-expanded", "false");
     }
   });
@@ -3645,12 +3650,12 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   el("cam-lightbox").addEventListener("click", e => {
     if (e.target === el("cam-lightbox")) {
-      el("cam-lightbox").classList.add("hidden");
+      hide("cam-lightbox");
       _lbPrevFocus?.focus();
     }
   });
   el("lightbox-close-btn")?.addEventListener("click", () => {
-    el("cam-lightbox").classList.add("hidden");
+    hide("cam-lightbox");
     _lbPrevFocus?.focus();
   });
 
@@ -3693,7 +3698,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const dy = e.changedTouches[0].clientY - _touchStartY;
       // Swipe-down to close (dominant vertical movement, not zoomed)
       if (dy > 80 && Math.abs(dy) > Math.abs(dx) && _lbZoom <= 1) {
-        el("cam-lightbox").classList.add("hidden");
+        hide("cam-lightbox");
         _lbPrevFocus?.focus();
         return;
       }
