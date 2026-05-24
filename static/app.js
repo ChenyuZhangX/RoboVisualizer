@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v57
+   LeRobot Visualizer — app.js  v58
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -222,12 +222,12 @@ function updateRecentSection() {
     item.tabIndex = 0;
     item.setAttribute("role", "option");
     item.setAttribute("aria-label", `Recent: ${r.dsPath} episode ${r.epIndex}${r.taskText ? ` - ${r.taskText}` : ""}`);
-    const epStr = epStr(r.epIndex);
+    const epLabel = epStr(r.epIndex);
     const shortTask = truncate(r.taskText, 48);
     item.innerHTML =
-      `<span class="recent-ep">${epStr}</span>` +
+      `<span class="recent-ep">${epLabel}</span>` +
       `<span class="recent-task">${escapeHTML(shortTask)}</span>`;
-    item.title = `${r.dsPath} › ${epStr}` + (r.taskText ? `\n${r.taskText}` : "");
+    item.title = `${r.dsPath} › ${epLabel}` + (r.taskText ? `\n${r.taskText}` : "");
     const handleSelect = () => {
       const entry = state.episodeList.find(e => e.dsPath === r.dsPath && e.epIndex === r.epIndex);
       if (entry) {
@@ -310,7 +310,7 @@ function _doSaveHash() {
   history.replaceState(null, "", "#" + params.toString());
 }
 
-function saveHashState() { _saveHashDebounced(); }
+const saveHashState = _saveHashDebounced;
 
 async function loadHashState() {
   const hash = location.hash.slice(1);
@@ -739,7 +739,7 @@ function buildTaskNode(dsPath, task, allLengths = [], fps = 10) {
     item.dataset.episode = ep.episode_index;
     item.innerHTML = `
       <span class="ep-dot"></span>
-      <span>ep_${String(ep.episode_index).padStart(6, "0")}</span>
+      <span>${epStr(ep.episode_index)}</span>
       <span class="ep-len ${cls}">${ep.length}f</span>`;
 
     const epPosInTask = epIdx + 1;
@@ -750,7 +750,7 @@ function buildTaskNode(dsPath, task, allLengths = [], fps = 10) {
     item.setAttribute("aria-label", `Episode ${ep.episode_index}, ${ep.length} frames, ${epPosInTask} of ${epTotalInTask} in task`);
     item.dataset.length = ep.length;
     const epDurStr = formatDuration(ep.length / fps);
-    item.title = `ep_${String(ep.episode_index).padStart(6,"0")} · ${ep.length}f · ${epDurStr} · ep ${epPosInTask}/${epTotalInTask} in task · double-click to play`;
+    item.title = `${epStr(ep.episode_index)} · ${ep.length}f · ${epDurStr} · ep ${epPosInTask}/${epTotalInTask} in task · double-click to play`;
 
     const handleActivate = (ctrlKey = false, autoPlay = false) => {
       if (ctrlKey) selectCompareEpisode(dsPath, ep.episode_index, item);
@@ -1045,8 +1045,8 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
     addToRecent(dsPath, epIndex, taskText);
     const taskShort = truncate(taskText, 48);
     document.title = taskShort
-      ? `ep_${String(epIndex).padStart(6, "0")} — ${taskShort} • LeRobot Visualizer`
-      : `ep_${String(epIndex).padStart(6, "0")} • ${dsPath} • LeRobot Visualizer`;
+      ? `${epStr(epIndex)} — ${taskShort} • LeRobot Visualizer`
+      : `${epStr(epIndex)} • ${dsPath} • LeRobot Visualizer`;
     el("charts-area").classList.remove("charts-loading");
     el("viewer-loader")?.classList.add("hidden");
     el("viewer").setAttribute("aria-busy", "false");
@@ -1158,13 +1158,13 @@ function updatePrevNextButtons() {
   el("btn-next-ep").setAttribute("aria-disabled", !hasNext);
   if (hasPrev) {
     const prev = state.episodeList[idx - 1];
-    el("btn-prev-ep").title = `Previous episode: ep_${String(prev.epIndex).padStart(6, "0")}  [`;
+    el("btn-prev-ep").title = `Previous episode: ${epStr(prev.epIndex)}  [`;
   } else {
     el("btn-prev-ep").title = "Previous episode  [";
   }
   if (hasNext) {
     const next = state.episodeList[idx + 1];
-    el("btn-next-ep").title = `Next episode: ep_${String(next.epIndex).padStart(6, "0")}  ]`;
+    el("btn-next-ep").title = `Next episode: ${epStr(next.epIndex)}  ]`;
   } else {
     el("btn-next-ep").title = "Next episode  ]";
   }
@@ -1196,8 +1196,8 @@ async function selectCompareEpisode(dsPath, epIndex, clickedEl) {
     const lenDiff = cmpEp.length - mainLen;
     const lenDiffStr = lenDiff !== 0 ? ` (${lenDiff > 0 ? "+" : ""}${lenDiff}f, ${lenDiff > 0 ? "+" : ""}${Math.round(lenDiff / mainLen * 100)}%)` : "";
     el("compare-label").textContent =
-      `Comparing ep_${String(epIndex).padStart(6, "0")}${cmpDs} — ${cmpEp.length}f${cmpDurStr}${lenDiffStr}${taskHint} — dashed overlay`;
-    showCopyToast(`✓ Comparing ep_${String(epIndex).padStart(6, "0")}`, "success");
+      `Comparing ${epStr(epIndex)}${cmpDs} — ${cmpEp.length}f${cmpDurStr}${lenDiffStr}${taskHint} — dashed overlay`;
+    showCopyToast(`✓ Comparing ${epStr(epIndex)}`, "success");
   } catch (e) {
     state.compareEpisode = null;
     showCopyToast(`Failed to load compare episode: ${e.message}`, "error");
@@ -2647,7 +2647,7 @@ function updateTopbarBreadcrumb() {
     crumb.classList.add("hidden");
     return;
   }
-  const epStr = `ep_${String(state.activeEpIndex).padStart(6, "0")}`;
+  const epLabel = epStr(state.activeEpIndex);
   const dsShort = state.activeDataset.length > 24
     ? state.activeDataset.slice(0, 21) + "…"
     : state.activeDataset;
@@ -2657,7 +2657,7 @@ function updateTopbarBreadcrumb() {
     `<span class="crumb-sep">›</span>` +
     `<span class="crumb-ds" title="${escapeHTML(state.activeDataset)}">${escapeHTML(dsShort)}</span>` +
     `<span class="crumb-sep">›</span>` +
-    `<span class="crumb-ep" title="Click to copy URL  (C)">${epStr}</span>` +
+    `<span class="crumb-ep" title="Click to copy URL  (C)">${epLabel}</span>` +
     frameStr;
   crumb.classList.remove("hidden");
   if (!_crumbEpListenerAttached) {
