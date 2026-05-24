@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v42
+   LeRobot Visualizer — app.js  v43
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -508,12 +508,10 @@ function lengthClass(len, sortedLengths) {
 /* ── Mirror mode ─────────────────────────────────────────── */
 function _applyMirrorMode(on) {
   el("task-label")?.classList.toggle("hidden", on);
-  // Only affect ep-info-strip if episode is loaded (it starts hidden until load)
   if (state.episode) el("ep-info-strip")?.classList.toggle("hidden", on);
-  // Only hide compare-banner if it's currently visible (don't reveal it)
-  if (on || !el("compare-banner")?.classList.contains("hidden")) {
-    el("compare-banner")?.classList.toggle("hidden", on);
-  }
+  // Restore compare banner when turning off only if comparison is active
+  if (on) el("compare-banner")?.classList.add("hidden");
+  else if (state.compareEpisode) el("compare-banner")?.classList.remove("hidden");
   document.querySelectorAll(".cam-label").forEach(lbl => lbl.classList.toggle("hidden", on));
 }
 
@@ -2274,10 +2272,8 @@ function buildCorrelationHeatmap(ep) {
 
   const cols = Array.from({ length: dims }, (_, d) => ep.actions.map(r => r[d]));
   const rawNames = ep.action_names ?? [];
-  const labels = Array.from({ length: dims }, (_, d) => {
-    const n = rawNames[d] ?? `a${d}`;
-    return n.length > 7 ? n.slice(0, 6) + "…" : n;
-  });
+  const rawLabels = Array.from({ length: dims }, (_, d) => rawNames[d] ?? `a${d}`);
+  const labels = rawLabels.map(n => n.length > 7 ? n.slice(0, 6) + "…" : n);
 
   const CELL = 24, LABEL_W = 56, TOP_H = 22, PAD = 2;
   const COLORBAR_H = 12, COLORBAR_GAP = 8, COLORBAR_LABEL_H = 12;
@@ -2339,8 +2335,6 @@ function buildCorrelationHeatmap(ep) {
   ctx.textAlign = "left";  ctx.fillText("−1", barX, barY + COLORBAR_H + 9);
   ctx.textAlign = "center"; ctx.fillText("0",  barX + barW / 2, barY + COLORBAR_H + 9);
   ctx.textAlign = "right";  ctx.fillText("+1", barX + barW,     barY + COLORBAR_H + 9);
-
-  const rawLabels = Array.from({ length: dims }, (_, d) => rawNames[d] ?? `a${d}`);
 
   canvas.addEventListener("mousemove", e => {
     const rect = canvas.getBoundingClientRect();
@@ -2710,10 +2704,14 @@ function initFrameCounterJump() {
 /* ── Frame values sort ───────────────────────────────────── */
 let _fvSortActive = false;
 
+/* ── Frame values DOM element cache ─────────────────────── */
+// Rebuilt by buildFrameValuesPanel to avoid repeated getElementById in hot path
+let _fvCache = { s: /** @type {Array<{span:Element,bar:Element,chip:Element,mn:number,mx:number}>} */ ([]), a: [] };
+
 function toggleFrameValuesSort() {
   _fvSortActive = !_fvSortActive;
   localStorage.setItem("fvSort", _fvSortActive ? "1" : "0");
-  const btn = document.getElementById("fv-sort-btn");
+  const btn = el("fv-sort-btn");
   if (btn) {
     btn.classList.toggle("active", _fvSortActive);
     btn.title = _fvSortActive ? "Sort by |value| (click to restore order)" : "Sort by absolute value";
@@ -2785,6 +2783,7 @@ function buildFrameValuesPanel(ep) {
 
   if (!sDims && !aDims) { panel.classList.add("hidden"); return; }
 
+  _fvCache = { s: [], a: [] };  // invalidate stale element references
   panel.innerHTML = "";
 
   // Panel header with sort + copy buttons
@@ -2809,6 +2808,7 @@ function buildFrameValuesPanel(ep) {
   }
 
   const makeChips = (data2d, dims, names, prefix) => {
+    _fvCache[prefix] = [];
     const section = document.createElement("div");
     section.className = "fv-section";
     const labelText = prefix === "s" ? "State" : "Action";
@@ -2822,16 +2822,19 @@ function buildFrameValuesPanel(ep) {
       chip.id = `fv-${prefix}-${d}`;
       chip.title = `min: ${min.toFixed(4)}  max: ${max.toFixed(4)}\nmean: ${mean.toFixed(4)}  std: ${std.toFixed(4)}\nClick to copy current value`;
       chip.style.cursor = "pointer";
-      chip.dataset.min = min;
-      chip.dataset.max = max;
-      chip.innerHTML =
-        `<div class="fv-top">` +
-        `<span class="fv-dim" style="color:${PALETTE[d % PALETTE.length]}">${names[d] ?? `${prefix}${d}`}</span>` +
-        `<span class="fv-val" id="fv-${prefix}v-${d}">—</span>` +
-        `</div>` +
-        `<div class="fv-bar"><div class="fv-bar-fill" id="fv-${prefix}b-${d}" style="background:${PALETTE[d % PALETTE.length]}"></div></div>`;
+      const span = document.createElement("span");
+      span.className = "fv-val";
+      span.textContent = "—";
+      const barFill = document.createElement("div");
+      barFill.className = "fv-bar-fill";
+      barFill.style.background = PALETTE[d % PALETTE.length];
+      chip.innerHTML = `<div class="fv-top"><span class="fv-dim" style="color:${PALETTE[d % PALETTE.length]}">${names[d] ?? `${prefix}${d}`}</span></div><div class="fv-bar"></div>`;
+      chip.querySelector(".fv-top").appendChild(span);
+      chip.querySelector(".fv-bar").appendChild(barFill);
+      // Cache direct element references for fast hot-path updates
+      _fvCache[prefix][d] = { span, bar: barFill, chip, mn: min, mx: max };
       chip.addEventListener("click", async () => {
-        const val = document.getElementById(`fv-${prefix}v-${d}`)?.textContent;
+        const val = span.textContent;
         if (val && val !== "—") {
           try { await navigator.clipboard.writeText(val); } catch (_) {}
           showCopyToast(`✓ ${names[d] ?? `${prefix}${d}`}: ${val}`, "success");
@@ -2867,32 +2870,30 @@ function updateFrameValues() {
 
   const updateDim = (prefix, row, nsKey) => {
     if (!row) return;
+    const cache = _fvCache[prefix];
+    if (!cache?.length) return;
     const vals = [];
     row.forEach((v, d) => {
+      const entry = cache[d];
+      if (!entry) return;
       const nv = applyNorm(v, nsKey, d);
-      const span = document.getElementById(`fv-${prefix}v-${d}`);
-      if (span) span.textContent = nv.toFixed(4);
-      const bar = document.getElementById(`fv-${prefix}b-${d}`);
-      if (bar) {
-        const chip = document.getElementById(`fv-${prefix}-${d}`);
-        const mn = parseFloat(chip?.dataset.min ?? "0");
-        const mx = parseFloat(chip?.dataset.max ?? "1");
-        const pct = mx !== mn ? clamp((v - mn) / (mx - mn), 0, 1) * 100 : 50;
-        bar.style.width = pct + "%";
-      }
+      entry.span.textContent = nv.toFixed(4);
+      const { mn, mx } = entry;
+      const pct = mx !== mn ? clamp((v - mn) / (mx - mn), 0, 1) * 100 : 50;
+      entry.bar.style.width = pct + "%";
       vals.push({ d, abs: Math.abs(nv) });
     });
     // Apply CSS ordering when sort is active
     if (_fvSortActive) {
       vals.sort((a, b) => b.abs - a.abs);
       vals.forEach(({ d }, order) => {
-        const chip = document.getElementById(`fv-${prefix}-${d}`);
-        if (chip) chip.style.order = order;
+        const entry = cache[d];
+        if (entry) entry.chip.style.order = order;
       });
     } else {
       vals.forEach(({ d }) => {
-        const chip = document.getElementById(`fv-${prefix}-${d}`);
-        if (chip) chip.style.order = "";
+        const entry = cache[d];
+        if (entry) entry.chip.style.order = "";
       });
     }
   };
