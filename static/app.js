@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v61
+   LeRobot Visualizer — app.js  v62
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -120,6 +120,8 @@ const isHidden = id => el(id)?.classList.contains("hidden") ?? true;
 const truncate = (str, maxLen) => str?.length > maxLen ? str.slice(0, maxLen - 1) + "…" : (str ?? "");
 const capitalize = s => s ? s[0].toUpperCase() + s.slice(1) : s;
 const epStr = idx => `ep_${String(idx).padStart(6, "0")}`;
+const lsBool = k => localStorage.getItem(k) === "1";
+const lsFlag = (k, v) => localStorage.setItem(k, v ? "1" : "0");
 
 function debounce(fn, ms) {
   let t;
@@ -265,7 +267,7 @@ function applyDark(isDark, save = true) {
   dmBtn.querySelector(".icon-sun").classList.toggle("hidden", !isDark);
   dmBtn.setAttribute("aria-pressed", isDark);
   if (save) {
-    localStorage.setItem("darkMode", isDark ? "1" : "0");
+    lsFlag("darkMode", isDark);
     if (state.episode) {
       buildCharts(state.episode);
       if (!isHidden("timedim-card")) buildTimeDimHeatmap(state.episode);
@@ -282,7 +284,7 @@ function toggleDarkMode() {
 function toggleSidebar() {
   const collapsed = el("main").classList.toggle("sidebar-collapsed");
   el("sidebar-toggle").setAttribute("aria-pressed", collapsed);
-  localStorage.setItem("sidebarCollapsed", collapsed ? "1" : "0");
+  lsFlag("sidebarCollapsed", collapsed);
 }
 
 function initSidebarState() {
@@ -562,7 +564,7 @@ async function loadDatasets() {
       const node = buildDatasetNode(ds);
       // Restore expansion state from localStorage
       const dsExpandKey = `ds-expand-${ds.path}`;
-      if (localStorage.getItem(dsExpandKey) === "1") {
+      if (lsBool(dsExpandKey)) {
         node.classList.add("open");
         // Trigger load
         node.querySelector(".ds-header")?.click();
@@ -673,7 +675,7 @@ function buildDatasetNode(ds) {
     node.classList.toggle("open");
     // Persist dataset expansion state
     const dsExpandKey = `ds-expand-${ds.path}`;
-    localStorage.setItem(dsExpandKey, isOpening ? "1" : "0");
+    lsFlag(dsExpandKey, isOpening);
     if (!loaded) {
       loaded = true;
       try {
@@ -706,7 +708,7 @@ function buildTaskNode(dsPath, task, allLengths = [], fps = 10) {
   const group = document.createElement("div");
   group.className = "task-group";
   const _tgKey = `tg-${dsPath}-${task.task_index ?? task.task.slice(0, 32)}`;
-  if (localStorage.getItem(_tgKey) === "1") group.classList.add("open");
+  if (lsBool(_tgKey)) group.classList.add("open");
   const shortTask = truncate(task.task, 72);
   group.dataset.task = task.task.toLowerCase();
   let minLen = Infinity, maxLen = -Infinity, totalFrames = 0;
@@ -804,7 +806,7 @@ function buildTaskNode(dsPath, task, allLengths = [], fps = 10) {
   header.addEventListener("click", () => {
     const open = group.classList.toggle("open");
     header.setAttribute("aria-expanded", open ? "true" : "false");
-    try { localStorage.setItem(_tgKey, open ? "1" : "0"); } catch (_) {}
+    try { lsFlag(_tgKey, open); } catch (_) {}
   });
   header.addEventListener("keydown", e => {
     if (e.key === "Enter" || e.key === " ") {
@@ -1852,7 +1854,7 @@ function _updateNormalizeButtonUI() {
 
 function toggleNormalize() {
   state.normalizeEnabled = !state.normalizeEnabled;
-  localStorage.setItem("normalize", state.normalizeEnabled ? "1" : "0");
+  lsFlag("normalize", state.normalizeEnabled);
   _updateNormalizeButtonUI();
   if (state.episode) {
     buildCharts(state.episode);
@@ -1863,15 +1865,22 @@ function toggleNormalize() {
 
 function toggleExpand(type) {
   state[`${type}Expanded`] = !state[`${type}Expanded`];
-  localStorage.setItem(`expand_${type}`, state[`${type}Expanded`] ? "1" : "0");
+  lsFlag(`expand_${type}`, state[`${type}Expanded`]);
   rebuildChartsFor(type);
 }
 
 function toggleHistogram(type) {
   const key = `hist${capitalize(type)}`;
   state[key] = !state[key];
-  localStorage.setItem(`hist_${type}`, state[key] ? "1" : "0");
+  lsFlag(`hist_${type}`, state[key]);
   rebuildChartsFor(type);
+}
+
+function toggleLooping() {
+  state.looping = !state.looping;
+  el("btn-loop").classList.toggle("active", state.looping);
+  el("btn-loop").setAttribute("aria-pressed", state.looping);
+  lsFlag("loop", state.looping);
 }
 
 function buildChartCard(type, data2d, names, normalized, ep, cmpData2d = null, normBand = null) {
@@ -2707,7 +2716,7 @@ let _fvCache = { s: /** @type {Array<{span:Element,bar:Element,chip:Element,mn:n
 
 function toggleFrameValuesSort() {
   _fvSortActive = !_fvSortActive;
-  localStorage.setItem("fvSort", _fvSortActive ? "1" : "0");
+  lsFlag("fvSort", _fvSortActive);
   const btn = el("fv-sort-btn");
   if (btn) {
     btn.classList.toggle("active", _fvSortActive);
@@ -3024,10 +3033,9 @@ function initPlaybackPreferences() {
     state.speed = savedSpeed;
     el("speed-select").value = savedSpeed;
   }
-  const savedLoop = localStorage.getItem("loop") === "1";
-  state.looping = savedLoop;
-  el("btn-loop").classList.toggle("active", savedLoop);
-  el("btn-loop").setAttribute("aria-pressed", savedLoop);
+  state.looping = lsBool("loop");
+  el("btn-loop").classList.toggle("active", state.looping);
+  el("btn-loop").setAttribute("aria-pressed", state.looping);
 
   // Restore normalize preference (hash URL takes priority, but localStorage covers no-hash case)
   const savedNorm = localStorage.getItem("normalize");
@@ -3050,26 +3058,26 @@ document.addEventListener("DOMContentLoaded", () => {
   loadRecentEpisodes();
   updateRecentSection();
   // Restore mirror mode
-  _mirrorMode = localStorage.getItem("mirrorMode") === "1";
+  _mirrorMode = lsBool("mirrorMode");
   if (_mirrorMode) _applyMirrorMode(true);
 
   // Restore persisted chart UI states
-  state.stateExpanded  = localStorage.getItem("expand_state")  === "1";
-  state.actionExpanded = localStorage.getItem("expand_action") === "1";
-  state.histState  = localStorage.getItem("hist_state")  === "1";
-  state.histAction = localStorage.getItem("hist_action") === "1";
+  state.stateExpanded  = lsBool("expand_state");
+  state.actionExpanded = lsBool("expand_action");
+  state.histState  = lsBool("hist_state");
+  state.histAction = lsBool("hist_action");
 
   // Restore frame values sort preference
-  _fvSortActive = localStorage.getItem("fvSort") === "1";
+  _fvSortActive = lsBool("fvSort");
 
   // Restore corr/timedim open state (will take effect after episode loads)
-  if (localStorage.getItem("corrOpen") === "1") {
+  if (lsBool("corrOpen")) {
     el("corr-body")?.classList.remove("corr-collapsed");
     if (el("corr-section")) el("corr-section").dataset.open = "1";
     el("corr-close")?.classList.add("active");
     el("corr-close")?.setAttribute("aria-expanded", "true");
   }
-  if (localStorage.getItem("timedimOpen") === "1") {
+  if (lsBool("timedimOpen")) {
     el("timedim-body")?.classList.remove("timedim-collapsed");
     if (el("timedim-card")) el("timedim-card").dataset.open = "1";
     el("timedim-toggle")?.classList.add("active");
@@ -3110,18 +3118,13 @@ document.addEventListener("DOMContentLoaded", () => {
     el("btn-play").setAttribute("aria-label", state.playing ? "Pause playback" : "Start playback");
   });
   el("btn-rewind").addEventListener("click", () => { stopPlayback(); setFrame(0); });
-  el("btn-loop").addEventListener("click", () => {
-    state.looping = !state.looping;
-    el("btn-loop").classList.toggle("active", state.looping);
-    el("btn-loop").setAttribute("aria-pressed", state.looping);
-    localStorage.setItem("loop", state.looping ? "1" : "0");
-  });
+  el("btn-loop").addEventListener("click", toggleLooping);
   el("btn-prev-ep").addEventListener("click", prevEpisode);
   el("btn-next-ep").addEventListener("click", nextEpisode);
 
   // FPS badge click toggles loop (convenient during playback)
   el("fps-badge")?.addEventListener("click", () => {
-    el("btn-loop").click();
+    toggleLooping();
     showCopyToast(state.looping ? "Loop on" : "Loop off");
   });
   el("btn-export").addEventListener("click", exportFrame);
@@ -3203,7 +3206,7 @@ document.addEventListener("DOMContentLoaded", () => {
     el("corr-section").dataset.open = nowCollapsed ? "" : "1";
     el("corr-close").classList.toggle("active", !nowCollapsed);
     el("corr-close").setAttribute("aria-expanded", String(!nowCollapsed));
-    localStorage.setItem("corrOpen", nowCollapsed ? "0" : "1");
+    lsFlag("corrOpen", !nowCollapsed);
     if (!nowCollapsed && state.episode) buildCorrelationHeatmap(state.episode);
   });
 
@@ -3214,7 +3217,7 @@ document.addEventListener("DOMContentLoaded", () => {
     card.dataset.open = nowCollapsed ? "" : "1";
     el("timedim-toggle").classList.toggle("active", !nowCollapsed);
     el("timedim-toggle").setAttribute("aria-expanded", String(!nowCollapsed));
-    localStorage.setItem("timedimOpen", nowCollapsed ? "0" : "1");
+    lsFlag("timedimOpen", !nowCollapsed);
     if (!nowCollapsed && state.episode) buildTimeDimHeatmap(state.episode);
   });
 
@@ -3327,10 +3330,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (e.key === "l" || e.key === "L") {
       e.preventDefault();
-      state.looping = !state.looping;
-      el("btn-loop").classList.toggle("active", state.looping);
-      el("btn-loop").setAttribute("aria-pressed", state.looping);
-      localStorage.setItem("loop", state.looping ? "1" : "0");
+      toggleLooping();
       return;
     }
     if (e.key === "h" || e.key === "H") {
@@ -3504,7 +3504,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.key === "m" || e.key === "M") {
       e.preventDefault();
       _mirrorMode = !_mirrorMode;
-      try { localStorage.setItem("mirrorMode", _mirrorMode ? "1" : "0"); } catch (_) {}
+      try { lsFlag("mirrorMode", _mirrorMode); } catch (_) {}
       _applyMirrorMode(_mirrorMode);
       showCopyToast(_mirrorMode ? "Mirror mode on — labels hidden" : "Mirror mode off");
       return;
