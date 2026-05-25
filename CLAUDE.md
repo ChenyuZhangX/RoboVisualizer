@@ -2,7 +2,7 @@
 
 ## Current State
 
-**Version**: app.js v95, style.css v88, index.html updated
+**Version**: app.js v97, style.css v88, index.html updated
 **Status**: Fully functional with annotation system, JSON viewer, and extensive keyboard navigation
 
 ### Architecture
@@ -117,7 +117,25 @@ lsBool(k)              // localStorage bool persistence
 - Progress timeline (green = full, amber = partial)
 - Keyboard shortcuts (A for tab, Del to clear)
 
-### Session 3: JSON Viewer & Polish (Latest)
+### Session 5: Resolution Fix, Droid Dataset & Per-Dataset Config (Latest)
+- **Full-resolution re-downloads**: All datasets now at native resolution (was 128×128):
+  - `libero_10_sample` — Franka Panda, 2 tasks × 2 eps, **256×256**, 2 cameras (Camera + Wrist)
+  - `aloha_sim_multi` — ALOHA bimanual, 2 tasks × 2 eps, **640×480**, 1 camera (Top View)
+  - `ucsd_kitchen_sample` — real kitchen, 2 tasks × 2 eps, **640×480**, 1 camera
+  - `droid_sample` — DAVIAN-Robotics/droid_v3 Franka, 4 tasks, **320×180**, **3 cameras** (Wrist/Exterior 1/Exterior 2)
+- **Per-dataset config system** (`meta/config.json`): stores `camera_labels` for human-readable display names
+  - Server: `GET/PUT /api/datasets/{dataset}/config` endpoints with auto-defaults
+  - Frontend: `state.datasetConfig`, `camLabel(key)` helper replaces `unslug(key)` for all camera labels (v97)
+  - All existing datasets have `meta/config.json` auto-generated
+- **Fixed JSON viewer crash** (v96): `insertBefore(filterInput, rightGroup)` before `rightGroup` was appended → DOM error on every frame render. Fixed to sequential `appendChild`.
+- **Fixed utils.py**: actual image H×W stored in `info.json` instead of hardcoded 256×256
+- **Tool updates**: `download_v3_dataset.py` defaults to native resolution (0×0), writes `meta/config.json`; `merge_datasets.py` merges camera labels from source configs
+
+### Session 4: Multi-Task Datasets (Previous)
+- **3 multi-task datasets downloaded** with real camera frames (PyAV MP4 decoding)
+- **New tools**: `tools/download_v3_dataset.py` (v3.0→v2.0 with PyAV), `tools/merge_datasets.py` (combine v2.0 datasets)
+
+### Session 3: JSON Viewer & Polish
 - **Filter/search**: search Parquet columns by name (re-renders from cache)
 - **Delta display**: green/red badges for frame-to-frame numeric changes
 - **Persistence**: remember JSON viewer open/closed state (localStorage)

@@ -112,6 +112,7 @@ class LeRobotWriter:
         self._global_idx: int = 0
         self._ep_idx: int = 0
         self._schema: pa.Schema | None = None
+        self._img_hw: dict[str, tuple[int, int]] = {}   # key → (H, W)
 
         (self.out / "data").mkdir(parents=True, exist_ok=True)
         (self.out / "meta").mkdir(parents=True, exist_ok=True)
@@ -145,6 +146,12 @@ class LeRobotWriter:
         action_dim = len(frames[0]["actions"].flatten())
         if self._schema is None:
             self._schema = build_schema(self.image_keys, state_dim, action_dim)
+        # Capture actual image H×W from first frame of first episode
+        if not self._img_hw:
+            for k in self.image_keys:
+                arr = frames[0].get(k)
+                if arr is not None and hasattr(arr, "shape") and arr.ndim >= 2:
+                    self._img_hw[k] = (arr.shape[0], arr.shape[1])
 
         # Build columns
         n = len(frames)
@@ -197,9 +204,10 @@ class LeRobotWriter:
 
         features: dict = {}
         for k in (self.image_keys or []):
+            h, w = self._img_hw.get(k, (256, 256))
             features[k] = {
                 "dtype": "image",
-                "shape": [256, 256, 3],
+                "shape": [h, w, 3],
                 "names": ["height", "width", "channel"],
             }
         features["state"] = {

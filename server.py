@@ -10,7 +10,7 @@ from typing import Annotated, Any, List, Optional
 
 import pyarrow as pa
 import pyarrow.parquet as pq
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import Body, FastAPI, HTTPException, Response
 from fastapi import Path as _PathParam
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -34,6 +34,7 @@ _FRAME_CACHE_CONTROL = "max-age=3600, stale-while-revalidate=300"
 _INFO_CACHE: dict[str, dict] = {}
 _TASKS_CACHE: dict[str, list] = {}
 _EPISODES_CACHE: dict[str, list] = {}
+_CONFIG_CACHE: dict[str, dict] = {}
 
 
 def _read_jsonl_cached(cache: dict, base: Path, filename: str) -> list[dict]:
@@ -60,6 +61,37 @@ def read_tasks_cached(base: Path) -> list[dict]:
 
 def read_episodes_cached(base: Path) -> list[dict]:
     return _read_jsonl_cached(_EPISODES_CACHE, base, "episodes.jsonl")
+
+
+def _config_path(base: Path) -> Path:
+    return base / "meta" / "config.json"
+
+
+def _default_cam_label(key: str) -> str:
+    """Convert a raw camera key to a human-readable label."""
+    _MAP = {
+        "image": "Camera", "top": "Top View", "wrist_image": "Wrist Camera",
+        "wrist_left": "Wrist (Left)", "wrist_right": "Wrist (Right)",
+        "exterior_1_left": "Exterior 1", "exterior_2_left": "Exterior 2",
+        "exterior_1_right": "Exterior 1 (R)", "exterior_2_right": "Exterior 2 (R)",
+        "side_image": "Side View", "agentview": "Agent View",
+    }
+    return _MAP.get(key, key.replace("_", " ").title())
+
+
+def read_config_cached(base: Path) -> dict:
+    key = str(base)
+    if key not in _CONFIG_CACHE:
+        p = _config_path(base)
+        stored = json.loads(p.read_text()) if p.exists() else {}
+        # Auto-fill camera labels for any key not already in stored config
+        info = read_info_cached(base)
+        feats = info.get("features", {})
+        cam_keys = [k for k, v in feats.items() if v.get("dtype") == "image"]
+        labels = {k: _default_cam_label(k) for k in cam_keys}
+        labels.update(stored.get("camera_labels", {}))  # stored overrides defaults
+        _CONFIG_CACHE[key] = {**stored, "camera_labels": labels}
+    return _CONFIG_CACHE[key]
 
 # ── Annotation models ─────────────────────────────────────────────────────────
 
@@ -553,6 +585,24 @@ def get_frame_scalar_values(
         else:
             result[col_name] = str(val)
     return result
+
+
+# ── Dataset config API ───────────────────────────────────────────────────────
+
+@app.get("/api/datasets/{dataset}/config")
+def get_dataset_config(dataset: str):
+    base = get_dataset_path(dataset)
+    return read_config_cached(base)
+
+
+@app.put("/api/datasets/{dataset}/config")
+def save_dataset_config(dataset: str, body: dict = Body(...)):
+    base = get_dataset_path(dataset)
+    p = _config_path(base)
+    p.write_text(json.dumps(body, indent=2, ensure_ascii=False))
+    # Invalidate cache so next read picks up new values
+    _CONFIG_CACHE.pop(str(base), None)
+    return {"ok": True}
 
 
 # ── Annotation API ────────────────────────────────────────────────────────────

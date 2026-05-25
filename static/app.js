@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v95
+   LeRobot Visualizer — app.js  v97
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -67,6 +67,7 @@ const state = {
   annotationDirty: false, // true when unsaved changes in current session
   viewerTab: "video",     // "video" | "annotate"
   annFillConfig: {},      // {fieldName: {strategy: "none"|"fixed"|"linear"|"prev", fixedValue: ""}}
+  datasetConfig: {},      // per-dataset config: {camera_labels: {...}, ...}
 };
 
 /* ── Frame navigation history ────────────────────────────── */
@@ -146,6 +147,7 @@ const lsFlag = (k, v) => localStorage.setItem(k, v ? "1" : "0");
 const isoNow = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
 const setDisabled = (ids, disabled) => ids.forEach(id => { const e = el(id); if (e) e.disabled = disabled; });
 const unslug = s => s.replace(/_/g, " ");
+const camLabel = key => state.datasetConfig?.camera_labels?.[key] ?? unslug(key);
 const dsSlug = () => (state.activeDataset ?? "").replace(/[^a-z0-9_-]/gi, "_").slice(0, 32);
 const epPad = (idx = state.activeEpIndex) => String(idx).padStart(6, "0");
 const apiDs = ds => `/api/datasets/${encodeURIComponent(ds)}`;
@@ -1058,8 +1060,12 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
 
   if (dsPath !== state.activeDataset) {
     state.normStats = null;
+    state.datasetConfig = {};
     try {
       state.normStats = await apiFetch(`${apiDs(dsPath)}/norm_stats`);
+    } catch (_) {}
+    try {
+      state.datasetConfig = await apiFetch(`${apiDs(dsPath)}/config`);
     } catch (_) {}
   }
 
@@ -1449,7 +1455,7 @@ function lightboxNavigate(delta) {
   const next = (cur + delta + keys.length) % keys.length;
   const slot = el(`cam-${next}`);
   const img = slot?.querySelector("img");
-  if (img) openLightbox(img.src, unslug(keys[next]), next);
+  if (img) openLightbox(img.src, camLabel(keys[next]), next);
 }
 
 function renderFrameData(keys, frames) {
@@ -1460,7 +1466,7 @@ function renderFrameData(keys, frames) {
     const src = frames[key];
     if (!src) { resetCam(i); return; }
 
-    const keyDisplay = unslug(key);
+    const keyDisplay = camLabel(key);
 
     let img = slot.querySelector("img");
     if (!img) {
@@ -1473,6 +1479,9 @@ function renderFrameData(keys, frames) {
       lbl.className = "cam-label";
       lbl.textContent = keyDisplay;
       slot.appendChild(lbl);
+    } else {
+      const lbl = slot.querySelector(".cam-label");
+      if (lbl) lbl.textContent = keyDisplay;
     }
     img.src = src;
     slot.tabIndex = 0;
@@ -1490,7 +1499,7 @@ function renderFrameData(keys, frames) {
           _downloadDataURI(img.src, `${curKey}_ep${state.activeEpIndex}_f${state.frame}.jpg`);
           showCopyToast(`✓ Saved ${curKey} frame ${state.frame}`, "success");
         } else {
-          openLightbox(img.src, unslug(img.alt), i);
+          openLightbox(img.src, camLabel(img.alt), i);
         }
       });
 
@@ -1498,7 +1507,7 @@ function renderFrameData(keys, frames) {
         if (isActivate(e)) {
           e.preventDefault();
           const img = slot.querySelector("img");
-          if (img?.src) openLightbox(img.src, unslug(img.alt), i);
+          if (img?.src) openLightbox(img.src, camLabel(img.alt), i);
         }
       });
 
@@ -1535,7 +1544,7 @@ async function updateImages() {
       const tsStr = ts != null
         ? ` · ${ts >= 60 ? formatDuration(ts) : ts.toFixed(3) + "s"}  (f${state.frame})`
         : ` (f${state.frame})`;
-      if (key) lbl.textContent = unslug(key) + tsStr;
+      if (key) lbl.textContent = camLabel(key) + tsStr;
     }
   }
 
@@ -4707,7 +4716,7 @@ function _renderFrameJsonViewer(panel, data) {
   rightGroup.appendChild(expandAllBtn);
   rightGroup.appendChild(copyBtn);
   hdr.appendChild(titleSpan);
-  hdr.insertBefore(filterInput, rightGroup);  // filter input left of buttons
+  hdr.appendChild(filterInput);
   hdr.appendChild(rightGroup);
   panel.appendChild(hdr);
 
