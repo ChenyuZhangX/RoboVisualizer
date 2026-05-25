@@ -150,6 +150,7 @@ const setDisabled = (ids, disabled) => ids.forEach(id => { const e = el(id); if 
 const unslug = s => s.replace(/_/g, " ");
 const camLabel = key => state.datasetConfig?.camera_labels?.[key] ?? unslug(key);
 const dsSlug = () => (state.activeDataset ?? "").replace(/[^a-z0-9_-]/gi, "_").slice(0, 32);
+const isSSHDataset = ds => typeof ds === "string" && ds.startsWith("__ssh_") && ds.endsWith("__");
 const epPad = (idx = state.activeEpIndex) => String(idx).padStart(6, "0");
 const apiDs = ds => `/api/datasets/${encodeURIComponent(ds)}`;
 const hasActiveEp = () => !!(state.activeDataset && state.activeEpIndex != null);
@@ -1097,6 +1098,22 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
 
   updatePrevNextButtons();
 
+  let _sshDlPoller = null;
+  if (isSSHDataset(dsPath)) {
+    _sshDlPoller = setInterval(async () => {
+      try {
+        const st = await apiFetch(`/api/ssh/dl_status/${encodeURIComponent(dsPath)}/${epIndex}`, 5000);
+        if (st.cached) { clearInterval(_sshDlPoller); _sshDlPoller = null; return; }
+        if (st.status === "downloading" && st.total > 0) {
+          const mb = v => (v / 1048576).toFixed(1);
+          el("ep-info-strip").innerHTML =
+            `<span class="spinner"></span>` +
+            `<span class="text-muted"> Downloading from remote… ${mb(st.downloaded)} / ${mb(st.total)} MB</span>`;
+        }
+      } catch(_) {}
+    }, 350);
+  }
+
   try {
     const ep = await apiFetch(`${apiDs(dsPath)}/episodes/${epIndex}`);
     state.episode = ep;
@@ -1173,6 +1190,7 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
     el("charts-area").classList.remove("charts-loading");
     state.episode = null;
   } finally {
+    if (_sshDlPoller !== null) { clearInterval(_sshDlPoller); _sshDlPoller = null; }
     if (_loadingEpKey === key) _loadingEpKey = null;
   }
 }

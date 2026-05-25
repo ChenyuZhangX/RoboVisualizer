@@ -7,6 +7,7 @@ import json
 import os
 import re
 import stat as _stat
+import threading
 import time
 import uuid
 from collections import OrderedDict
@@ -113,6 +114,8 @@ SSH_HISTORY_FILE = Path.home() / ".lerobot_visualizer" / "ssh_history.json"
 
 _SSH_SESSIONS: dict[str, dict] = {}      # session_id → {client, sftp, ssh_command, remote_path, label}
 _SSH_DATASET_MAP: dict[str, dict] = {}   # virtual_name → {session_id, remote_path, local_hash}
+_SFTP_DOWNLOADS: dict[str, dict] = {}    # dl_key → {status, downloaded, total, local_path}
+_SSH_SFTP_LOCKS: dict[str, threading.Lock] = {}  # session_id → per-session SFTP lock
 
 
 def _ssh_vname(session_id: str, remote_path: str) -> str:
@@ -123,6 +126,12 @@ def _ssh_vname(session_id: str, remote_path: str) -> str:
 def _ssh_local_dir(session_id: str, remote_path: str) -> Path:
     h = hashlib.md5(f"{session_id}:{remote_path}".encode()).hexdigest()[:8]
     return SSH_CACHE_BASE / session_id / h
+
+
+def _get_sftp_lock(session_id: str) -> threading.Lock:
+    if session_id not in _SSH_SFTP_LOCKS:
+        _SSH_SFTP_LOCKS[session_id] = threading.Lock()
+    return _SSH_SFTP_LOCKS[session_id]
 
 
 def _is_ssh_dataset(base: Path) -> bool:
@@ -165,9 +174,42 @@ def ensure_parquet(base: Path, episode_index: int, info: dict) -> Path:
     entry = _ssh_entry_for(base)
     if entry is None:
         raise HTTPException(404, f"Episode {episode_index} not found")
+    session_id = entry["session_id"]
+    if session_id not in _SSH_SESSIONS:
+        raise HTTPException(503, "SSH session expired — please reconnect")
     chunk = episode_chunk(info, episode_index)
     rel = f"data/chunk-{chunk:03d}/episode_{episode_index:06d}.parquet"
-    return _ensure_remote_file(entry["session_id"], entry["remote_path"], base, rel)
+    dl_key = f"{session_id}:{entry['remote_path']}/{rel}"
+    # If another thread is already downloading this file, wait for it
+    if dl_key in _SFTP_DOWNLOADS and _SFTP_DOWNLOADS[dl_key]["status"] == "downloading":
+        for _ in range(600):   # wait up to 60s
+            time.sleep(0.1)
+            if p.exists():
+                return p
+            if _SFTP_DOWNLOADS.get(dl_key, {}).get("status") != "downloading":
+                break
+        if p.exists():
+            return p
+        raise HTTPException(504, "Remote download timed out")
+    # Start download with progress tracking
+    sftp = _SSH_SESSIONS[session_id]["sftp"]
+    remote_path = entry["remote_path"].rstrip("/") + "/" + rel
+    p.parent.mkdir(parents=True, exist_ok=True)
+    _SFTP_DOWNLOADS[dl_key] = {"status": "downloading", "downloaded": 0, "total": 0, "local_path": str(p)}
+    lock = _get_sftp_lock(session_id)
+    def _progress(downloaded: int, total: int) -> None:
+        _SFTP_DOWNLOADS[dl_key].update({"downloaded": downloaded, "total": total})
+    try:
+        with lock:
+            sftp.get(remote_path, str(p), callback=_progress)
+        _SFTP_DOWNLOADS[dl_key]["status"] = "done"
+    except Exception as exc:
+        _SFTP_DOWNLOADS[dl_key]["status"] = "error"
+        _SFTP_DOWNLOADS[dl_key]["error"] = str(exc)
+        if p.exists():
+            p.unlink(missing_ok=True)
+        raise HTTPException(404, f"Remote file unavailable: {rel} ({exc})") from exc
+    return p
 
 
 def _parse_ssh_command(ssh_command: str) -> tuple[str, str | None, int]:
@@ -273,8 +315,18 @@ def _discover_remote_datasets(sftp: Any, root_path: str, max_depth: int = 7) -> 
             except Exception:
                 pass
         for e in entries:
-            if _stat.S_ISDIR(e.st_mode) and not e.filename.startswith("."):
+            if e.filename.startswith("."):
+                continue
+            if _stat.S_ISDIR(e.st_mode):
                 _walk(path + "/" + e.filename, depth + 1)
+            elif _stat.S_ISLNK(e.st_mode):
+                # Follow symlinks — they may point to dataset directories
+                try:
+                    target = sftp.stat(path + "/" + e.filename)
+                    if _stat.S_ISDIR(target.st_mode):
+                        _walk(path + "/" + e.filename, depth + 1)
+                except Exception:
+                    pass
     _walk(root_path.rstrip("/"), 0)
     return results
 
@@ -1123,6 +1175,19 @@ def discover_ssh_datasets(session_id: str):
         })
     # Update session's list in _SSH_SESSIONS (for listing)
     _SSH_SESSIONS[session_id]["datasets"] = results
+    # Background-prefetch episode 0 for each dataset so first click feels instant
+    def _prefetch_all():
+        for ds in results:
+            vname = ds["virtual_name"]
+            if vname not in _SSH_DATASET_MAP:
+                continue
+            try:
+                base = _ssh_local_dir(session_id, ds["remote_path"])
+                info = read_info_cached(base)
+                ensure_parquet(base, 0, info)
+            except Exception:
+                pass
+    threading.Thread(target=_prefetch_all, daemon=True).start()
     return results
 
 
@@ -1130,6 +1195,34 @@ def discover_ssh_datasets(session_id: str):
 def get_ssh_dataset_meta(virtual_name: str):
     """Redirect to the standard meta endpoint using virtual name."""
     return get_dataset_meta(virtual_name)
+
+
+@app.get("/api/ssh/dl_status/{dataset}/{episode_index}")
+def ssh_dl_status(dataset: str, episode_index: Annotated[int, _PathParam(ge=0)]):
+    """Return download progress for a remote episode parquet file."""
+    if dataset not in _SSH_DATASET_MAP:
+        return {"cached": True}  # local dataset
+    entry = _SSH_DATASET_MAP[dataset]
+    base = _ssh_local_dir(entry["session_id"], entry["remote_path"])
+    if not is_valid_dataset(base):
+        raise HTTPException(404, "Dataset not cached")
+    info = read_info_cached(base)
+    p = parquet_path_for(base, episode_index, info)
+    if p.exists():
+        return {"cached": True, "size": p.stat().st_size}
+    chunk = episode_chunk(info, episode_index)
+    rel = f"data/chunk-{chunk:03d}/episode_{episode_index:06d}.parquet"
+    dl_key = f"{entry['session_id']}:{entry['remote_path']}/{rel}"
+    if dl_key in _SFTP_DOWNLOADS:
+        dl = _SFTP_DOWNLOADS[dl_key]
+        return {
+            "cached": False,
+            "status": dl["status"],
+            "downloaded": dl.get("downloaded", 0),
+            "total": dl.get("total", 0),
+            "error": dl.get("error"),
+        }
+    return {"cached": False, "status": "not_started"}
 
 
 # ── Static files ─────────────────────────────────────────────────────────────
