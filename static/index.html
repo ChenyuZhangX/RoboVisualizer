@@ -6,28 +6,28 @@
   <meta name="description" content="Interactive visualizer for LeRobot robot learning datasets — browse episodes, inspect state/action trajectories, and view camera frames." />
   <meta name="color-scheme" content="light dark" />
   <title>LeRobot Visualizer</title>
-  <link rel="stylesheet" href="/style.css?v=68" />
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
-  <script src="/app.js?v=70"></script>
+  <link rel="stylesheet" href="/style.css?v=86" />
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <script defer src="/app.js?v=93"></script>
 </head>
 <body>
   <div id="app">
     <!-- Header -->
     <header id="topbar">
-      <button id="sidebar-toggle" class="icon-btn" title="Toggle sidebar" aria-label="Toggle sidebar" aria-pressed="false">
+      <button type="button" id="sidebar-toggle" class="icon-btn" title="Toggle sidebar" aria-label="Toggle sidebar" aria-pressed="false">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/>
         </svg>
       </button>
       <div class="logo">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>
         </svg>
         LeRobot Visualizer
       </div>
       <div id="topbar-ep-info" class="topbar-ep-info hidden"></div>
       <div class="topbar-spacer"></div>
-      <button id="dark-mode-btn" class="icon-btn" title="Toggle dark mode  Ctrl+D" aria-label="Toggle dark mode" aria-pressed="false">
+      <button type="button" id="dark-mode-btn" class="icon-btn" title="Toggle dark mode  Ctrl+D" aria-label="Toggle dark mode" aria-pressed="false">
         <svg class="icon-moon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
         <svg class="icon-sun hidden" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
       </button>
@@ -38,10 +38,10 @@
       <aside id="sidebar">
         <div id="sidebar-header">
           <span class="sidebar-title">Datasets</span>
-          <button id="collapse-all-btn" class="icon-btn-sm" title="Collapse all tasks" aria-label="Collapse all task groups">
+          <button type="button" id="collapse-all-btn" class="icon-btn-sm" title="Collapse all tasks" aria-label="Collapse all task groups">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="10" y1="14" x2="21" y2="3"/><line x1="3" y1="21" x2="14" y2="10"/></svg>
           </button>
-          <button id="refresh-btn" class="icon-btn-sm" title="Refresh datasets" aria-label="Refresh dataset list">
+          <button type="button" id="refresh-btn" class="icon-btn-sm" title="Refresh datasets" aria-label="Refresh dataset list">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
             </svg>
@@ -52,7 +52,7 @@
           <div class="search-wrap">
             <svg class="search-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input type="text" id="search-input" placeholder="Filter tasks… (use >Nf or <Nf to filter by length)" autocomplete="off" spellcheck="false" aria-label="Search tasks and filter by length" role="searchbox" title="Type to filter tasks. Use &gt;Nf or &lt;Nf to filter by frame count (e.g. &gt;200f shows only episodes with &gt;200 frames)" />
-            <button id="search-clear" class="search-clear hidden" title="Clear">
+            <button type="button" id="search-clear" class="search-clear hidden" title="Clear">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
@@ -81,19 +81,20 @@
             <div id="viewer-header">
               <div id="task-label" role="button" tabindex="0" aria-label="Task description — click to copy"></div>
               <div id="viewer-actions" role="toolbar" aria-label="Episode actions">
-                <button id="btn-copy-url" class="icon-btn-sm" title="Copy episode URL  C" aria-label="Copy episode URL">
+                <button type="button" id="btn-copy-url" class="icon-btn-sm" title="Copy episode URL  C" aria-label="Copy episode URL">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
                 </button>
-                <button id="btn-csv" class="icon-btn-sm" title="Export episode as CSV  X" aria-label="Export episode as CSV">
+                <button type="button" id="btn-csv" class="icon-btn-sm" title="Export episode as CSV  X" aria-label="Export episode as CSV">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
                 </button>
-                <button id="btn-normalize" class="icon-btn-sm active" title="Toggle normalization  N" aria-label="Toggle normalization" aria-pressed="true">
+                <button type="button" id="btn-normalize" class="icon-btn-sm active" title="Toggle normalization  N" aria-label="Toggle normalization" aria-pressed="true">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="12" x2="2" y2="12"/><polyline points="16 6 22 12 16 18"/><polyline points="8 6 2 12 8 18"/></svg>
                 </button>
-                <button id="btn-frame-values" class="icon-btn-sm active" title="Toggle frame values panel  V" aria-label="Toggle frame values panel" aria-pressed="true">
+                <button type="button" id="btn-frame-values" class="icon-btn-sm active" title="Toggle frame values panel  V" aria-label="Toggle frame values panel" aria-pressed="true">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
                 </button>
-                <button id="btn-export" class="icon-btn-sm" title="Export current frame as PNG  Ctrl+S" aria-label="Export current frame as PNG">
+                <button type="button" id="btn-frame-json" class="icon-btn-sm" title="Toggle raw frame data  Z" aria-label="Toggle raw frame data viewer" aria-pressed="false"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button>
+                <button type="button" id="btn-export" class="icon-btn-sm" title="Export current frame as PNG  Ctrl+S" aria-label="Export current frame as PNG">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 </button>
               </div>
@@ -105,27 +106,42 @@
             <!-- Compare banner -->
             <div id="compare-banner" class="hidden" aria-live="polite" role="status">
               <span id="compare-label"></span>
-              <button id="compare-clear" title="Clear comparison  Esc" aria-label="Clear comparison overlay">
+              <button type="button" id="compare-clear" title="Clear comparison  Esc" aria-label="Clear comparison overlay">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
             </div>
 
-            <!-- Camera views -->
+            <!-- Viewer tab bar -->
+            <div id="viewer-tabs" class="viewer-tabs hidden" role="tablist" aria-label="Viewer mode">
+              <button type="button" class="viewer-tab active" id="vtab-video" role="tab" aria-selected="true" aria-controls="vtab-panel-video" data-tab="video">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+                Video
+              </button>
+              <button type="button" class="viewer-tab" id="vtab-annotate" role="tab" aria-selected="false" aria-controls="vtab-panel-annotate" data-tab="annotate">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                Annotate
+              </button>
+            </div>
+
+            <!-- Camera views (shared across tabs) -->
             <div id="cameras"></div>
 
-            <!-- Charts -->
+            <!-- Annotation panel (visible in Annotate tab) -->
+            <div id="annotation-panel" class="annotation-panel hidden" role="tabpanel" aria-labelledby="vtab-annotate"></div>
+
+            <!-- Charts (visible in Video tab) -->
             <div id="charts-area">
               <div class="chart-card" id="chart-card-state" role="region" aria-labelledby="chart-title-state">
                 <div class="chart-title-bar">
                   <span class="chart-title-text" id="chart-title-state">State</span>
                   <div class="chart-btn-group">
-                    <button class="chart-tool-btn" id="hist-state" title="Toggle histogram  H" aria-label="Toggle state histogram">
+                    <button type="button" class="chart-tool-btn" id="hist-state" title="Toggle histogram  H" aria-label="Toggle state histogram">
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="12" width="4" height="9"/><rect x="10" y="7" width="4" height="14"/><rect x="17" y="3" width="4" height="18"/></svg>
                     </button>
-                    <button class="chart-tool-btn" id="dl-state" title="Download chart as PNG" aria-label="Download state chart">
+                    <button type="button" class="chart-tool-btn" id="dl-state" title="Download chart as PNG" aria-label="Download state chart">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                     </button>
-                    <button class="expand-btn" id="expand-state" title="Split by dimension  E" aria-label="Toggle split view for state chart">
+                    <button type="button" class="expand-btn" id="expand-state" title="Split by dimension  E" aria-label="Toggle split view for state chart">
                       <svg class="icon-expand" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
                       <svg class="icon-collapse hidden" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
                     </button>
@@ -137,13 +153,13 @@
                 <div class="chart-title-bar">
                   <span class="chart-title-text" id="chart-title-action">Action</span>
                   <div class="chart-btn-group">
-                    <button class="chart-tool-btn" id="hist-action" title="Toggle histogram  ⇧H" aria-label="Toggle action histogram">
+                    <button type="button" class="chart-tool-btn" id="hist-action" title="Toggle histogram  ⇧H" aria-label="Toggle action histogram">
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="12" width="4" height="9"/><rect x="10" y="7" width="4" height="14"/><rect x="17" y="3" width="4" height="18"/></svg>
                     </button>
-                    <button class="chart-tool-btn" id="dl-action" title="Download chart as PNG" aria-label="Download action chart">
+                    <button type="button" class="chart-tool-btn" id="dl-action" title="Download chart as PNG" aria-label="Download action chart">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                     </button>
-                    <button class="expand-btn" id="expand-action" title="Split by dimension  ⇧E" aria-label="Toggle split view for action chart">
+                    <button type="button" class="expand-btn" id="expand-action" title="Split by dimension  ⇧E" aria-label="Toggle split view for action chart">
                       <svg class="icon-expand" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
                       <svg class="icon-collapse hidden" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
                     </button>
@@ -158,10 +174,10 @@
               <div class="chart-title-bar">
                 <span class="chart-title-text">Action Correlation</span>
                 <div class="chart-btn-group">
-                  <button class="chart-tool-btn" id="dl-corr" title="Download correlation matrix as PNG" aria-label="Download correlation matrix">
+                  <button type="button" class="chart-tool-btn" id="dl-corr" title="Download correlation matrix as PNG" aria-label="Download correlation matrix">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                   </button>
-                  <button class="expand-btn" id="corr-close" title="Toggle correlation  K" aria-label="Toggle correlation matrix" aria-expanded="false">
+                  <button type="button" class="expand-btn" id="corr-close" title="Toggle correlation  K" aria-label="Toggle correlation matrix" aria-expanded="false">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
                   </button>
                 </div>
@@ -177,10 +193,10 @@
                   <span class="chart-title-sub">time × dim</span>
                 </span>
                 <div class="chart-btn-group">
-                  <button class="chart-tool-btn" id="dl-timedim" title="Download heatmap as PNG" aria-label="Download action heatmap">
+                  <button type="button" class="chart-tool-btn" id="dl-timedim" title="Download heatmap as PNG" aria-label="Download action heatmap">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                   </button>
-                  <button class="expand-btn" id="timedim-toggle" title="Toggle heatmap  T" aria-label="Toggle action heatmap" aria-expanded="false">
+                  <button type="button" class="expand-btn" id="timedim-toggle" title="Toggle heatmap  T" aria-label="Toggle action heatmap" aria-expanded="false">
                     <svg class="icon-expand" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
                   </button>
                 </div>
@@ -188,27 +204,28 @@
               <div id="timedim-body"></div>
             </div>
 
-            <!-- Frame values panel -->
+            <!-- Frame JSON viewer (raw Parquet row viewer) -->
             <div id="frame-values-panel" class="frame-values-panel hidden"></div>
+            <div id="frame-json-viewer" class="frame-json-viewer hidden" aria-label="Raw frame data"></div>
           </div>
 
           <!-- Sticky playback footer -->
           <div id="viewer-footer">
             <div id="controls" role="toolbar" aria-label="Playback controls">
-              <button id="btn-prev-ep" class="ctrl-btn" title="Previous episode  [" aria-label="Previous episode">
+              <button type="button" id="btn-prev-ep" class="ctrl-btn" title="Previous episode  [" aria-label="Previous episode">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
               </button>
-              <button id="btn-rewind" class="ctrl-btn" title="Rewind  R" aria-label="Rewind to start">
+              <button type="button" id="btn-rewind" class="ctrl-btn" title="Rewind  R" aria-label="Rewind to start">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M11 19V5l-9 7 9 7zm9-14v14l-9-7 9-7z"/></svg>
               </button>
-              <button id="btn-play" class="ctrl-btn primary" title="Play/Pause  Space" aria-label="Play or pause">
+              <button type="button" id="btn-play" class="ctrl-btn primary" title="Play/Pause  Space" aria-label="Play or pause">
                 <svg id="play-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
                 <svg id="pause-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" class="hidden"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
               </button>
-              <button id="btn-loop" class="ctrl-btn" title="Toggle loop  L" aria-label="Toggle loop" aria-pressed="false">
+              <button type="button" id="btn-loop" class="ctrl-btn" title="Toggle loop  L" aria-label="Toggle loop" aria-pressed="false">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
               </button>
-              <button id="btn-next-ep" class="ctrl-btn" title="Next episode  ]" aria-label="Next episode">
+              <button type="button" id="btn-next-ep" class="ctrl-btn" title="Next episode  ]" aria-label="Next episode">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zm2-6 6-4.33v8.67L8 12zm8-6h2v12h-2z"/></svg>
               </button>
               <select id="speed-select" title="Playback speed" aria-label="Playback speed">
@@ -221,7 +238,7 @@
               <input type="range" id="scrubber" min="0" value="0" step="1" role="slider" aria-label="Frame position scrubber" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" />
               <span id="fps-badge" class="fps-badge hidden" aria-live="off" title="Click to toggle loop"></span>
               <span id="frame-counter" class="frame-count" role="button" tabindex="0" aria-label="Frame position — click to jump to frame" title="Click to jump to frame or timestamp (e.g. 1:30 = 1 min 30s)  Ctrl+J">0 / 0</span>
-              <button id="btn-shortcuts" class="ctrl-btn" title="Keyboard shortcuts  ?" aria-label="Show keyboard shortcuts" aria-expanded="false" aria-controls="shortcuts-modal">
+              <button type="button" id="btn-shortcuts" class="ctrl-btn" title="Keyboard shortcuts  ?" aria-label="Show keyboard shortcuts" aria-expanded="false" aria-controls="shortcuts-modal">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/></svg>
               </button>
             </div>
@@ -248,7 +265,7 @@
         <tr><td><kbd>⇧R</kbd></td><td>Load a random episode</td></tr>
         <tr><td><kbd>Ctrl</kbd>+<kbd>R</kbd></td><td>Reload current episode</td></tr>
         <tr><td><kbd>Ctrl</kbd>+<kbd>M</kbd></td><td>Jump to midpoint</td></tr>
-        <tr><td><kbd>Z</kbd></td><td>Rewind and play from start</td></tr>
+        
         <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>Prev / Next episode</td></tr>
         <tr><td><kbd>Backspace</kbd></td><td>Previous episode</td></tr>
         <tr><td><kbd>⇧[</kbd> <kbd>⇧]</kbd></td><td>First / Last episode</td></tr>
@@ -262,9 +279,10 @@
         <tr><td><kbd>D</kbd></td><td>Download current frame / lightbox image</td></tr>
         <tr><td><kbd>/</kbd> / <kbd>G</kbd> / <kbd>Ctrl</kbd>+<kbd>K</kbd></td><td>Focus search</td></tr>
         <tr><td><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>Toggle dark mode</td></tr>
-        <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Export frame as PNG</td></tr>
+        <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Fill &amp; save annotations (Annotate tab) · Export frame as PNG (otherwise)</td></tr>
         <tr><td><kbd>B</kbd></td><td>Toggle sidebar</td></tr>
-        <tr><td><kbd>A</kbd></td><td>Scroll sidebar to current episode</td></tr>
+        <tr><td><kbd>A</kbd></td><td>Switch to Annotate tab (toggle)</td></tr>
+        <tr><td><kbd>Del</kbd> (Annotate tab)</td><td>Clear all annotations for this episode</td></tr>
         <tr><td><kbd>O</kbd></td><td>Isolate current task (collapse others)</td></tr>
         <tr><td><kbd>Alt</kbd>+<kbd>↑</kbd><kbd>↓</kbd></td><td>Navigate between task groups</td></tr>
         <tr><td><kbd>←</kbd><kbd>→</kbd> (task header)</td><td>Expand / collapse task group</td></tr>
@@ -287,6 +305,7 @@
         <tr><td><kbd>F</kbd></td><td>Fullscreen camera / lightbox</td></tr>
         <tr><td><kbd>M</kbd></td><td>Mirror mode: hide labels (for recordings)</td></tr>
         <tr><td><kbd>V</kbd> / <kbd>P</kbd></td><td>Toggle frame values panel</td></tr>
+        <tr><td><kbd>Z</kbd></td><td>Toggle raw frame data viewer</td></tr>
         <tr><td><kbd>0</kbd>–<kbd>9</kbd></td><td>Jump to 0%–90% of episode</td></tr>
         <tr><td><kbd>Esc</kbd></td><td>Close / clear comparison</td></tr>
         <tr><td><kbd>?</kbd></td><td>This dialog</td></tr>
@@ -297,21 +316,21 @@
 
   <!-- Camera lightbox -->
   <div id="cam-lightbox" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="lightbox-label">
-    <button class="lightbox-close-btn" id="lightbox-close-btn" title="Close lightbox (Esc)" aria-label="Close lightbox">
+    <button type="button" class="lightbox-close-btn" id="lightbox-close-btn" title="Close lightbox (Esc)" aria-label="Close lightbox">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
     </button>
-    <button class="lightbox-nav lightbox-prev" title="Previous camera (←)" aria-label="Previous camera">
+    <button type="button" class="lightbox-nav lightbox-prev" title="Previous camera (←)" aria-label="Previous camera">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
     </button>
     <div class="lightbox-box">
       <img id="lightbox-img" alt="" />
       <div id="lightbox-label"></div>
       <div id="lightbox-counter" class="lightbox-counter"></div>
-      <button id="lightbox-dl" class="lightbox-dl-btn" title="Download this frame (D)" aria-label="Download frame image">
+      <button type="button" id="lightbox-dl" class="lightbox-dl-btn" title="Download this frame (D)" aria-label="Download frame image">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       </button>
     </div>
-    <button class="lightbox-nav lightbox-next" title="Next camera (→)" aria-label="Next camera">
+    <button type="button" class="lightbox-nav lightbox-next" title="Next camera (→)" aria-label="Next camera">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
     </button>
   </div>

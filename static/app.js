@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v70
+   LeRobot Visualizer — app.js  v93
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -62,6 +62,11 @@ const state = {
   normalizeEnabled: true,
   loopCount: 0,
   recentEpisodes: [],     // [{dsPath, epIndex, taskText}] - last 8 visited
+  annotationSchema: [],   // [{name, type, options?}]
+  annotations: {},        // {frame_index_str: {field_name: value}}
+  annotationDirty: false, // true when unsaved changes in current session
+  viewerTab: "video",     // "video" | "annotate"
+  annFillConfig: {},      // {fieldName: {strategy: "none"|"fixed"|"linear"|"prev", fixedValue: ""}}
 };
 
 /* ── Frame navigation history ────────────────────────────── */
@@ -74,6 +79,15 @@ let _mirrorMode = false;
 
 /* ── Frame values throttle ───────────────────────────────── */
 let _lastFvUpdateMs = 0;
+
+/* ── Frame JSON viewer ───────────────────────────────────── */
+let _fjvDebounce  = null;   // debounce timer for fetch
+let _fjvLastKey   = null;   // "ds/ep/frame" to avoid redundant fetches
+let _fjvExpanded  = {};     // {colName: bool} — expanded arrays
+let _fjvFilterText = "";    // current search filter string
+let _fjvLastData  = null;   // last fetched data (for filter re-render without refetch)
+let _fjvPrevData  = null;   // previous frame's data (for delta display)
+let _fjvPrevKey   = null;   // key of _fjvPrevData ("ds/ep/frame")
 
 /* ── Chart visibility (IntersectionObserver) ────────────── */
 const _visibleCharts = new Set();
@@ -116,12 +130,13 @@ const _frameRetryPending = new Set();
 
 /* ── Utility helpers ─────────────────────────────────────── */
 const el = id => document.getElementById(id);
-const isHidden = id => el(id)?.classList.contains("hidden") ?? true;
-const hide = id => el(id)?.classList.add("hidden");
-const show = id => el(id)?.classList.remove("hidden");
-const toggle = (id, cls, force) => el(id)?.classList.toggle(cls, force);
-const attr = (id, k, v) => el(id)?.setAttribute(k, v);
-const toggleSub = (id, sel, cls, force) => el(id)?.querySelector(sel)?.classList.toggle(cls, force);
+const _node = x => typeof x === "string" ? el(x) : x;
+const isHidden = x => _node(x)?.classList.contains("hidden") ?? true;
+const hide = x => _node(x)?.classList.add("hidden");
+const show = x => _node(x)?.classList.remove("hidden");
+const toggle = (x, cls, force) => _node(x)?.classList.toggle(cls, force);
+const attr = (x, k, v) => _node(x)?.setAttribute(k, v);
+const toggleSub = (x, sel, cls, force) => _node(x)?.querySelector(sel)?.classList.toggle(cls, force);
 const all = sel => Array.from(document.querySelectorAll(sel));
 const truncate = (str, maxLen) => str?.length > maxLen ? str.slice(0, maxLen - 1) + "…" : (str ?? "");
 const capitalize = s => s ? s[0].toUpperCase() + s.slice(1) : s;
@@ -136,6 +151,8 @@ const epPad = (idx = state.activeEpIndex) => String(idx).padStart(6, "0");
 const apiDs = ds => `/api/datasets/${encodeURIComponent(ds)}`;
 const hasActiveEp = () => !!(state.activeDataset && state.activeEpIndex != null);
 const isKey = (e, ...keys) => keys.some(k => e.key === k || e.key === k.toUpperCase());
+const isActivate = e => e.key === "Enter" || e.key === " ";
+const boolStr = v => v ? "true" : "false";
 
 function debounce(fn, ms) {
   let t;
@@ -156,6 +173,32 @@ async function apiFetch(path, timeoutMs = API_TIMEOUT_MS, externalSignal = null)
       if (externalSignal?.aborted) throw e;
       throw new Error("Request timed out");
     }
+    throw new Error(`Network error: ${e.message}`);
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!r.ok) {
+    let detail = "";
+    try { detail = (await r.json()).detail ?? ""; } catch (_) {}
+    throw new Error(`${r.status}${detail ? `: ${detail}` : ` ${r.statusText}`}`);
+  }
+  return r.json();
+}
+
+async function apiPost(path, body, method = "POST") {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  const hasBody = method !== "DELETE" && method !== "GET";
+  let r;
+  try {
+    r = await fetch(path, {
+      method,
+      headers: hasBody ? { "Content-Type": "application/json" } : {},
+      body: hasBody ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    });
+  } catch (e) {
+    if (e.name === "AbortError") throw new Error("Request timed out");
     throw new Error(`Network error: ${e.message}`);
   } finally {
     clearTimeout(timer);
@@ -215,10 +258,10 @@ function clearRecentEpisodes() {
 function updateRecentSection() {
   const section = el("sidebar-recent");
   if (!section || !state.recentEpisodes.length) {
-    if (section) section.classList.add("hidden");  // TODO: convert to hide() when safe
+    hide(section);
     return;
   }
-  section.classList.remove("hidden");
+  show(section);
   const list = section.querySelector(".recent-list");
   if (!list) return;
   list.innerHTML = "";
@@ -226,6 +269,7 @@ function updateRecentSection() {
   const header = section.querySelector(".recent-header");
   if (header && !header.querySelector(".recent-clear")) {
     const clearBtn = document.createElement("button");
+    clearBtn.type = "button";
     clearBtn.className = "recent-clear";
     clearBtn.title = "Clear recent";
     clearBtn.innerHTML = `<svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
@@ -236,8 +280,8 @@ function updateRecentSection() {
     const item = document.createElement("div");
     item.className = "recent-item";
     item.tabIndex = 0;
-    item.setAttribute("role", "option");
-    item.setAttribute("aria-label", `Recent: ${r.dsPath} episode ${r.epIndex}${r.taskText ? ` - ${r.taskText}` : ""}`);
+    attr(item, "role", "option");
+    attr(item, "aria-label", `Recent: ${r.dsPath} episode ${r.epIndex}${r.taskText ? ` - ${r.taskText}` : ""}`);
     const epLabel = epStr(r.epIndex);
     const shortTask = truncate(r.taskText, 48);
     item.innerHTML =
@@ -256,7 +300,7 @@ function updateRecentSection() {
     };
     item.addEventListener("click", handleSelect);
     item.addEventListener("keydown", e => {
-      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleSelect(); }
+      if (isActivate(e)) { e.preventDefault(); handleSelect(); }
     });
     list.appendChild(item);
   }
@@ -279,7 +323,7 @@ function applyDark(isDark, save = true) {
   const dmBtn = el("dark-mode-btn");
   toggleSub("dark-mode-btn", ".icon-moon", "hidden", isDark);
   toggleSub("dark-mode-btn", ".icon-sun", "hidden", !isDark);
-  dmBtn.setAttribute("aria-pressed", isDark);
+  attr(dmBtn, "aria-pressed", boolStr(isDark));
   if (save) {
     lsFlag("darkMode", isDark);
     if (state.episode) {
@@ -296,8 +340,8 @@ function toggleDarkMode() {
 
 /* ── Sidebar ─────────────────────────────────────────────── */
 function toggleSidebar() {
-  const collapsed = el("main").classList.toggle("sidebar-collapsed");
-  attr("sidebar-toggle", "aria-pressed", collapsed);
+  const collapsed = toggle("main", "sidebar-collapsed");
+  attr("sidebar-toggle", "aria-pressed", boolStr(collapsed));
   lsFlag("sidebarCollapsed", collapsed);
 }
 
@@ -308,7 +352,7 @@ function initSidebarState() {
   const shouldCollapse = stored === "1" || (stored === null && narrow);
   if (shouldCollapse) {
     el("main").classList.add("sidebar-collapsed");
-    el("sidebar-toggle").setAttribute("aria-pressed", "true");
+    attr("sidebar-toggle", "aria-pressed", "true");
   }
 }
 
@@ -374,7 +418,7 @@ async function loadHashState() {
     epEntry.el.closest(".task-group")?.classList.add("open");
     // Restore speed from URL if specified
     const speedParam = parseFloat(params.get("speed") ?? "");
-    if (!isNaN(speedParam) && SPEEDS.includes(speedParam)) {
+    if (!Number.isNaN(speedParam) && SPEEDS.includes(speedParam)) {
       state.speed = speedParam;
       el("speed-select").value = speedParam;
       localStorage.setItem("speed", speedParam);
@@ -525,6 +569,8 @@ function setFrame(f) {
   updateChartCursor();
   updateTimeDimCursor();
   updateFrameValues();
+  updateAnnotationPanel();
+  updateFrameJsonViewer();
   updateImages();
 }
 
@@ -557,7 +603,7 @@ function _applyMirrorMode(on) {
   // Restore compare banner when turning off only if comparison is active
   if (on) hide("compare-banner");
   else if (state.compareEpisode) show("compare-banner");
-  document.querySelectorAll(".cam-label").forEach(lbl => lbl.classList.toggle("hidden", on));
+  document.querySelectorAll(".cam-label").forEach(lbl => toggle(lbl, "hidden", on));
 }
 
 /* ── Sidebar utilities ───────────────────────────────────── */
@@ -603,11 +649,12 @@ async function loadDatasets() {
     const msg = e.message || "Unknown error";
     const errDiv = document.createElement("div");
     errDiv.className = "error-msg";
-    errDiv.setAttribute("role", "alert");
+    attr(errDiv, "role", "alert");
     errDiv.innerHTML =
       `Failed to load datasets<br>` +
       `<span class="error-msg-detail">${escapeHTML(msg)}</span>`;
     const retryBtn = document.createElement("button");
+    retryBtn.type = "button";
     retryBtn.textContent = "Retry";
     retryBtn.className = "retry-btn-blue";
     retryBtn.addEventListener("click", loadDatasets);
@@ -627,8 +674,8 @@ function updateSidebarFooter(numDatasets, totalEps, datasets = []) {
     footer = document.createElement("div");
     footer.id = "sidebar-footer";
     footer.className = "sidebar-footer";
-    footer.setAttribute("role", "status");
-    footer.setAttribute("aria-live", "polite");
+    attr(footer, "role", "status");
+    attr(footer, "aria-live", "polite");
     el("sidebar")?.appendChild(footer);
   }
   if (numDatasets > 0) {
@@ -644,16 +691,16 @@ function updateSidebarFooter(numDatasets, totalEps, datasets = []) {
   } else {
     footer.textContent = "";
   }
-  footer.classList.toggle("hidden", numDatasets === 0);
+  toggle(footer, "hidden", numDatasets === 0);
 }
 
 function buildDatasetNode(ds) {
   const node = document.createElement("div");
   node.className = "ds-node";
-  node.setAttribute("role", "treeitem");
-  node.setAttribute("aria-label", ds.name);
+  attr(node, "role", "treeitem");
+  attr(node, "aria-label", ds.name);
   const robotStr = ds.robot_type && ds.robot_type !== "unknown" ? ` • ${escapeHTML(ds.robot_type)}` : "";
-  const metaTitle = `${ds.name}${robotStr} • ${ds.total_episodes} episodes • ${ds.fps} fps`;
+  const metaTitle = `${escapeHTML(ds.name)}${robotStr} • ${ds.total_episodes} episodes • ${ds.fps} fps`;
   const subtitleParts = [`${ds.fps} fps`];
   if (ds.robot_type && ds.robot_type !== "unknown") subtitleParts.push(escapeHTML(ds.robot_type));
   if (ds.total_tasks > 1) subtitleParts.push(`${ds.total_tasks} tasks`);
@@ -661,7 +708,7 @@ function buildDatasetNode(ds) {
     <div class="ds-header" title="${metaTitle}">
       <svg class="ds-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
       <svg class="ds-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-      <span class="ds-name">${ds.name}</span>
+      <span class="ds-name">${escapeHTML(ds.name)}</span>
       <span class="ds-badge">${ds.total_episodes} ep</span>
     </div>
     <div class="ds-subtitle">${subtitleParts.join(" · ")}</div>
@@ -674,10 +721,10 @@ function buildDatasetNode(ds) {
   let loaded = false;
 
   header.tabIndex = 0;
-  header.setAttribute("role", "button");
-  header.setAttribute("aria-expanded", "false");
+  attr(header, "role", "button");
+  attr(header, "aria-expanded", "false");
   header.addEventListener("keydown", e => {
-    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); header.click(); }
+    if (isActivate(e)) { e.preventDefault(); header.click(); }
     else if (e.key === "ArrowRight") {
       e.preventDefault();
       if (!node.classList.contains("open")) header.click();
@@ -692,9 +739,9 @@ function buildDatasetNode(ds) {
   });
 
   header.addEventListener("click", async () => {
-    header.setAttribute("aria-expanded", node.classList.contains("open") ? "false" : "true");
+    attr(header, "aria-expanded", boolStr(!node.classList.contains("open")));
     const isOpening = !node.classList.contains("open");
-    node.classList.toggle("open");
+    toggle(node, "open");
     // Persist dataset expansion state
     const dsExpandKey = `ds-expand-${ds.path}`;
     lsFlag(dsExpandKey, isOpening);
@@ -750,7 +797,7 @@ function buildTaskNode(dsPath, task, allLengths = [], fps = 10) {
   group.innerHTML = `
     <div class="task-header" title="${statsTitle.replace(/"/g, '&quot;').replace(/\n/g, '&#10;')}">
       <svg class="task-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-      <span class="task-name">${shortTask}</span>
+      <span class="task-name">${escapeHTML(shortTask)}</span>
       <span class="task-avg-len" title="Average episode length">${avgLen}f</span>
       <span class="ep-count">${task.episodes.length}</span>
     </div>
@@ -773,9 +820,9 @@ function buildTaskNode(dsPath, task, allLengths = [], fps = 10) {
     const epPosInTask = epIdx + 1;
     const epTotalInTask = task.episodes.length;
     item.tabIndex = 0;
-    item.setAttribute("role", "option");
-    item.setAttribute("aria-selected", "false");
-    item.setAttribute("aria-label", `Episode ${ep.episode_index}, ${ep.length} frames, ${epPosInTask} of ${epTotalInTask} in task`);
+    attr(item, "role", "option");
+    attr(item, "aria-selected", "false");
+    attr(item, "aria-label", `Episode ${ep.episode_index}, ${ep.length} frames, ${epPosInTask} of ${epTotalInTask} in task`);
     item.dataset.length = ep.length;
     const epDurStr = formatDuration(ep.length / fps);
     item.title = `${epStr(ep.episode_index)} · ${ep.length}f · ${epDurStr} · ep ${epPosInTask}/${epTotalInTask} in task · double-click to play`;
@@ -802,7 +849,7 @@ function buildTaskNode(dsPath, task, allLengths = [], fps = 10) {
       handleActivate(false, true);
     });
     item.addEventListener("keydown", e => {
-      if (e.key === "Enter" || e.key === " ") {
+      if (isActivate(e)) {
         e.preventDefault();
         handleActivate(e.ctrlKey || e.metaKey, false);
       } else if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Home" || e.key === "End") {
@@ -823,15 +870,15 @@ function buildTaskNode(dsPath, task, allLengths = [], fps = 10) {
   });
 
   header.tabIndex = 0;
-  header.setAttribute("role", "button");
-  header.setAttribute("aria-expanded", group.classList.contains("open") ? "true" : "false");
+  attr(header, "role", "button");
+  attr(header, "aria-expanded", boolStr(group.classList.contains("open")));
   header.addEventListener("click", () => {
-    const open = group.classList.toggle("open");
-    header.setAttribute("aria-expanded", open ? "true" : "false");
+    const open = toggle(group, "open");
+    attr(header, "aria-expanded", boolStr(open));
     try { lsFlag(_tgKey, open); } catch (_) {}
   });
   header.addEventListener("keydown", e => {
-    if (e.key === "Enter" || e.key === " ") {
+    if (isActivate(e)) {
       e.preventDefault();
       const wasOpen = group.classList.contains("open");
       header.click();
@@ -855,13 +902,17 @@ function buildTaskNode(dsPath, task, allLengths = [], fps = 10) {
 /* ── Search / filter ─────────────────────────────────────── */
 const applySearchDebounced = debounce(applySearch, SEARCH_DEBOUNCE_MS);
 
-function highlightText(text, query) {
-  if (!query) return text;
-  const idx = text.toLowerCase().indexOf(query.toLowerCase());
-  if (idx === -1) return text;
-  return text.slice(0, idx) +
-    `<mark class="search-hl">${text.slice(idx, idx + query.length)}</mark>` +
-    highlightText(text.slice(idx + query.length), query);
+function highlightText(rawText, query) {
+  const safe = escapeHTML(rawText);
+  if (!query) return safe;
+  return _applyHighlight(safe, query.toLowerCase());
+}
+function _applyHighlight(safe, queryLo) {
+  const idx = safe.toLowerCase().indexOf(queryLo);
+  if (idx === -1) return safe;
+  return safe.slice(0, idx) +
+    `<mark class="search-hl">${safe.slice(idx, idx + queryLo.length)}</mark>` +
+    _applyHighlight(safe.slice(idx + queryLo.length), queryLo);
 }
 
 /* ── Search: parse frame-count / duration filter tokens ─────
@@ -910,13 +961,13 @@ function applySearch(query) {
       const lenOk = !hasFilter || matchesLengthFilter(parseInt(item.dataset.length ?? "0", 10), filters);
       const epMatches = textMatches && lenOk;
       const isHidden = q && !epMatches;
-      item.classList.toggle("ep-search-hidden", isHidden);
+      toggle(item, "ep-search-hidden", isHidden);
       if (!isHidden) anyEpMatch = true;
     }
 
     const groupVisible = taskMatches || anyEpMatch;
     const wasHidden = group.classList.contains("search-hidden");
-    group.classList.toggle("search-hidden", !groupVisible);
+    toggle(group, "search-hidden", !groupVisible);
     if (groupVisible && q && !group.classList.contains("open")) {
       group.classList.add("open");
     }
@@ -924,7 +975,7 @@ function applySearch(query) {
     const nameEl = group.querySelector(".task-name");
     if (nameEl) {
       const orig = group.dataset.taskOrig ?? (group.dataset.taskOrig = nameEl.textContent);
-      nameEl.innerHTML = (textQ && taskMatches) ? highlightText(orig, textQ) : orig;
+      nameEl.innerHTML = (textQ && taskMatches) ? highlightText(orig, textQ) : escapeHTML(orig);
     }
   });
 
@@ -954,8 +1005,8 @@ function applySearch(query) {
     countEl = document.createElement("div");
     countEl.id = "search-count";
     countEl.className = "search-count";
-    countEl.setAttribute("aria-live", "polite");
-    countEl.setAttribute("aria-atomic", "true");
+    attr(countEl, "aria-live", "polite");
+    attr(countEl, "aria-atomic", "true");
     el("dataset-tree").before(countEl);
   }
   let visibleEps = 0;
@@ -979,7 +1030,7 @@ function applySearch(query) {
       : "";
     delete countEl.dataset.empty;
   }
-  countEl.classList.toggle("hidden", !q);
+  toggle(countEl, "hidden", !q);
 }
 
 /* ── Episode loading ─────────────────────────────────────── */
@@ -992,11 +1043,11 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
 
   document.querySelectorAll(".ep-item.active").forEach(e => {
     e.classList.remove("active");
-    e.setAttribute("aria-selected", "false");
+    attr(e, "aria-selected", "false");
   });
   if (clickedEl) {
     clickedEl.classList.add("active");
-    clickedEl.setAttribute("aria-selected", "true");
+    attr(clickedEl, "aria-selected", "true");
     clickedEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }
   stopPlayback();
@@ -1027,8 +1078,8 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
   hide("welcome");
   const viewerEl = el("viewer");
   const taskLblEl = el("task-label");
-  viewerEl.classList.remove("hidden");
-  viewerEl.setAttribute("aria-busy", "true");
+  show(viewerEl);
+  attr(viewerEl, "aria-busy", "true");
   show("viewer-loader");
   const displayTask = truncate(taskText, 80);
   taskLblEl.textContent = displayTask;
@@ -1046,13 +1097,12 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
     // Restore task text (replacing any prior error message markup)
     taskLblEl.textContent = displayTask;
     taskLblEl.title = taskText?.length > 80 ? taskText : "";
-    taskLblEl.classList.toggle("hidden", _mirrorMode);
+    toggle(taskLblEl, "hidden", _mirrorMode);
     updateEpInfoStrip(ep);
     if (_mirrorMode) hide("ep-info-strip");
     // Update normalize btn tooltip based on stats availability
     const hasNormStats = !!state.normStats;
-    el("btn-normalize")?.setAttribute("title",
-      hasNormStats
+    attr("btn-normalize", "title", hasNormStats
         ? "Toggle normalization  N"
         : "Toggle normalization  N  (no norm_stats.json found)"
     );
@@ -1073,16 +1123,39 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
       : `${epStr(epIndex)} • ${dsPath} • LeRobot Visualizer`;
     el("charts-area").classList.remove("charts-loading");
     hide("viewer-loader");
-    viewerEl.setAttribute("aria-busy", "false");
+    attr(viewerEl, "aria-busy", "false");
     // Enable export buttons now that episode is loaded
-    setDisabled(["btn-export", "btn-csv", "btn-frame-values"], false);
+    setDisabled(["btn-export", "btn-csv", "btn-frame-values", "btn-frame-json"], false);
+    show("viewer-tabs");
+    // Auto-open JSON viewer — respect user preference (null = first visit → open by default)
+    const fjvPanel = el("frame-json-viewer");
+    const fjvBtn   = el("btn-frame-json");
+    const fjvPref = localStorage.getItem("fjvOpen");
+    const fjvShouldOpen = fjvPref === null || fjvPref === "1"; // default open on first visit
+    if (fjvPanel) fjvPanel.classList.toggle("hidden", !fjvShouldOpen);
+    if (fjvBtn)   { fjvBtn.classList.toggle("active", fjvShouldOpen); fjvBtn.setAttribute("aria-pressed", boolStr(fjvShouldOpen)); }
+    // Load annotation schema, per-episode annotation data, and fill config
+    state.annotations = {};
+    state.annotationDirty = false;
+    _updateAnnotationDirtyIndicator();
+    _loadFillConfig();
+    clearTimeout(_fjvDebounce);   // cancel any in-flight fetch for old episode
+    _fjvLastKey = null;           // invalidate so viewer refreshes for new episode
+    _fjvExpanded = {};            // don't carry expanded state across episodes
+    await Promise.all([
+      loadAnnotationSchema(dsPath),
+      loadAnnotationData(dsPath, epIndex),
+    ]);
+    // Re-apply current tab layout (rebuild annotation panel if in annotate tab)
+    switchViewerTab(state.viewerTab);
   } catch (e) {
     hide("viewer-loader");
-    viewerEl.setAttribute("aria-busy", "false");
+    attr(viewerEl, "aria-busy", "false");
     taskLblEl.innerHTML =
       `<span class="load-fail-label">Load failed:</span>` +
       `<span class="load-fail-msg">${escapeHTML(e.message)}</span>`;
     const retryBtn = document.createElement("button");
+    retryBtn.type = "button";
     retryBtn.textContent = "Retry";
     retryBtn.className = "retry-btn-inline";
     retryBtn.addEventListener("click", () =>
@@ -1171,9 +1244,9 @@ function updatePrevNextButtons() {
   const prevBtn = el("btn-prev-ep");
   const nextBtn = el("btn-next-ep");
   prevBtn.disabled = !hasPrev;
-  prevBtn.setAttribute("aria-disabled", !hasPrev);
+  attr(prevBtn, "aria-disabled", !hasPrev);
   nextBtn.disabled = !hasNext;
-  nextBtn.setAttribute("aria-disabled", !hasNext);
+  attr(nextBtn, "aria-disabled", !hasNext);
   const prev = hasPrev ? state.episodeList[idx - 1] : null;
   const next = hasNext ? state.episodeList[idx + 1] : null;
   prevBtn.title = prev ? `Previous episode: ${epStr(prev.epIndex)}  [` : "Previous episode  [";
@@ -1351,7 +1424,7 @@ function _lbSetZoom(z, originX, originY) {
   }
   let badge = el("lightbox-zoom-badge");
   if (_lbZoom === 1) {
-    if (badge) badge.classList.add("hidden");
+    hide(badge);
   } else {
     if (!badge) {
       badge = document.createElement("span");
@@ -1360,7 +1433,7 @@ function _lbSetZoom(z, originX, originY) {
       el("cam-lightbox")?.appendChild(badge);
     }
     badge.textContent = `${_lbZoom.toFixed(1)}×`;
-    badge.classList.remove("hidden");
+    show(badge);
   }
 }
 
@@ -1403,8 +1476,8 @@ function renderFrameData(keys, frames) {
     }
     img.src = src;
     slot.tabIndex = 0;
-    slot.setAttribute("role", "button");
-    slot.setAttribute("aria-label", `Camera view: ${keyDisplay} — press Enter to expand`);
+    attr(slot, "role", "button");
+    attr(slot, "aria-label", `Camera view: ${keyDisplay} — press Enter to expand`);
     slot.title = keyDisplay + " — click to expand · Ctrl+click to download · double-click for fullscreen · Enter to expand";
 
     if (!slot.dataset.camEventsSet) {
@@ -1422,7 +1495,7 @@ function renderFrameData(keys, frames) {
       });
 
       slot.addEventListener("keydown", e => {
-        if (e.key === "Enter" || e.key === " ") {
+        if (isActivate(e)) {
           e.preventDefault();
           const img = slot.querySelector("img");
           if (img?.src) openLightbox(img.src, unslug(img.alt), i);
@@ -1799,8 +1872,8 @@ function showCopyToast(msg = "Copied to clipboard", type = "info") {
     toast = document.createElement("div");
     toast.id = "copy-toast";
     toast.className = "copy-toast";
-    toast.setAttribute("role", "status");
-    toast.setAttribute("aria-live", "polite");
+    attr(toast, "role", "status");
+    attr(toast, "aria-live", "polite");
     document.body.appendChild(toast);
   }
   toast.textContent = msg;
@@ -1865,8 +1938,8 @@ function rebuildChartsFor(type) {
 function _updateNormalizeButtonUI() {
   const btn = el("btn-normalize");
   if (!btn) return;
-  btn.classList.toggle("active", state.normalizeEnabled);
-  btn.setAttribute("aria-pressed", state.normalizeEnabled);
+  toggle(btn, "active", state.normalizeEnabled);
+  attr(btn, "aria-pressed", boolStr(state.normalizeEnabled));
 }
 
 function toggleNormalize() {
@@ -1896,7 +1969,7 @@ function toggleHistogram(type) {
 function toggleLooping() {
   state.looping = !state.looping;
   toggle("btn-loop", "active", state.looping);
-  attr("btn-loop", "aria-pressed", state.looping);
+  attr("btn-loop", "aria-pressed", boolStr(state.looping));
   lsFlag("loop", state.looping);
 }
 
@@ -1925,10 +1998,10 @@ function buildChartCard(type, data2d, names, normalized, ep, cmpData2d = null, n
       (badge ? " " + badge : "");
   }
 
-  btn.classList.toggle("active", expanded);
-  btn.querySelector(".icon-expand").classList.toggle("hidden", expanded);
-  btn.querySelector(".icon-collapse").classList.toggle("hidden", !expanded);
-  histBtn?.classList.toggle("active", isHist);
+  toggle(btn, "active", expanded);
+  toggleSub(btn, ".icon-expand", "hidden", expanded);
+  toggleSub(btn, ".icon-collapse", "hidden", !expanded);
+  toggle(histBtn, "active", isHist);
 
   if (dims === 0) {
     body.innerHTML = `<div class="chart-no-data">No ${type} data</div>`;
@@ -1983,7 +2056,7 @@ function buildChartCard(type, data2d, names, normalized, ep, cmpData2d = null, n
         item.className = "legend-item";
         item.title = `Click to show/hide · ${MOD_KEY}+click to isolate · dbl-click to show all`;
         item.dataset.dim = d;
-        item.innerHTML = `<span class="legend-dot" style="background:${PALETTE[d % PALETTE.length]}"></span>${names[d] ?? `dim_${d}`}`;
+        item.innerHTML = `<span class="legend-dot" style="background:${PALETTE[d % PALETTE.length]}"></span>${escapeHTML(names[d] ?? `dim_${d}`)}`;
         item.addEventListener("click", e => {
           if (!mainChart) return;
           if (e.ctrlKey || e.metaKey) {
@@ -1992,11 +2065,11 @@ function buildChartCard(type, data2d, names, normalized, ep, cmpData2d = null, n
               const m = mainChart.getDatasetMeta(i);
               if (m) m.hidden = i !== d;
             }
-            legendItems.forEach((li, i) => li.classList.toggle("legend-hidden", i !== d));
+            legendItems.forEach((li, i) => toggle(li, "legend-hidden", i !== d));
           } else {
             const meta = mainChart.getDatasetMeta(d);
             meta.hidden = !meta.hidden;
-            item.classList.toggle("legend-hidden", !!meta.hidden);
+            toggle(item, "legend-hidden", !!meta.hidden);
           }
           mainChart.update("none");
         });
@@ -2107,9 +2180,8 @@ function makeChart(canvasId, labels, data2d, names, normalized, dims,
     },
   });
 
-  canvas.setAttribute("role", "img");
-  canvas.setAttribute("aria-label",
-    isMini
+  attr(canvas, "role", "img");
+  attr(canvas, "aria-label", isMini
       ? `${names[dimIndex] ?? `dim_${dimIndex}`} over ${labels.length} frames`
       : `${dims} dimensions over ${labels.length} frames${cmpData2d ? " with comparison overlay" : ""}`
   );
@@ -2262,14 +2334,14 @@ function corrColor(r) {
 function buildCorrelationHeatmap(ep) {
   const section = el("corr-section");
   const body = el("corr-body");
-  if (!ep?.actions?.length) { section.classList.add("hidden"); return; }
+  if (!ep?.actions?.length) { hide(section); return; }
 
   const dims = ep.actions[0].length;
-  if (dims < 2) { section.classList.add("hidden"); return; }
+  if (dims < 2) { hide(section); return; }
 
   // Defer render until expanded (avoids computing Pearson on every episode switch)
   if (body.classList.contains("corr-collapsed")) {
-    section.classList.remove("hidden");
+    show(section);
     body.innerHTML = "";
     return;
   }
@@ -2292,8 +2364,8 @@ function buildCorrelationHeatmap(ep) {
   canvas.width = W * dpr; canvas.height = H_TOTAL * dpr;
   canvas.style.width = W + "px";
   canvas.style.height = H_TOTAL + "px";
-  canvas.setAttribute("role", "img");
-  canvas.setAttribute("aria-label", `Action correlation matrix (${dims}×${dims})`);
+  attr(canvas, "role", "img");
+  attr(canvas, "aria-label", `Action correlation matrix (${dims}×${dims})`);
   body.appendChild(canvas);
 
   const ctx = canvas.getContext("2d");
@@ -2360,7 +2432,7 @@ function buildCorrelationHeatmap(ep) {
   });
   canvas.addEventListener("mouseleave", hideTimeDimTooltip);
 
-  section.classList.remove("hidden");
+  show(section);
   if (!section.dataset.open) body.classList.add("corr-collapsed");
 }
 
@@ -2387,14 +2459,14 @@ function buildTimeDimHeatmap(ep) {
   if (!card || !body) return;
 
   if (!ep?.actions?.length || ep.actions[0].length < 1) {
-    card.classList.add("hidden");
+    hide(card);
     _tdimLayout = null;
     return;
   }
 
   // Defer render until expanded (avoids heavy canvas work on every episode switch)
   if (body.classList.contains("timedim-collapsed")) {
-    card.classList.remove("hidden");
+    show(card);
     body.innerHTML = "";
     _tdimLayout = null;
     return;
@@ -2439,9 +2511,9 @@ function buildTimeDimHeatmap(ep) {
   canvas.style.width = TOTAL_W + "px";
   canvas.style.height = TOTAL_H + "px";
   canvas.id = "timedim-canvas";
-  canvas.setAttribute("role", "img");
-  canvas.setAttribute("aria-label", `Action heatmap: time × ${dims} dimensions`);
-  canvas.setAttribute("tabindex", "0");
+  attr(canvas, "role", "img");
+  attr(canvas, "aria-label", `Action heatmap: time × ${dims} dimensions`);
+  attr(canvas, "tabindex", "0");
   wrap.appendChild(canvas);
 
   const ctx = canvas.getContext("2d");
@@ -2489,7 +2561,7 @@ function buildTimeDimHeatmap(ep) {
   const getFrameFromPointer = e => {
     const rect = canvas.getBoundingClientRect();
     const px = (e.clientX - rect.left) * (TOTAL_W / rect.width) - TIMEDIM_LABEL_W;
-    return { f: Math.min(Math.max(0, Math.floor(px / cellW)), frames - 1), px };
+    return { f: clamp(Math.floor(px / cellW), 0, frames - 1), px };
   };
   const getDimFromPointer = e => {
     const rect = canvas.getBoundingClientRect();
@@ -2558,7 +2630,7 @@ function buildTimeDimHeatmap(ep) {
   // Cache layout for _doUpdateTimeDimCursor to avoid recomputation
   _tdimLayout = { CELL_H, frames, cellW, CANVAS_W, TOTAL_W, CANVAS_H, TIME_AX_H: TIME_AX_H };
 
-  card.classList.remove("hidden");
+  show(card);
   if (!card.dataset.open) body.classList.add("timedim-collapsed");
 }
 
@@ -2610,7 +2682,7 @@ function updateTopbarBreadcrumb() {
   if (!crumb) return;
   if (!hasActiveEp()) {
     crumb.textContent = "";
-    crumb.classList.add("hidden");
+    hide(crumb);
     return;
   }
   const epLabel = epStr(state.activeEpIndex);
@@ -2625,7 +2697,7 @@ function updateTopbarBreadcrumb() {
     `<span class="crumb-sep">›</span>` +
     `<span class="crumb-ep" title="Click to copy URL  (C)">${epLabel}</span>` +
     frameStr;
-  crumb.classList.remove("hidden");
+  show(crumb);
   if (!_crumbEpListenerAttached) {
     crumb.addEventListener("click", e => {
       if (e.target.classList.contains("crumb-ep")) copyEpisodeURL();
@@ -2647,7 +2719,7 @@ function initFrameCounterJump() {
   const counter = el("frame-counter");
   if (!counter) return;
   counter.addEventListener("keydown", e => {
-    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); counter.click(); }
+    if (isActivate(e)) { e.preventDefault(); counter.click(); }
   });
   counter.addEventListener("click", () => {
     if (!state.episode || state.playing) return;
@@ -2680,7 +2752,7 @@ function initFrameCounterJump() {
         f = frameIdx >= 0 ? frameIdx : max;
       } else {
         const parsed = parseInt(raw, 10);
-        if (isNaN(parsed)) { input.replaceWith(counter); return; }
+        if (Number.isNaN(parsed)) { input.replaceWith(counter); return; }
         f = clamp(parsed, 0, max);
       }
       input.replaceWith(counter);
@@ -2712,7 +2784,7 @@ function toggleFrameValuesSort() {
   lsFlag("fvSort", _fvSortActive);
   const btn = el("fv-sort-btn");
   if (btn) {
-    btn.classList.toggle("active", _fvSortActive);
+    toggle(btn, "active", _fvSortActive);
     btn.title = _fvSortActive ? "Sort by |value| (click to restore order)" : "Sort by absolute value";
   }
   updateFrameValues();
@@ -2722,9 +2794,1444 @@ function toggleFrameValuesSort() {
 function toggleFrameValuesPanel() {
   const panel = el("frame-values-panel");
   if (!panel) return;
-  const hidden = panel.classList.toggle("fv-collapsed");
+  const hidden = toggle(panel, "fv-collapsed");
   toggle("btn-frame-values", "active", !hidden);
-  attr("btn-frame-values", "aria-pressed", String(!hidden));
+  attr("btn-frame-values", "aria-pressed", boolStr(!hidden));
+}
+
+/* ── Viewer tab switching ─────────────────────────────────── */
+
+function switchViewerTab(tab) {
+  if (!state.episode) return;
+  state.viewerTab = tab;
+
+  // Update tab button states
+  document.querySelectorAll(".viewer-tab").forEach(btn => {
+    const isActive = btn.dataset.tab === tab;
+    btn.classList.toggle("active", isActive);
+    attr(btn, "aria-selected", boolStr(isActive));
+  });
+
+  const inAnnotate = tab === "annotate";
+  // Hide video-only sections in annotate tab; restore their previous visibility when returning
+  ["charts-area", "corr-section", "timedim-card", "frame-values-panel"].forEach(id => {
+    const node = el(id);
+    if (!node) return;
+    if (inAnnotate) {
+      node.dataset.tabHidden = node.classList.contains("hidden") ? "1" : "0";
+      node.classList.add("hidden");
+    } else if ("tabHidden" in node.dataset) {
+      // Only restore when we've previously stashed the state (came from annotate tab)
+      node.classList.toggle("hidden", node.dataset.tabHidden === "1");
+    }
+  });
+
+  // Annotation panel only visible in annotate tab
+  const panel = el("annotation-panel");
+  if (panel) {
+    panel.classList.toggle("hidden", !inAnnotate);
+    if (inAnnotate) buildAnnotationPanel();
+  }
+}
+
+/* ── Annotation panel ────────────────────────────────────── */
+
+const _annSaveTimers = {};   // per-frame debounce: {frameIndex: timerId}
+let _annActiveTab = "annotate"; // "schema" | "annotate"
+let _annChipInputs = null;      // {fieldName: {input, chip, ftype}} — built once, reused across frames
+let _annTimelineMove = null;    // document mousemove handler for seek (cleaned up on rebuild)
+let _annTimelineUp = null;      // document mouseup handler for seek
+let _annSettingsOpen = false;   // whether the fill-settings popover is visible
+let _annTimelineRO = null;      // ResizeObserver watching the timeline canvas
+
+function toggleAnnotationPanel() {
+  switchViewerTab(state.viewerTab === "annotate" ? "video" : "annotate");
+}
+
+async function loadAnnotationSchema(dataset) {
+  try {
+    const data = await apiFetch(`${apiDs(dataset)}/annotation_schema`);
+    state.annotationSchema = Array.isArray(data) ? data : [];
+  } catch (_) {
+    state.annotationSchema = [];
+  }
+}
+
+async function loadAnnotationData(dataset, epIndex) {
+  try {
+    const data = await apiFetch(`${apiDs(dataset)}/episodes/${epIndex}/annotations`);
+    state.annotations = data?.frames ?? {};
+    state.annotationDirty = false;
+    _updateAnnotationDirtyIndicator();
+  } catch (_) {
+    state.annotations = {};
+    state.annotationDirty = false;
+    _updateAnnotationDirtyIndicator();
+  }
+}
+
+// ── Fill config (persisted in localStorage) ───────────────────────────────────
+
+function _fillCfgKey() {
+  return `lrv_fill_cfg_${state.activeDataset ?? ""}`;
+}
+
+function _updateAnnotationDirtyIndicator() {
+  const tab = el("vtab-annotate");
+  if (tab) tab.classList.toggle("ann-dirty", !!state.annotationDirty);
+}
+
+function _loadFillConfig() {
+  try {
+    const raw = localStorage.getItem(_fillCfgKey());
+    state.annFillConfig = raw ? JSON.parse(raw) : {};
+  } catch (_) {
+    state.annFillConfig = {};
+  }
+}
+
+function _saveFillConfig() {
+  try { localStorage.setItem(_fillCfgKey(), JSON.stringify(state.annFillConfig)); } catch (_) {}
+}
+
+// Compute filled annotation frames — applies fill strategy per field to all frames
+function _computeFilledAnnotations() {
+  const total = state.episode?.length ?? 0;
+  if (total === 0) return {};
+
+  // Deep-copy existing annotations
+  const result = {};
+  for (const [k, v] of Object.entries(state.annotations)) {
+    result[k] = { ...v };
+  }
+
+  state.annotationSchema.forEach(field => {
+    const cfg = state.annFillConfig[field.name] ?? { strategy: "none" };
+    if (cfg.strategy === "none") return;
+
+    if (cfg.strategy === "fixed") {
+      let fixedVal;
+      const rawFixed = cfg.fixedValue ?? "";
+      if (field.type === "number") {
+        fixedVal = rawFixed === "" ? null : parseFloat(rawFixed);
+      } else if (field.type === "boolean") {
+        fixedVal = rawFixed === "true" || rawFixed === true;
+      } else {
+        fixedVal = rawFixed === "" ? null : rawFixed;
+      }
+      if (fixedVal === null || fixedVal === undefined) return;
+      for (let f = 0; f < total; f++) {
+        const key = String(f);
+        if (result[key]?.[field.name] !== undefined) continue;
+        if (!result[key]) result[key] = {};
+        result[key][field.name] = fixedVal;
+      }
+      return;
+    }
+
+    if (cfg.strategy === "prev") {
+      let lastVal;
+      for (let f = 0; f < total; f++) {
+        const key = String(f);
+        const cur = result[key]?.[field.name];
+        if (cur !== undefined && cur !== null && cur !== "") {
+          lastVal = cur;
+        } else if (lastVal !== undefined) {
+          if (!result[key]) result[key] = {};
+          result[key][field.name] = lastVal;
+        }
+      }
+      return;
+    }
+
+    if (cfg.strategy === "linear" && field.type === "number") {
+      // Collect sorted annotated keyframes for this field
+      const kf = [];
+      for (let f = 0; f < total; f++) {
+        const v = result[String(f)]?.[field.name];
+        if (v !== undefined && v !== null && v !== "") kf.push({ f, v: parseFloat(v) });
+      }
+      if (kf.length === 0) return;
+      // O(n) two-pointer: ni tracks the first keyframe index with .f > current frame
+      let ni = 0;
+      for (let f = 0; f < total; f++) {
+        while (ni < kf.length && kf[ni].f <= f) ni++;
+        const key = String(f);
+        if (result[key]?.[field.name] !== undefined) continue;
+        const prevKf = ni > 0 ? kf[ni - 1] : null;
+        const nextKf = ni < kf.length ? kf[ni] : null;
+        let interp = null;
+        if (prevKf && nextKf) {
+          interp = prevKf.v + (nextKf.v - prevKf.v) * (f - prevKf.f) / (nextKf.f - prevKf.f);
+        } else if (prevKf) {
+          interp = prevKf.v;
+        } else if (nextKf) {
+          interp = nextKf.v;
+        }
+        if (interp !== null) {
+          if (!result[key]) result[key] = {};
+          result[key][field.name] = interp;
+        }
+      }
+    }
+  });
+
+  return result;
+}
+
+// Returns {incomplete, complete} — fields split by whether all episode frames have a value
+function _splitFieldsByCompletion() {
+  const total = state.episode?.length ?? 0;
+  const incomplete = [], complete = [];
+  if (total === 0 || state.annotationSchema.length === 0) {
+    return { incomplete: [...state.annotationSchema], complete: [] };
+  }
+  state.annotationSchema.forEach(field => {
+    let filled = 0;
+    for (let f = 0; f < total; f++) {
+      const fd = state.annotations[String(f)];
+      const v = fd?.[field.name];
+      if (v !== undefined && v !== null && v !== "") filled++;
+    }
+    (filled === total ? complete : incomplete).push(field);
+  });
+  return { incomplete, complete };
+}
+
+// ── Build annotation panel ─────────────────────────────────────────────────────
+
+function buildAnnotationPanel() {
+  const panel = el("annotation-panel");
+  if (!panel) return;
+  _annChipInputs = null;  // force DOM rebuild
+  if (_annTimelineRO) { _annTimelineRO.disconnect(); _annTimelineRO = null; }
+  const ttOld = document.getElementById("ann-timeline-tt");
+  if (ttOld) ttOld.style.display = "none";
+  panel.innerHTML = "";
+
+  // Header
+  const hdr = document.createElement("div");
+  hdr.className = "ann-panel-header";
+  const { incomplete: _incTab, complete: _comTab } = _splitFieldsByCompletion();
+  const _incBadge = _incTab.length  ? ` <span class="ann-tab-badge">${_incTab.length}</span>`  : "";
+  const _comBadge = _comTab.length  ? ` <span class="ann-tab-badge ann-tab-badge-green">${_comTab.length}</span>` : "";
+  hdr.innerHTML =
+    `<span class="ann-panel-title">Annotation</span>` +
+    `<div class="ann-tab-bar">` +
+      `<button class="ann-tab${_annActiveTab === "annotate"  ? " active" : ""}" data-tab="annotate"  type="button">Annotate${_incBadge}</button>` +
+      `<button class="ann-tab${_annActiveTab === "annotated" ? " active" : ""}" data-tab="annotated" type="button">Annotated${_comBadge}</button>` +
+      `<button class="ann-tab${_annActiveTab === "schema"    ? " active" : ""}" data-tab="schema"    type="button">Schema</button>` +
+      `<button class="ann-tab${_annActiveTab === "saved"     ? " active" : ""}" data-tab="saved"     type="button">Saved</button>` +
+    `</div>` +
+    `<button class="ann-settings-btn${_annSettingsOpen ? " active" : ""}" type="button" id="ann-settings-btn" title="Fill defaults for unannotated frames" aria-label="Annotation fill settings" aria-pressed="${_annSettingsOpen}">` +
+      `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">` +
+        `<circle cx="12" cy="12" r="3"/>` +
+        `<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>` +
+      `</svg>` +
+    `</button>`;
+  panel.appendChild(hdr);
+  hdr.querySelectorAll(".ann-tab").forEach(btn => {
+    btn.addEventListener("click", () => {
+      _annActiveTab = btn.dataset.tab;
+      lsFlag(`annTab-${btn.dataset.tab}`, true);  // persist tab preference
+      buildAnnotationPanel();
+    });
+  });
+
+  // Settings panel (collapsible, between header and body)
+  const settingsDiv = document.createElement("div");
+  settingsDiv.id = "ann-settings-panel";
+  settingsDiv.className = "ann-settings-panel" + (_annSettingsOpen ? " open" : "");
+  _buildSettingsPanel(settingsDiv);
+  panel.appendChild(settingsDiv);
+
+  hdr.querySelector("#ann-settings-btn").addEventListener("click", () => {
+    _annSettingsOpen = !_annSettingsOpen;
+    settingsDiv.classList.toggle("open", _annSettingsOpen);
+    const btn = hdr.querySelector("#ann-settings-btn");
+    btn.classList.toggle("active", _annSettingsOpen);
+    btn.setAttribute("aria-pressed", String(_annSettingsOpen));
+  });
+
+  // Body
+  const body = document.createElement("div");
+  body.className = "ann-body";
+  panel.appendChild(body);
+
+  if (_annActiveTab === "schema") {
+    _buildSchemaSection(body);
+  } else if (_annActiveTab === "saved") {
+    _buildSavedSection(body);
+  } else if (_annActiveTab === "annotated") {
+    _buildAnnotatedSection(body);
+  } else {
+    _buildAnnotateSection(body);
+  }
+}
+
+function _buildSettingsPanel(container) {
+  container.innerHTML = "";
+
+  if (state.annotationSchema.length === 0) {
+    container.innerHTML = `<div class="ann-settings-empty">Define annotation fields in the Schema tab first.</div>`;
+    return;
+  }
+
+  const rows = document.createElement("div");
+  rows.className = "ann-settings-rows";
+
+  state.annotationSchema.forEach(field => {
+    const cfg = state.annFillConfig[field.name] ?? { strategy: "none", fixedValue: "" };
+    const canInterp = field.type === "number";
+
+    const strategies = [
+      { v: "none",   label: "None (leave null)" },
+      { v: "fixed",  label: "Fixed value" },
+      { v: "prev",   label: "Forward fill" },
+      ...(canInterp ? [{ v: "linear", label: "Linear interp" }] : []),
+    ];
+
+    const row = document.createElement("div");
+    row.className = "ann-settings-row";
+
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "ann-settings-field-name";
+    nameSpan.textContent = field.name;
+
+    const typeTag = document.createElement("span");
+    typeTag.className = "ann-settings-field-type";
+    typeTag.textContent = field.type;
+
+    const stratSel = document.createElement("select");
+    stratSel.className = "ann-settings-strategy";
+    strategies.forEach(s => {
+      const opt = document.createElement("option");
+      opt.value = s.v;
+      opt.textContent = s.label;
+      if (cfg.strategy === s.v) opt.selected = true;
+      stratSel.appendChild(opt);
+    });
+
+    // Fixed-value input — shown only when strategy = "fixed"
+    const fixedWrap = document.createElement("span");
+    fixedWrap.className = "ann-settings-fixed-wrap";
+    fixedWrap.style.display = cfg.strategy === "fixed" ? "" : "none";
+    fixedWrap.appendChild(_buildFixedInput(field, cfg.fixedValue ?? ""));
+
+    stratSel.addEventListener("change", () => {
+      const s = stratSel.value;
+      fixedWrap.style.display = s === "fixed" ? "" : "none";
+      state.annFillConfig[field.name] = { ...(state.annFillConfig[field.name] ?? {}), strategy: s };
+      _saveFillConfig();
+    });
+
+    const fixedInput = fixedWrap.querySelector("[data-fixed-input]");
+    if (fixedInput) {
+      const persist = () => {
+        state.annFillConfig[field.name] = {
+          ...(state.annFillConfig[field.name] ?? {}),
+          fixedValue: fixedInput.type === "checkbox" ? String(fixedInput.checked) : fixedInput.value,
+        };
+        _saveFillConfig();
+      };
+      fixedInput.addEventListener("input", persist);
+      fixedInput.addEventListener("change", persist);
+    }
+
+    row.appendChild(nameSpan);
+    row.appendChild(typeTag);
+    row.appendChild(stratSel);
+    row.appendChild(fixedWrap);
+    rows.appendChild(row);
+  });
+
+  container.appendChild(rows);
+
+  const note = document.createElement("p");
+  note.className = "ann-settings-note";
+  note.textContent = "Applied to unannotated frames when committing. Linear interp only available for number fields.";
+  container.appendChild(note);
+}
+
+function _buildFixedInput(field, currentValue) {
+  if (field.type === "boolean") {
+    const chk = document.createElement("input");
+    chk.type = "checkbox";
+    chk.checked = currentValue === "true" || currentValue === true;
+    chk.dataset.fixedInput = "1";
+    chk.title = "Fixed boolean value";
+    return chk;
+  }
+  if (field.type === "category") {
+    const sel = document.createElement("select");
+    sel.dataset.fixedInput = "1";
+    sel.className = "ann-settings-fixed-sel";
+    (field.options ?? []).forEach(o => {
+      const opt = document.createElement("option");
+      opt.value = o;
+      opt.textContent = o;
+      if (currentValue === o) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    return sel;
+  }
+  // number or string
+  const inp = document.createElement("input");
+  inp.type = field.type === "number" ? "number" : "text";
+  inp.step = "any";
+  inp.value = currentValue ?? "";
+  inp.className = "ann-settings-fixed-inp";
+  inp.dataset.fixedInput = "1";
+  inp.placeholder = field.type === "number" ? "0" : "value";
+  return inp;
+}
+
+function _buildSavedSection(body) {
+  const sec = document.createElement("div");
+  sec.className = "ann-saved-section";
+  body.appendChild(sec);
+
+  const refresh = () => {
+    sec.innerHTML = `<div class="ann-saved-loading">Loading saved annotations…</div>`;
+    apiFetch(`${apiDs(state.activeDataset)}/annotations`)
+      .then(list => _renderSavedList(sec, list, refresh))
+      .catch(() => {
+        sec.innerHTML = `<div class="ann-saved-empty">Failed to load saved annotations.</div>`;
+      });
+  };
+  refresh();
+}
+
+function _renderSavedList(container, list, refresh) {
+  container.innerHTML = "";
+
+  // Header row with refresh button
+  const topBar = document.createElement("div");
+  topBar.className = "ann-saved-topbar";
+  const countLabel = document.createElement("span");
+  countLabel.className = "ann-saved-count";
+  countLabel.textContent = list?.length
+    ? `${list.length} saved draft${list.length !== 1 ? "s" : ""}`
+    : "No saved drafts";
+  const refreshBtn = document.createElement("button");
+  refreshBtn.type = "button";
+  refreshBtn.className = "ann-saved-refresh-btn";
+  refreshBtn.title = "Refresh list";
+  refreshBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>`;
+  refreshBtn.addEventListener("click", () => refresh?.());
+  topBar.appendChild(countLabel);
+  topBar.appendChild(refreshBtn);
+  container.appendChild(topBar);
+
+  if (!list || list.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "ann-saved-empty";
+    empty.textContent = "No saved annotation drafts for this dataset.";
+    container.appendChild(empty);
+    return;
+  }
+
+  const header = document.createElement("div");
+  header.className = "ann-saved-header";
+  header.innerHTML =
+    `<span class="ann-saved-col-ep">Episode</span>` +
+    `<span class="ann-saved-col-frames">Frames</span>` +
+    `<span class="ann-saved-col-fields">Fields</span>` +
+    `<span class="ann-saved-col-actions"></span>`;
+  container.appendChild(header);
+
+  const rows = document.createElement("div");
+  rows.className = "ann-saved-rows";
+
+  list.forEach(item => {
+    const isCurrent = item.episode_index === state.activeEpIndex;
+    const row = document.createElement("div");
+    row.className = "ann-saved-row" + (isCurrent ? " current" : "");
+    row.dataset.epIndex = item.episode_index;
+    row.title = `Click to view episode ${item.episode_index}`;
+
+    // Click anywhere on the row (except action buttons) to navigate
+    row.addEventListener("click", e => {
+      if (e.target.closest("button")) return;
+      selectEpisode(state.activeDataset, item.episode_index, null, null);
+    });
+
+    const epSpan = document.createElement("span");
+    epSpan.className = "ann-saved-col-ep";
+    epSpan.textContent = `ep ${item.episode_index}`;
+    if (isCurrent) {
+      const badge = document.createElement("span");
+      badge.className = "ann-saved-current-badge";
+      badge.textContent = "current";
+      epSpan.appendChild(badge);
+    }
+
+    const framesSpan = document.createElement("span");
+    framesSpan.className = "ann-saved-col-frames";
+    framesSpan.textContent = item.frame_count;
+
+    const fieldsSpan = document.createElement("span");
+    fieldsSpan.className = "ann-saved-col-fields";
+    fieldsSpan.textContent = (item.field_names ?? []).join(", ") || "—";
+    fieldsSpan.title = (item.field_names ?? []).join(", ");
+
+    const actionsSpan = document.createElement("span");
+    actionsSpan.className = "ann-saved-col-actions";
+
+    // Commit button — commits this episode's draft to Parquet without navigating
+    const commitBtn = document.createElement("button");
+    commitBtn.type = "button";
+    commitBtn.className = "ann-saved-commit-btn";
+    commitBtn.title = `Commit annotations for episode ${item.episode_index} to Parquet`;
+    commitBtn.innerHTML =
+      `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">` +
+        `<polyline points="20 6 9 17 4 12"/>` +
+      `</svg>`;
+
+    commitBtn.addEventListener("click", async () => {
+      commitBtn.disabled = true;
+      try {
+        // For the current episode, send filled frames (with fill strategies applied)
+        // For other episodes, send empty body and let the server use the sidecar
+        const body = isCurrent ? { filled_frames: _computeFilledAnnotations() } : {};
+        const result = await apiPost(
+          `${apiDs(state.activeDataset)}/episodes/${item.episode_index}/annotations/commit`,
+          body
+        );
+        showCopyToast(
+          `✓ ep ${item.episode_index}: committed ${Object.keys(result.columns_written ?? {}).length || (result.columns_written?.length ?? 0)} column${(result.columns_written?.length ?? 0) !== 1 ? "s" : ""}`,
+          "success"
+        );
+        // Refresh count (committed but draft still exists on disk)
+        refresh?.();
+      } catch (e) {
+        commitBtn.disabled = false;
+        showCopyToast(`Commit ep ${item.episode_index} failed: ${e.message}`, "error");
+      }
+    });
+
+    // Delete button
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "ann-saved-del-btn";
+    delBtn.title = `Delete saved annotation draft for episode ${item.episode_index}`;
+    delBtn.innerHTML =
+      `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">` +
+        `<polyline points="3 6 5 6 21 6"/>` +
+        `<path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>` +
+        `<path d="M10 11v6"/><path d="M14 11v6"/>` +
+        `<path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>` +
+      `</svg>`;
+
+    delBtn.addEventListener("click", async () => {
+      const confirmed = window.confirm(
+        `Delete saved annotation draft for episode ${item.episode_index}?\n\n` +
+        `${item.frame_count} annotated frame${item.frame_count !== 1 ? "s" : ""} will be permanently removed.`
+      );
+      if (!confirmed) return;
+      delBtn.disabled = true;
+      try {
+        await apiPost(
+          `${apiDs(state.activeDataset)}/episodes/${item.episode_index}/annotations`,
+          {},
+          "DELETE"
+        );
+        if (item.episode_index === state.activeEpIndex) _clearCurrentEpisodeAnnotationsInMemory();
+        row.classList.add("ann-saved-row-deleting");
+        setTimeout(() => refresh?.(), 250);
+      } catch (e) {
+        delBtn.disabled = false;
+        showCopyToast(`Delete failed: ${e.message}`, "error");
+      }
+    });
+
+    actionsSpan.appendChild(commitBtn);
+    actionsSpan.appendChild(delBtn);
+    row.appendChild(epSpan);
+    row.appendChild(framesSpan);
+    row.appendChild(fieldsSpan);
+    row.appendChild(actionsSpan);
+    rows.appendChild(row);
+  });
+
+  container.appendChild(rows);
+
+  const note = document.createElement("p");
+  note.className = "ann-saved-note";
+  note.textContent = `${list.length} episode${list.length !== 1 ? "s" : ""} with saved drafts · click row to navigate · ✓ to commit to Parquet · 🗑 to delete draft`;
+  container.appendChild(note);
+}
+
+function _buildSchemaSection(body) {
+  const sec = document.createElement("div");
+  sec.className = "ann-schema-section visible";
+
+  // Field list
+  const list = document.createElement("div");
+  list.className = "ann-field-list";
+  if (state.annotationSchema.length === 0) {
+    list.innerHTML = `<div class="ann-empty-schema">No fields defined yet.</div>`;
+  } else {
+    state.annotationSchema.forEach((field, idx) => {
+      const row = document.createElement("div");
+      row.className = "ann-field-row";
+      row.innerHTML =
+        `<span class="ann-field-name">${escapeHTML(field.name)}</span>` +
+        `<span class="ann-field-type">${escapeHTML(field.type)}</span>` +
+        (field.options?.length ? `<span style="font-size:10px;color:var(--text-2)">${escapeHTML(field.options.join(", "))}</span>` : "") +
+        `<button class="ann-field-del" type="button" title="Remove field" aria-label="Remove ${escapeHTML(field.name)}">` +
+          `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>` +
+        `</button>`;
+      row.querySelector(".ann-field-del").addEventListener("click", async () => {
+        const updated = state.annotationSchema.filter((_, i) => i !== idx);
+        await _saveSchema(updated);
+      });
+      list.appendChild(row);
+    });
+  }
+  sec.appendChild(list);
+
+  // Add field form
+  const form = document.createElement("div");
+  form.className = "ann-add-form";
+  form.innerHTML =
+    `<input type="text" placeholder="field_name" maxlength="64" autocomplete="off" spellcheck="false" />` +
+    `<select>` +
+      `<option value="number">Number</option>` +
+      `<option value="string">String</option>` +
+      `<option value="boolean">Boolean</option>` +
+      `<option value="category">Category</option>` +
+    `</select>` +
+    `<button class="ann-add-btn" type="button">Add</button>`;
+  const nameInput = form.querySelector("input");
+  const typeSelect = form.querySelector("select");
+
+  // Category options field (shown when type=category)
+  const catWrap = document.createElement("div");
+  catWrap.className = "ann-category-opts";
+  catWrap.innerHTML = `<input type="text" placeholder="Option A, Option B, Option C" style="display:none" />`;
+  const catInput = catWrap.querySelector("input");
+  form.appendChild(catWrap);
+
+  typeSelect.addEventListener("change", () => {
+    catInput.style.display = typeSelect.value === "category" ? "" : "none";
+  });
+
+  form.querySelector(".ann-add-btn").addEventListener("click", async () => {
+    const name = nameInput.value.trim();
+    if (!name) { nameInput.focus(); return; }
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]{0,63}$/.test(name)) {
+      showCopyToast("Field name must start with a letter/underscore and contain only alphanumerics/underscores", "error");
+      return;
+    }
+    if (state.annotationSchema.some(f => f.name === name)) {
+      showCopyToast(`Field '${name}' already exists`, "error");
+      return;
+    }
+    const field = { name, type: typeSelect.value };
+    if (typeSelect.value === "category") {
+      const opts = catInput.value.split(",").map(s => s.trim()).filter(Boolean);
+      if (opts.length) field.options = opts;
+    }
+    await _saveSchema([...state.annotationSchema, field]);
+  });
+
+  nameInput.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); form.querySelector(".ann-add-btn").click(); }
+  });
+
+  sec.appendChild(form);
+  body.appendChild(sec);
+}
+
+function _buildAnnotateSection(body) {
+  const sec = document.createElement("div");
+  sec.className = "ann-annotate-section visible";
+
+  if (state.annotationSchema.length === 0) {
+    sec.innerHTML = `<div class="ann-no-schema-msg">No annotation fields defined.<br>Switch to the <strong>Schema</strong> tab to add fields.</div>`;
+    body.appendChild(sec);
+    return;
+  }
+
+  const { incomplete: fieldsToAnnotate, complete: fieldsComplete } = _splitFieldsByCompletion();
+
+  if (fieldsToAnnotate.length === 0) {
+    const annotatedCount = Object.keys(state.annotations).length;
+    const doneDiv = document.createElement("div");
+    doneDiv.className = "ann-all-done-msg";
+    doneDiv.innerHTML =
+      `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>` +
+      `<span>All ${fieldsComplete.length} field${fieldsComplete.length !== 1 ? "s" : ""} fully annotated.<br>` +
+      `View them in the <strong>Annotated</strong> tab.</span>`;
+    sec.appendChild(doneDiv);
+    const commitBtn = document.createElement("button");
+    commitBtn.type = "button";
+    commitBtn.className = "ann-commit-btn";
+    commitBtn.id = "ann-commit-btn";
+    commitBtn.textContent = `Commit annotations to Dataset`;
+    commitBtn.disabled = annotatedCount === 0;
+    commitBtn.addEventListener("click", commitAnnotations);
+    sec.appendChild(commitBtn);
+    body.appendChild(sec);
+    return;
+  }
+
+  // Interactive annotation timeline
+  const annotatedCount = Object.keys(state.annotations).length;
+  const totalFrames = state.episode?.length ?? 0;
+  const progressRow = document.createElement("div");
+  progressRow.className = "ann-progress-row";
+  progressRow.id = "ann-progress-row";
+  progressRow.innerHTML =
+    `<canvas id="ann-timeline" class="ann-timeline-canvas" title="Click or drag to seek"></canvas>` +
+    `<span class="ann-progress-label" id="ann-progress-label">${annotatedCount} / ${totalFrames} frames</span>`;
+  sec.appendChild(progressRow);
+
+  // Attach seek interaction — remove old document listeners to prevent accumulation
+  const _attachTimelineSeek = (canvas) => {
+    if (!canvas) return;
+    // Clean up previous global listeners and ResizeObserver
+    if (_annTimelineMove) document.removeEventListener("mousemove", _annTimelineMove);
+    if (_annTimelineUp)   document.removeEventListener("mouseup",   _annTimelineUp);
+    if (_annTimelineRO)   { _annTimelineRO.disconnect(); _annTimelineRO = null; }
+
+    let isSeeking = false;
+
+    const frameAt = (clientX) => {
+      const rect = canvas.getBoundingClientRect();
+      if (!rect.width) return -1;
+      const x = Math.max(0, Math.min(clientX - rect.left, rect.width - 1));
+      const n = state.episode?.length ?? 1;
+      return Math.max(0, Math.min(Math.floor((x / rect.width) * n), n - 1));
+    };
+
+    const seekToFrame = (f) => { if (f >= 0) setFrame(f); };
+
+    // Mouse seek
+    canvas.addEventListener("mousedown", e => {
+      seekToFrame(frameAt(e.clientX)); isSeeking = true; e.preventDefault();
+    });
+    _annTimelineMove = e => { if (isSeeking) seekToFrame(frameAt(e.clientX)); };
+    _annTimelineUp   = () => { isSeeking = false; };
+    document.addEventListener("mousemove", _annTimelineMove);
+    document.addEventListener("mouseup",   _annTimelineUp);
+
+    // Touch seek (mobile / trackpad)
+    const seekTouch = (e) => {
+      if (!e.touches[0]) return;
+      seekToFrame(frameAt(e.touches[0].clientX));
+    };
+    canvas.addEventListener("touchstart",  e => { seekTouch(e); isSeeking = true;  e.preventDefault(); }, { passive: false });
+    canvas.addEventListener("touchmove",   e => { if (isSeeking) seekTouch(e);     e.preventDefault(); }, { passive: false });
+    canvas.addEventListener("touchend",    () => { isSeeking = false; });
+
+    // Hover tooltip
+    const tooltip = (() => {
+      let tt = document.getElementById("ann-timeline-tt");
+      if (!tt) {
+        tt = document.createElement("div");
+        tt.id = "ann-timeline-tt";
+        tt.className = "ann-timeline-tt";
+        document.body.appendChild(tt);
+      }
+      return tt;
+    })();
+    canvas.addEventListener("mousemove", e => {
+      const f = frameAt(e.clientX);
+      if (f < 0) return;
+      const fd = state.annotations[String(f)];
+      const annotCount = fd ? Object.keys(fd).length : 0;
+      const schemaCount = state.annotationSchema.length;
+      tooltip.textContent = schemaCount > 0
+        ? `Frame ${f}  ·  ${annotCount}/${schemaCount} fields`
+        : `Frame ${f}`;
+      tooltip.style.left = (e.clientX + 14) + "px";
+      tooltip.style.top  = (e.clientY - 32) + "px";
+      tooltip.style.display = "block";
+    });
+    canvas.addEventListener("mouseleave", () => { tooltip.style.display = "none"; });
+
+    // Redraw when panel width changes (e.g. sidebar resize)
+    _annTimelineRO = new ResizeObserver(() => _drawAnnTimeline());
+    _annTimelineRO.observe(canvas);
+  };
+  // Defer until layout is computed so canvas has a width
+  requestAnimationFrame(() => {
+    const c = el("ann-timeline");
+    if (c) { _attachTimelineSeek(c); _drawAnnTimeline(); }
+  });
+
+  // Input chips — built ONCE, reused across frame changes
+  const grid = document.createElement("div");
+  grid.className = "ann-chips-grid";
+  grid.id = "ann-chips-grid";
+  sec.appendChild(grid);
+
+  _annChipInputs = {};
+  const frameKey = String(state.frame);
+  const frameData = state.annotations[frameKey] ?? {};
+
+  fieldsToAnnotate.forEach(field => {
+    const chip = document.createElement("div");
+    chip.className = "ann-chip" + (field.name in frameData ? " annotated" : "");
+    chip.dataset.field = field.name;
+
+    const label = document.createElement("span");
+    label.className = "ann-chip-label";
+    label.textContent = field.name;
+
+    let input;
+    const ftype = field.type;
+    if (ftype === "number") {
+      input = document.createElement("input");
+      input.type = "number";
+      input.step = "any";
+      input.value = frameData[field.name] ?? "";
+    } else if (ftype === "boolean") {
+      input = document.createElement("input");
+      input.type = "checkbox";
+      input.checked = !!(frameData[field.name]);
+    } else if (ftype === "category") {
+      input = document.createElement("select");
+      input.innerHTML = `<option value="">—</option>` +
+        (field.options ?? []).map(o => `<option>${escapeHTML(o)}</option>`).join("");
+      input.value = frameData[field.name] ?? "";
+    } else {
+      input = document.createElement("input");
+      input.type = "text";
+      input.value = frameData[field.name] ?? "";
+    }
+    input.dataset.fieldName = field.name;
+    input.dataset.fieldType = ftype;
+
+    // On every change: update state.annotations immediately (in-memory), debounce server save
+    const onInput = () => {
+      const capturedFrame = state.frame;  // lock frame at input time
+      const capturedKey = String(capturedFrame);
+      const val = _readInputValue(input, ftype);
+      // Update in-memory state immediately so navigation never loses the value
+      if (val !== null) {
+        state.annotations[capturedKey] = { ...(state.annotations[capturedKey] ?? {}), [field.name]: val };
+      } else {
+        const existing = state.annotations[capturedKey];
+        if (existing) {
+          delete existing[field.name];
+          if (Object.keys(existing).length === 0) delete state.annotations[capturedKey];
+        }
+      }
+      chip.classList.toggle("annotated", val !== null);
+      state.annotationDirty = true;
+      _updateAnnotationProgress();
+      // Debounce the actual server persist for this specific frame
+      // Per-frame timer — never cancels other frames' pending saves
+      clearTimeout(_annSaveTimers[capturedFrame]);
+      _annSaveTimers[capturedFrame] = setTimeout(() => {
+        _persistAnnotationFrame(capturedFrame);
+        delete _annSaveTimers[capturedFrame];
+      }, 800);
+    };
+    input.addEventListener("input", onInput);
+    input.addEventListener("change", onInput);
+
+    // Keyboard navigation within chips (Tab or arrow keys to move between fields)
+    input.addEventListener("keydown", e => {
+      const fieldNames = Object.keys(_annChipInputs);
+      const curIdx = fieldNames.indexOf(field.name);
+      if (curIdx === -1) return;
+
+      if (e.key === "ArrowRight" || (e.key === "Tab" && !e.shiftKey)) {
+        const nextIdx = (curIdx + 1) % fieldNames.length;
+        _annChipInputs[fieldNames[nextIdx]]?.input?.focus();
+        e.preventDefault();
+      } else if (e.key === "ArrowLeft" || (e.key === "Tab" && e.shiftKey)) {
+        const prevIdx = (curIdx - 1 + fieldNames.length) % fieldNames.length;
+        _annChipInputs[fieldNames[prevIdx]]?.input?.focus();
+        e.preventDefault();
+      } else if (e.key === "ArrowDown") {
+        setFrame(Math.min(state.frame + 1, (state.episode?.length ?? 1) - 1));
+        e.preventDefault();
+      } else if (e.key === "ArrowUp") {
+        setFrame(Math.max(state.frame - 1, 0));
+        e.preventDefault();
+      }
+    });
+
+    chip.appendChild(label);
+    chip.appendChild(input);
+    grid.appendChild(chip);
+    _annChipInputs[field.name] = { input, chip, ftype };
+  });
+
+  // Nav buttons + clear button
+  const navRow = document.createElement("div");
+  navRow.className = "ann-nav-row";
+  navRow.innerHTML =
+    `<button class="ann-nav-btn" type="button" id="ann-prev-unannotated">← Prev unannotated</button>` +
+    `<button class="ann-nav-btn" type="button" id="ann-next-unannotated">Next unannotated →</button>` +
+    `<button class="ann-nav-btn ann-clear-btn" type="button" id="ann-clear-episode" title="Clear all annotations for this episode  Del">` +
+      `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>` +
+      ` Clear all` +
+    `</button>`;
+  navRow.querySelector("#ann-prev-unannotated").addEventListener("click", () => _jumpToUnannotated(-1));
+  navRow.querySelector("#ann-next-unannotated").addEventListener("click", () => _jumpToUnannotated(+1));
+  navRow.querySelector("#ann-clear-episode").addEventListener("click", clearEpisodeAnnotations);
+  sec.appendChild(navRow);
+
+  // Fill & Save button — applies fill strategies and persists to JSON sidecar
+  const fillSaveBtn = document.createElement("button");
+  fillSaveBtn.type = "button";
+  fillSaveBtn.className = "ann-fill-save-btn";
+  fillSaveBtn.id = "ann-fill-save-btn";
+  fillSaveBtn.title = "Apply fill strategies to all unannotated frames and save draft  Ctrl+S";
+  fillSaveBtn.innerHTML =
+    `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">` +
+      `<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>` +
+      `<polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>` +
+    `</svg>` +
+    ` Fill &amp; Save <kbd>Ctrl+S</kbd>`;
+  fillSaveBtn.disabled = annotatedCount === 0;
+  fillSaveBtn.addEventListener("click", fillAndSaveAllAnnotations);
+  sec.appendChild(fillSaveBtn);
+
+  // Commit button
+  const commitBtn = document.createElement("button");
+  commitBtn.type = "button";
+  commitBtn.className = "ann-commit-btn";
+  commitBtn.id = "ann-commit-btn";
+  commitBtn.textContent = `Commit ${annotatedCount} annotation${annotatedCount !== 1 ? "s" : ""} to Dataset`;
+  commitBtn.disabled = annotatedCount === 0;
+  commitBtn.addEventListener("click", commitAnnotations);
+  sec.appendChild(commitBtn);
+
+  body.appendChild(sec);
+}
+
+function _buildAnnotatedSection(body) {
+  const sec = document.createElement("div");
+  sec.className = "ann-annotate-section visible";
+
+  const { incomplete, complete } = _splitFieldsByCompletion();
+  const totalFrames = state.episode?.length ?? 0;
+
+  if (complete.length === 0) {
+    sec.innerHTML =
+      `<div class="ann-no-schema-msg">No fully-annotated fields yet.<br>` +
+      `A field appears here once <em>all ${totalFrames} frames</em> have a value.</div>`;
+    body.appendChild(sec);
+    return;
+  }
+
+  // Stats summary per field
+  const statsGrid = document.createElement("div");
+  statsGrid.className = "ann-annotated-grid";
+
+  complete.forEach(field => {
+    const card = document.createElement("div");
+    card.className = "ann-annotated-card";
+
+    const titleRow = document.createElement("div");
+    titleRow.className = "ann-annotated-card-title";
+    titleRow.innerHTML =
+      `<span class="ann-annotated-field-name">${escapeHTML(field.name)}</span>` +
+      `<span class="ann-annotated-field-type">${escapeHTML(field.type)}</span>` +
+      `<span class="ann-annotated-badge">✓ ${totalFrames}</span>`;
+    card.appendChild(titleRow);
+
+    // Collect values across all frames
+    const values = [];
+    for (let f = 0; f < totalFrames; f++) {
+      const v = state.annotations[String(f)]?.[field.name];
+      if (v !== undefined && v !== null && v !== "") values.push(v);
+    }
+
+    if (field.type === "number" && values.length > 0) {
+      const nums = values.map(Number).filter(n => !isNaN(n));
+      if (nums.length > 0) {
+        const min = Math.min(...nums), max = Math.max(...nums);
+        const mean = nums.reduce((a, b) => a + b, 0) / nums.length;
+        const fmt = n => Number.isInteger(n) ? String(n) : n.toFixed(3).replace(/\.?0+$/, "");
+        const statsRow = document.createElement("div");
+        statsRow.className = "ann-annotated-stats";
+        statsRow.innerHTML =
+          `<span title="min"><span class="ann-stat-lbl">min</span> ${escapeHTML(fmt(min))}</span>` +
+          `<span title="mean"><span class="ann-stat-lbl">avg</span> ${escapeHTML(fmt(mean))}</span>` +
+          `<span title="max"><span class="ann-stat-lbl">max</span> ${escapeHTML(fmt(max))}</span>`;
+        card.appendChild(statsRow);
+
+        // Sparkline chart
+        const sparkCanvas = document.createElement("canvas");
+        sparkCanvas.className = "ann-sparkline";
+        sparkCanvas.dataset.field = field.name;
+        sparkCanvas.title = `${field.name} over time — click to seek`;
+        card.appendChild(sparkCanvas);
+        // Seek on click
+        sparkCanvas.addEventListener("click", e => {
+          const rect = sparkCanvas.getBoundingClientRect();
+          if (!rect.width) return;
+          const f = Math.max(0, Math.min(
+            Math.floor(((e.clientX - rect.left) / rect.width) * totalFrames),
+            totalFrames - 1,
+          ));
+          setFrame(f);
+        });
+        requestAnimationFrame(() => _drawAnnotatedSparkline(sparkCanvas, field.name, totalFrames));
+      }
+    } else if (field.type === "category" || field.type === "string") {
+      // Count unique values
+      const counts = {};
+      values.forEach(v => { counts[String(v)] = (counts[String(v)] ?? 0) + 1; });
+      const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+      if (sorted.length > 0) {
+        const distRow = document.createElement("div");
+        distRow.className = "ann-annotated-dist";
+        sorted.slice(0, 5).forEach(([v, n]) => {
+          const pct = Math.round((n / totalFrames) * 100);
+          const chip = document.createElement("span");
+          chip.className = "ann-dist-chip";
+          chip.title = `${n} frames`;
+          chip.innerHTML = `<span class="ann-dist-val">${escapeHTML(v)}</span><span class="ann-dist-pct">${pct}%</span>`;
+          distRow.appendChild(chip);
+        });
+        if (sorted.length > 5) {
+          const more = document.createElement("span");
+          more.className = "ann-dist-more";
+          more.textContent = `+${sorted.length - 5} more`;
+          distRow.appendChild(more);
+        }
+        card.appendChild(distRow);
+      }
+    } else if (field.type === "boolean") {
+      const trueCount = values.filter(v => v === true || v === "true").length;
+      const pctTrue = Math.round((trueCount / totalFrames) * 100);
+      const distRow = document.createElement("div");
+      distRow.className = "ann-annotated-stats";
+      distRow.innerHTML =
+        `<span><span class="ann-stat-lbl">true</span> ${trueCount} (${pctTrue}%)</span>` +
+        `<span><span class="ann-stat-lbl">false</span> ${totalFrames - trueCount} (${100 - pctTrue}%)</span>`;
+      card.appendChild(distRow);
+    }
+
+    // Current-frame value preview (updated on frame navigation without full rebuild)
+    const curVal = state.annotations[String(state.frame)]?.[field.name];
+    const curRow = document.createElement("div");
+    curRow.className = "ann-annotated-cur";
+    curRow.dataset.field = field.name;
+    if (curVal !== undefined && curVal !== null) {
+      curRow.innerHTML = `<span class="ann-stat-lbl">frame ${state.frame}</span> ${escapeHTML(String(curVal))}`;
+    } else {
+      curRow.style.display = "none";
+    }
+    card.appendChild(curRow);
+
+    statsGrid.appendChild(card);
+  });
+
+  sec.appendChild(statsGrid);
+
+  if (incomplete.length > 0) {
+    const note = document.createElement("div");
+    note.className = "ann-annotated-note";
+    note.textContent = `${incomplete.length} field${incomplete.length !== 1 ? "s" : ""} still incomplete — annotate remaining frames in the Annotate tab.`;
+    sec.appendChild(note);
+  }
+
+  body.appendChild(sec);
+}
+
+function _readInputValue(input, ftype) {
+  if (ftype === "boolean") return input.checked ? true : null;
+  if (ftype === "number") return input.value === "" ? null : parseFloat(input.value);
+  return input.value === "" ? null : input.value;
+}
+
+function updateAnnotationPanel() {
+  const panel = el("annotation-panel");
+  if (!panel || panel.classList.contains("hidden")) return;
+
+  if (_annActiveTab === "annotated") {
+    // Lightweight update: refresh current-frame preview rows and sparkline cursors
+    const frameData = state.annotations[String(state.frame)] ?? {};
+    const totalFrames = state.episode?.length ?? 0;
+    panel.querySelectorAll(".ann-annotated-cur[data-field]").forEach(row => {
+      const name = row.dataset.field;
+      const v = frameData[name];
+      if (v !== undefined && v !== null) {
+        row.innerHTML = `<span class="ann-stat-lbl">frame ${state.frame}</span> ${escapeHTML(String(v))}`;
+        row.style.display = "";
+      } else {
+        row.style.display = "none";
+      }
+    });
+    panel.querySelectorAll(".ann-sparkline[data-field]").forEach(canvas => {
+      _drawAnnotatedSparkline(canvas, canvas.dataset.field, totalFrames);
+    });
+    return;
+  }
+
+  if (_annActiveTab !== "annotate") return;
+  if (!_annChipInputs || state.annotationSchema.length === 0) return;
+
+  // Only update input values — DOM is reused, never rebuilt
+  const frameData = state.annotations[String(state.frame)] ?? {};
+  Object.entries(_annChipInputs).forEach(([name, { input, chip, ftype }]) => {
+    const val = frameData[name];
+    if (ftype === "boolean") {
+      input.checked = !!(val);
+    } else {
+      input.value = val ?? "";
+    }
+    chip.classList.toggle("annotated", val !== undefined && val !== null && val !== "");
+  });
+  _updateAnnotationProgress();
+}
+
+function _updateAnnotationProgress() {
+  const totalFrames = state.episode?.length ?? 0;
+  const schemaCount = state.annotationSchema.length;
+  let annotatedCount = 0, fullCount = 0, partialCount = 0;
+  for (const fd of Object.values(state.annotations)) {
+    const n = Object.keys(fd).length;
+    if (n > 0) annotatedCount++;
+    if (n >= schemaCount) fullCount++;
+    else if (n > 0) partialCount++;
+  }
+  const label = el("ann-progress-label");
+  const btn = el("ann-commit-btn");
+  const fillBtn = el("ann-fill-save-btn");
+  if (label) {
+    label.textContent = schemaCount > 1
+      ? `${fullCount} full · ${partialCount} partial / ${totalFrames}`
+      : `${annotatedCount} / ${totalFrames} frames`;
+  }
+  if (btn) {
+    btn.disabled = annotatedCount === 0;
+    btn.textContent = `Commit ${annotatedCount} annotation${annotatedCount !== 1 ? "s" : ""} to Dataset`;
+  }
+  if (fillBtn) {
+    fillBtn.disabled = annotatedCount === 0;
+  }
+  _updateAnnotationDirtyIndicator();
+  _drawAnnTimeline();
+}
+
+function _drawAnnTimeline() {
+  const canvas = el("ann-timeline");
+  if (!canvas) return;
+  const totalFrames = state.episode?.length ?? 0;
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.offsetWidth;
+  const h = canvas.offsetHeight;
+  if (w === 0 || h === 0 || totalFrames === 0) return;
+
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+  const ctx = canvas.getContext("2d");
+  ctx.scale(dpr, dpr);
+
+  // Read CSS tokens for theme-aware colors
+  const cs = getComputedStyle(document.documentElement);
+  const bgColor      = cs.getPropertyValue("--bg-3").trim()    || "#e5e7eb";
+  const fullColor    = cs.getPropertyValue("--green").trim()   || "#10B981";
+  const partialColor = cs.getPropertyValue("--amber").trim()   || "#F59E0B";
+
+  // Background
+  ctx.fillStyle = bgColor;
+  ctx.fillRect(0, 0, w, h);
+
+  // Per-frame annotation segments: green = fully annotated, amber = partial
+  const schemaCount = state.annotationSchema.length;
+  const annotatedFrames = Object.keys(state.annotations);
+  if (annotatedFrames.length > 0) {
+    const frameW = Math.max(1, Math.ceil(w / totalFrames));
+    ctx.globalAlpha = 0.82;
+    annotatedFrames.forEach(key => {
+      const fi = parseInt(key, 10);
+      if (isNaN(fi)) return;
+      const fieldCount = Object.keys(state.annotations[key]).length;
+      ctx.fillStyle = (schemaCount > 0 && fieldCount >= schemaCount) ? fullColor : partialColor;
+      const x = Math.floor((fi / totalFrames) * w);
+      ctx.fillRect(x, 0, frameW, h);
+    });
+    ctx.globalAlpha = 1;
+  }
+
+  // Current-frame cursor
+  const curX = Math.round((state.frame / Math.max(totalFrames - 1, 1)) * w);
+  ctx.strokeStyle = "#3B82F6";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(curX, 0);
+  ctx.lineTo(curX, h);
+  ctx.stroke();
+
+  // Cursor head triangle
+  ctx.fillStyle = "#3B82F6";
+  ctx.beginPath();
+  ctx.moveTo(curX - 4, 0);
+  ctx.lineTo(curX + 4, 0);
+  ctx.lineTo(curX, 5);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function _drawAnnotatedSparkline(canvas, fieldName, totalFrames) {
+  if (!canvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.offsetWidth;
+  const h = canvas.offsetHeight;
+  if (w === 0 || h === 0 || totalFrames === 0) return;
+
+  canvas.width  = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+  const ctx = canvas.getContext("2d");
+  ctx.scale(dpr, dpr);
+
+  const cs = getComputedStyle(document.documentElement);
+  const bgColor     = cs.getPropertyValue("--bg-3").trim()    || "#f3f4f6";
+  const lineColor   = cs.getPropertyValue("--green").trim()   || "#10B981";
+  const dotColor    = cs.getPropertyValue("--green").trim()   || "#10B981";
+  const cursorColor = "#3B82F6";
+  const labelColor  = cs.getPropertyValue("--text-3").trim()  || "#9ca3af";
+
+  ctx.fillStyle = bgColor;
+  ctx.fillRect(0, 0, w, h);
+
+  // Collect (frame, value) pairs
+  const pts = [];
+  for (let f = 0; f < totalFrames; f++) {
+    const v = state.annotations[String(f)]?.[fieldName];
+    if (v !== undefined && v !== null && v !== "") {
+      const n = parseFloat(v);
+      if (!isNaN(n)) pts.push({ f, v: n });
+    }
+  }
+  if (pts.length === 0) return;
+
+  const pad = { top: 8, bottom: 14, left: 4, right: 4 };
+  const chartW = w - pad.left - pad.right;
+  const chartH = h - pad.top - pad.bottom;
+
+  let minV = pts[0].v, maxV = pts[0].v;
+  pts.forEach(p => { if (p.v < minV) minV = p.v; if (p.v > maxV) maxV = p.v; });
+  const rangeV = maxV === minV ? 1 : maxV - minV;
+
+  const toX = f => pad.left + (f / Math.max(totalFrames - 1, 1)) * chartW;
+  const toY = v => pad.top + chartH - ((v - minV) / rangeV) * chartH;
+
+  // Line through annotated points
+  if (pts.length > 1) {
+    ctx.beginPath();
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = 1.5;
+    ctx.lineJoin = "round";
+    ctx.moveTo(toX(pts[0].f), toY(pts[0].v));
+    for (let i = 1; i < pts.length; i++) {
+      ctx.lineTo(toX(pts[i].f), toY(pts[i].v));
+    }
+    ctx.stroke();
+
+    // Shaded area under line
+    ctx.beginPath();
+    ctx.moveTo(toX(pts[0].f), h - pad.bottom);
+    pts.forEach(p => ctx.lineTo(toX(p.f), toY(p.v)));
+    ctx.lineTo(toX(pts[pts.length - 1].f), h - pad.bottom);
+    ctx.closePath();
+    ctx.globalAlpha = 0.12;
+    ctx.fillStyle = lineColor;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  // Dots at annotated frames
+  ctx.fillStyle = dotColor;
+  pts.forEach(p => {
+    ctx.beginPath();
+    ctx.arc(toX(p.f), toY(p.v), 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // Y-axis labels (min/max)
+  const fmt = n => Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, "");
+  ctx.fillStyle = labelColor;
+  ctx.font = `${8 * dpr / dpr}px system-ui,sans-serif`;
+  ctx.textAlign = "right";
+  ctx.fillText(fmt(maxV), w - 2, pad.top + 6);
+  ctx.fillText(fmt(minV), w - 2, h - pad.bottom - 2);
+
+  // Current-frame cursor
+  const curX = toX(state.frame);
+  ctx.strokeStyle = cursorColor;
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([3, 2]);
+  ctx.beginPath();
+  ctx.moveTo(curX, 0);
+  ctx.lineTo(curX, h);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Current frame value dot
+  const curV = state.annotations[String(state.frame)]?.[fieldName];
+  if (curV !== undefined && curV !== null) {
+    const cv = parseFloat(curV);
+    if (!isNaN(cv)) {
+      ctx.fillStyle = cursorColor;
+      ctx.beginPath();
+      ctx.arc(curX, toY(cv), 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+function _persistAnnotationFrame(frameIndex) {
+  if (!state.activeDataset || state.activeEpIndex == null) return;
+  const values = state.annotations[String(frameIndex)];
+  if (!values || Object.keys(values).length === 0) return; // nothing to save
+  apiPost(
+    `${apiDs(state.activeDataset)}/episodes/${state.activeEpIndex}/annotations`,
+    { frame_index: frameIndex, values }
+  ).catch(() => {});
+}
+
+// Reset in-memory annotation state for the current episode (inputs, timers, state)
+function _clearCurrentEpisodeAnnotationsInMemory() {
+  Object.keys(_annSaveTimers).forEach(k => { clearTimeout(_annSaveTimers[k]); delete _annSaveTimers[k]; });
+  state.annotations = {};
+  state.annotationDirty = false;
+  _updateAnnotationDirtyIndicator();
+  if (_annChipInputs) {
+    Object.values(_annChipInputs).forEach(({ input, chip, ftype }) => {
+      if (ftype === "boolean") input.checked = false;
+      else input.value = "";
+      chip.classList.remove("annotated");
+    });
+  }
+  _updateAnnotationProgress();
+}
+
+async function clearEpisodeAnnotations() {
+  if (!state.episode || !state.activeDataset) return;
+  const count = Object.keys(state.annotations).length;
+  if (count === 0) {
+    showCopyToast("No annotations to clear for this episode", "info");
+    return;
+  }
+  const confirmed = window.confirm(
+    `Clear ALL ${count} frame annotation${count !== 1 ? "s" : ""} for episode ${state.activeEpIndex}?\n\nThis permanently removes all annotation data for this episode (both draft and saved).`
+  );
+  if (!confirmed) return;
+
+  _clearCurrentEpisodeAnnotationsInMemory();
+
+  try {
+    await apiPost(`${apiDs(state.activeDataset)}/episodes/${state.activeEpIndex}/annotations`, {}, "DELETE");
+    showCopyToast(`Cleared all annotations for episode ${state.activeEpIndex}`, "success");
+  } catch (e) {
+    showCopyToast(`Server delete failed: ${e.message}`, "error");
+  }
+}
+
+function _jumpToUnannotated(dir) {
+  if (!state.episode || !_annChipInputs) return;
+  const len = state.episode.length;
+  const fieldNames = Object.keys(_annChipInputs);
+  if (fieldNames.length === 0) return;
+
+  let f = state.frame + dir;
+  for (let i = 0; i < len; i++, f += dir) {
+    if (f < 0) f = len - 1;
+    if (f >= len) f = 0;
+
+    // Check if this frame is unannotated for ANY of the current fields in the Annotate tab
+    const frameData = state.annotations[String(f)] ?? {};
+    const hasUnannotated = fieldNames.some(name =>
+      frameData[name] === undefined || frameData[name] === null || frameData[name] === ""
+    );
+
+    if (hasUnannotated) {
+      stopPlayback();
+      setFrame(f);
+      return;
+    }
+  }
+  showCopyToast("All frames annotated!", "success");
+}
+
+async function _saveSchema(fields) {
+  try {
+    await apiPost(`${apiDs(state.activeDataset)}/annotation_schema`, { fields });
+    state.annotationSchema = fields;
+    buildAnnotationPanel();
+    showCopyToast("Schema saved", "success");
+  } catch (e) {
+    showCopyToast(`Schema error: ${e.message}`, "error");
+  }
+}
+
+// Apply fill strategies to all unannotated frames, persist to JSON sidecar, refresh UI.
+// Triggered by Ctrl+S when annotation panel is visible.
+async function fillAndSaveAllAnnotations() {
+  if (!state.activeDataset || state.activeEpIndex === null) return;
+  if (state.annotationSchema.length === 0) {
+    showCopyToast("Define annotation fields in the Schema tab first", "warn");
+    return;
+  }
+  const filled = _computeFilledAnnotations();
+  const count = Object.keys(filled).length;
+  if (count === 0) {
+    showCopyToast("No annotations to save (annotate at least one frame first)", "warn");
+    return;
+  }
+  // Update in-memory state immediately so UI reflects the fill
+  state.annotations = filled;
+  state.annotationDirty = false;
+  _updateAnnotationDirtyIndicator();
+  try {
+    await apiPost(
+      `${apiDs(state.activeDataset)}/episodes/${state.activeEpIndex}/annotations`,
+      { frames: filled },
+      "PUT",
+    );
+    showCopyToast(`Saved ${count} frame${count !== 1 ? "s" : ""} (with fill applied)`, "success");
+    // If all fields are now complete, switch to Annotated tab so user can review
+    const { incomplete } = _splitFieldsByCompletion();
+    if (incomplete.length === 0 && _annActiveTab === "annotate") _annActiveTab = "annotated";
+    buildAnnotationPanel();
+  } catch (err) {
+    showCopyToast(`Save failed: ${err.message}`, "error");
+    state.annotationDirty = true;
+  }
+}
+
+async function commitAnnotations() {
+  const count = Object.keys(state.annotations).length;
+  if (count === 0) return;
+
+  // Apply fill strategies to get the full frame set to commit
+  const filledFrames = _computeFilledAnnotations();
+  const filledCount = Object.keys(filledFrames).length;
+  const total = state.episode?.length ?? 0;
+  const fillNote = filledCount > count
+    ? `\n\nFill strategies will expand coverage from ${count} → ${filledCount} / ${total} frames.`
+    : "";
+
+  const confirmed = window.confirm(
+    `Commit ${count} annotated frame${count !== 1 ? "s" : ""} to the dataset Parquet file?${fillNote}\n\nThis will permanently add/overwrite annotation columns in:\n${state.activeDataset} / episode ${state.activeEpIndex}`
+  );
+  if (!confirmed) return;
+  try {
+    const result = await apiPost(
+      `${apiDs(state.activeDataset)}/episodes/${state.activeEpIndex}/annotations/commit`,
+      { filled_frames: filledFrames }
+    );
+    showCopyToast(`✓ Committed ${filledCount} frame annotations to dataset (${result.columns_written?.join(", ")})`, "success");
+    state.annotationDirty = false;
+    _updateAnnotationDirtyIndicator();
+    _fjvLastKey = null;  // force refresh — Parquet now has new columns
+    updateFrameJsonViewer(true);
+  } catch (e) {
+    showCopyToast(`Commit failed: ${e.message}`, "error");
+  }
 }
 
 /* ── TimeDim tooltip ─────────────────────────────────────── */
@@ -2737,7 +4244,7 @@ function showTimeDimTooltip(x, y, html) {
     document.body.appendChild(tt);
   }
   tt.innerHTML = html;
-  tt.classList.remove("hidden");
+  show(tt);
   // Defer positioning until next frame so width is calculated
   requestAnimationFrame(() => {
     const w = tt.offsetWidth, h = tt.offsetHeight;
@@ -2750,7 +4257,7 @@ function showTimeDimTooltip(x, y, html) {
 }
 
 function hideTimeDimTooltip() {
-  el("timedim-tooltip")?.classList.add("hidden");
+  hide("timedim-tooltip");
 }
 
 /* ── Episode per-dim statistics ─────────────────────────── */
@@ -2780,7 +4287,7 @@ function buildFrameValuesPanel(ep) {
   const sDims = ep.state?.[0]?.length ?? 0;
   const aDims = ep.actions?.[0]?.length ?? 0;
 
-  if (!sDims && !aDims) { panel.classList.add("hidden"); return; }
+  if (!sDims && !aDims) { hide(panel); return; }
 
   _fvCache = { s: [], a: [] };  // invalidate stale element references
   panel.innerHTML = "";
@@ -2826,7 +4333,7 @@ function buildFrameValuesPanel(ep) {
       const barFill = document.createElement("div");
       barFill.className = "fv-bar-fill";
       barFill.style.background = PALETTE[d % PALETTE.length];
-      chip.innerHTML = `<div class="fv-top"><span class="fv-dim" style="color:${PALETTE[d % PALETTE.length]}">${names[d] ?? `${prefix}${d}`}</span></div><div class="fv-bar"></div>`;
+      chip.innerHTML = `<div class="fv-top"><span class="fv-dim" style="color:${PALETTE[d % PALETTE.length]}">${escapeHTML(names[d] ?? `${prefix}${d}`)}</span></div><div class="fv-bar"></div>`;
       chip.querySelector(".fv-top").appendChild(span);
       chip.querySelector(".fv-bar").appendChild(barFill);
       // Cache direct element references for fast hot-path updates
@@ -2900,15 +4407,291 @@ function updateFrameValues() {
   updateDim("a", ep.actions?.[f], "action");
 }
 
+/* ── Frame JSON viewer ──────────────────────────────────── */
+function toggleFrameJsonViewer() {
+  const panel = el("frame-json-viewer");
+  const btn   = el("btn-frame-json");
+  if (!panel) return;
+  const hidden = toggle(panel, "hidden");
+  btn?.classList.toggle("active", !hidden);
+  btn?.setAttribute("aria-pressed", boolStr(!hidden));
+  lsFlag("fjvOpen", !hidden);   // persist user preference
+  if (!hidden) updateFrameJsonViewer(true);
+}
+
+function updateFrameJsonViewer(force = false) {
+  const panel = el("frame-json-viewer");
+  if (!panel || panel.classList.contains("hidden")) return;
+  if (!state.activeDataset || state.activeEpIndex == null) return;
+  // Skip update during high-speed playback to avoid flooding the server
+  if (state.playing && state.speed >= 4) return;
+
+  const key = `${state.activeDataset}/${state.activeEpIndex}/${state.frame}`;
+  if (!force && key === _fjvLastKey) return;
+
+  // Save previous frame data before updating (same episode only, consecutive frames)
+  const [prevDs, prevEp, prevF] = (_fjvPrevKey ?? "//").split("/");
+  const sameEp = prevDs === state.activeDataset && prevEp === String(state.activeEpIndex);
+  if (sameEp && _fjvLastData) {
+    _fjvPrevData = _fjvLastData;
+    _fjvPrevKey  = _fjvLastKey;
+  } else if (!sameEp) {
+    _fjvPrevData = null;
+    _fjvPrevKey  = null;
+  }
+
+  _fjvLastKey = key;
+
+  clearTimeout(_fjvDebounce);
+  const delay = state.playing ? 200 : 0;
+  _fjvDebounce = setTimeout(async () => {
+    // Show loading only if the table is not already populated (reduces flicker)
+    if (!panel.querySelector(".fjv-table")) {
+      panel.innerHTML = `<div class="fjv-loading">Loading…</div>`;
+    }
+    try {
+      const data = await apiFetch(
+        `${apiDs(state.activeDataset)}/episodes/${state.activeEpIndex}/frame/${state.frame}/values`
+      );
+      _fjvLastData = data;
+      _renderFrameJsonViewer(panel, data);
+    } catch (err) {
+      panel.innerHTML = `<div class="fjv-error">Failed to load: ${escapeHTML(err.message)}</div>`;
+    }
+  }, delay);
+}
+
+// Re-render JSON viewer using cached data (no fetch) — used when filter changes
+function _reRenderFrameJsonViewerFromCache() {
+  const panel = el("frame-json-viewer");
+  if (!panel || !_fjvLastData) return;
+  _renderFrameJsonViewer(panel, _fjvLastData);
+}
+
+// Format a number for display in the JSON viewer
+const _fjvFmt = n => {
+  if (!isFinite(n)) return String(n);
+  if (Object.is(n, -0)) return "0";         // normalize negative zero
+  if (Number.isInteger(n)) return String(n);
+  return n.toFixed(7).replace(/\.?0+$/, ""); // trim trailing zeros
+};
+
+function _fjvAppendRow(table, key, val, isAnn) {
+  const isArr = Array.isArray(val);
+  const row = document.createElement("div");
+  row.className = "fjv-row" + (isAnn ? " fjv-row-ann" : "");
+
+  const keyEl = document.createElement("span");
+  keyEl.className = "fjv-key";
+  keyEl.textContent = key;
+  if (isAnn) {
+    const tag = document.createElement("span");
+    tag.className = "fjv-ann-tag";
+    tag.textContent = "ann";
+    keyEl.appendChild(tag);
+  }
+
+  const valEl = document.createElement("span");
+  valEl.className = "fjv-val";
+
+  if (isArr) {
+    const expanded = !!_fjvExpanded[key];
+    const summary = document.createElement("button");
+    summary.type = "button";
+    summary.className = "fjv-arr-toggle";
+    summary.innerHTML =
+      `<svg class="fjv-arr-chevron${expanded ? " open" : ""}" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>` +
+      ` [${val.length} dims]`;
+    valEl.appendChild(summary);
+
+    const detail = document.createElement("div");
+    detail.className = "fjv-arr-detail" + (expanded ? " open" : "");
+    detail.innerHTML = val.map((v, i) =>
+      `<span class="fjv-arr-item"><span class="fjv-arr-idx">${i}</span><span class="fjv-num">${
+        typeof v === "number" ? _fjvFmt(v) : escapeHTML(String(v))
+      }</span></span>`
+    ).join("");
+    valEl.appendChild(detail);
+
+    summary.addEventListener("click", () => {
+      _fjvExpanded[key] = !_fjvExpanded[key];
+      summary.querySelector(".fjv-arr-chevron").classList.toggle("open", !!_fjvExpanded[key]);
+      detail.classList.toggle("open", !!_fjvExpanded[key]);
+    });
+  } else if (typeof val === "number") {
+    const numSpan = document.createElement("span");
+    numSpan.className = "fjv-num";
+    numSpan.textContent = _fjvFmt(val);
+    valEl.appendChild(numSpan);
+
+    // Show delta from previous frame (same episode only)
+    if (_fjvPrevData && key in _fjvPrevData) {
+      const prev = _fjvPrevData[key];
+      if (typeof prev === "number" && !Object.is(prev, val)) {
+        const delta = val - prev;
+        const badge = document.createElement("span");
+        badge.className = "fjv-delta" + (delta > 0 ? " fjv-delta-pos" : " fjv-delta-neg");
+        badge.textContent = (delta > 0 ? "+" : "") + _fjvFmt(delta);
+        valEl.appendChild(badge);
+        row.classList.add("fjv-changed");
+      }
+    }
+  } else if (typeof val === "boolean") {
+    valEl.innerHTML = `<span class="fjv-bool">${val}</span>`;
+    if (_fjvPrevData && key in _fjvPrevData && _fjvPrevData[key] !== val) {
+      row.classList.add("fjv-changed");
+    }
+  } else {
+    valEl.innerHTML = `<span class="fjv-str">${escapeHTML(String(val))}</span>`;
+    if (_fjvPrevData && key in _fjvPrevData && _fjvPrevData[key] !== val) {
+      row.classList.add("fjv-changed");
+    }
+  }
+
+  row.appendChild(keyEl);
+  row.appendChild(valEl);
+  table.appendChild(row);
+}
+
+function _renderFrameJsonViewer(panel, data) {
+  const annFields = new Set(state.annotationSchema.map(f => f.name));
+
+  // Partition into groups: annotations → scalars → arrays
+  const annEntries = [], scalarEntries = [], arrEntries = [];
+  for (const [k, v] of Object.entries(data)) {
+    if (annFields.has(k))      annEntries.push([k, v]);
+    else if (Array.isArray(v)) arrEntries.push([k, v]);
+    else                       scalarEntries.push([k, v]);
+  }
+  // Sort arrays by length (shortest first so small dims come before large)
+  arrEntries.sort(([, a], [, b]) => a.length - b.length);
+  const entries = [...annEntries, ...scalarEntries, ...arrEntries];
+
+  panel.innerHTML = "";
+
+  // Header bar with copy button
+  const hdr = document.createElement("div");
+  hdr.className = "fjv-header";
+
+  const titleSpan = document.createElement("span");
+  titleSpan.className = "fjv-title";
+  titleSpan.innerHTML =
+    `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>` +
+    ` Frame <strong>${state.frame}</strong> · raw data`;
+
+  const rightGroup = document.createElement("span");
+  rightGroup.className = "fjv-header-right";
+
+  // Filter/search input
+  const filterInput = document.createElement("input");
+  filterInput.type = "search";
+  filterInput.className = "fjv-filter";
+  filterInput.placeholder = "Filter…";
+  filterInput.value = _fjvFilterText;
+  filterInput.title = "Filter keys (type to search)";
+  filterInput.setAttribute("aria-label", "Filter frame data keys");
+  filterInput.addEventListener("input", () => {
+    _fjvFilterText = filterInput.value.trim().toLowerCase();
+    _reRenderFrameJsonViewerFromCache();
+  });
+
+  const filteredEntries = _fjvFilterText
+    ? entries.filter(([k]) => k.toLowerCase().includes(_fjvFilterText))
+    : entries;
+
+  const colCount = document.createElement("span");
+  colCount.className = "fjv-subtitle";
+  colCount.textContent = _fjvFilterText
+    ? `${filteredEntries.length} / ${entries.length} cols`
+    : `${entries.length} cols`;
+
+  const arrKeys = arrEntries.map(([k]) => k);
+  const allExpanded = arrKeys.length > 0 && arrKeys.every(k => _fjvExpanded[k]);
+  const expandAllBtn = document.createElement("button");
+  expandAllBtn.type = "button";
+  expandAllBtn.className = "fjv-copy-btn";
+  expandAllBtn.title = allExpanded ? "Collapse all arrays" : "Expand all arrays";
+  expandAllBtn.innerHTML = allExpanded
+    ? `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>`
+    : `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
+  expandAllBtn.style.display = arrKeys.length ? "" : "none";
+  expandAllBtn.addEventListener("click", () => {
+    const next = !allExpanded;
+    arrKeys.forEach(k => { _fjvExpanded[k] = next; });
+    updateFrameJsonViewer(true);
+  });
+
+  const copyBtn = document.createElement("button");
+  copyBtn.type = "button";
+  copyBtn.className = "fjv-copy-btn";
+  copyBtn.title = "Copy as JSON";
+  copyBtn.innerHTML =
+    `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+  copyBtn.addEventListener("click", () => {
+    const json = JSON.stringify(data, null, 2);
+    navigator.clipboard.writeText(json).then(
+      () => showCopyToast("Frame data copied as JSON", "success"),
+      () => showCopyToast("Copy failed", "error"),
+    );
+  });
+
+  rightGroup.appendChild(colCount);
+  rightGroup.appendChild(expandAllBtn);
+  rightGroup.appendChild(copyBtn);
+  hdr.appendChild(titleSpan);
+  hdr.insertBefore(filterInput, rightGroup);  // filter input left of buttons
+  hdr.appendChild(rightGroup);
+  panel.appendChild(hdr);
+
+  // Key-value table (use filtered entries if filter is active)
+  const table = document.createElement("div");
+  table.className = "fjv-table";
+
+  // Divider between groups
+  const addDivider = (label) => {
+    const div = document.createElement("div");
+    div.className = "fjv-group-divider";
+    div.setAttribute("data-label", label);
+    table.appendChild(div);
+  };
+
+  // Partition filtered entries by type
+  const annFiltered = filteredEntries.filter(([k]) => annFields.has(k));
+  const arrFiltered = filteredEntries.filter(([k]) => arrEntries.some(([ak]) => ak === k));
+  const scalarFiltered = filteredEntries.filter(([k]) => scalarEntries.some(([sk]) => sk === k));
+
+  if (annFiltered.length > 0) {
+    addDivider("annotations");
+    annFiltered.forEach(([k, v]) => _fjvAppendRow(table, k, v, true));
+  }
+  if (scalarFiltered.length > 0) {
+    if (annFiltered.length > 0) addDivider("metadata");
+    scalarFiltered.forEach(([k, v]) => _fjvAppendRow(table, k, v, false));
+  }
+  if (arrFiltered.length > 0) {
+    addDivider("arrays");
+    arrFiltered.forEach(([k, v]) => _fjvAppendRow(table, k, v, false));
+  }
+
+  if (filteredEntries.length === 0 && _fjvFilterText) {
+    const noMatch = document.createElement("div");
+    noMatch.className = "fjv-no-match";
+    noMatch.textContent = `No columns match "${_fjvFilterText}"`;
+    panel.appendChild(noMatch);
+  } else {
+    panel.appendChild(table);
+  }
+}
+
 /* ── Playback ────────────────────────────────────────────── */
 function setupControls(ep) {
   const scrubber = el("scrubber");
   scrubber.max = ep.length - 1;
   scrubber.value = 0;
-  scrubber.setAttribute("aria-valuemin", "0");
-  scrubber.setAttribute("aria-valuemax", ep.length - 1);
-  scrubber.setAttribute("aria-valuenow", "0");
-  scrubber.setAttribute("aria-valuetext", "frame 0");
+  attr(scrubber, "aria-valuemin", "0");
+  attr(scrubber, "aria-valuemax", ep.length - 1);
+  attr(scrubber, "aria-valuenow", "0");
+  attr(scrubber, "aria-valuetext", "frame 0");
   el("frame-counter").textContent = `0 / ${ep.length - 1}`;
   // Update speed select tooltip with per-speed effective fps
   const speedSel = el("speed-select");
@@ -2934,8 +4717,8 @@ function updateScrubber() {
   el("frame-counter").textContent = `${state.frame} / ${ep.length - 1}${tsStr}`;
   const titleStr = tsCurRaw != null ? `${fmt(tsCurRaw)} (frame ${state.frame})` : `frame ${state.frame}`;
   scrubber.title = titleStr;
-  scrubber.setAttribute("aria-valuenow", state.frame);
-  scrubber.setAttribute("aria-valuetext", titleStr);
+  attr(scrubber, "aria-valuenow", state.frame);
+  attr(scrubber, "aria-valuetext", titleStr);
   // Fill the scrubber track to show playback progress (CSS --scrub-pct custom property)
   const pct = ep.length > 1 ? (state.frame / (ep.length - 1)) * 100 : 0;
   scrubber.style.setProperty("--scrub-pct", pct.toFixed(1) + "%");
@@ -2946,10 +4729,10 @@ function stopPlayback() {
   state.playing = false;
   state.rafId = null;
   state.lastTick = null;
-  el("play-icon")?.classList.remove("hidden");
-  el("pause-icon")?.classList.add("hidden");
+  show("play-icon");
+  hide("pause-icon");
   const fpsBadge = el("fps-badge");
-  if (fpsBadge) { fpsBadge.classList.add("hidden"); fpsBadge.dataset.fast = ""; }
+  if (fpsBadge) { hide(fpsBadge); fpsBadge.dataset.fast = ""; }
   document.body.classList.remove("is-playing");
   // Strip frame prefix from title when stopped
   document.title = document.title.replace(/^\[\d+\] /, "");
@@ -2996,7 +4779,7 @@ function startPlayback() {
           badge.textContent = `${fpsBucket}/${Math.round(targetFps)}fps${speedStr}${lagStr}${loopStr}`;
           badge.dataset.fast = state.speed >= 2 ? "1" : "";
           badge.title = `Actual / target fps${speedStr ? ` @ ${state.speed}× speed` : ""}${lagStr ? " — ⚠ rendering lag" : ""}${loopStr ? `  •  looped ${state.loopCount}×` : ""}`;
-          badge.classList.remove("hidden");
+          show(badge);
         }
         fpsBucket = 0;
         fpsLast = ts;
@@ -3028,7 +4811,7 @@ function initPlaybackPreferences() {
   }
   state.looping = lsBool("loop");
   toggle("btn-loop", "active", state.looping);
-  attr("btn-loop", "aria-pressed", state.looping);
+  attr("btn-loop", "aria-pressed", boolStr(state.looping));
 
   // Restore normalize preference (hash URL takes priority, but localStorage covers no-hash case)
   const savedNorm = localStorage.getItem("normalize");
@@ -3063,6 +4846,11 @@ document.addEventListener("DOMContentLoaded", () => {
   // Restore frame values sort preference
   _fvSortActive = lsBool("fvSort");
 
+  // Restore annotation tab preference
+  if (lsBool("annTab-annotated")) _annActiveTab = "annotated";
+  else if (lsBool("annTab-schema")) _annActiveTab = "schema";
+  else if (lsBool("annTab-saved")) _annActiveTab = "saved";
+
   // Restore corr/timedim open state (will take effect after episode loads)
   if (lsBool("corrOpen")) {
     el("corr-body")?.classList.remove("corr-collapsed");
@@ -3094,6 +4882,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (document.hidden && state.playing) stopPlayback();
   });
 
+  // Viewer tabs
+  document.querySelectorAll(".viewer-tab").forEach(btn => {
+    btn.addEventListener("click", () => switchViewerTab(btn.dataset.tab));
+  });
+
   el("sidebar-toggle").addEventListener("click", toggleSidebar);
   el("dark-mode-btn").addEventListener("click", toggleDarkMode);
   el("collapse-all-btn").addEventListener("click", collapseAllTasks);
@@ -3108,7 +4901,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   el("btn-play").addEventListener("click", () => {
     if (state.playing) stopPlayback(); else startPlayback();
-    el("btn-play").setAttribute("aria-label", state.playing ? "Pause playback" : "Start playback");
+    attr("btn-play", "aria-label", state.playing ? "Pause playback" : "Start playback");
   });
   el("btn-rewind").addEventListener("click", () => { stopPlayback(); setFrame(0); });
   el("btn-loop").addEventListener("click", toggleLooping);
@@ -3122,12 +4915,13 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   el("btn-export").addEventListener("click", exportFrame);
   el("btn-frame-values").addEventListener("click", toggleFrameValuesPanel);
+  el("btn-frame-json")?.addEventListener("click", toggleFrameJsonViewer);
   el("btn-normalize")?.addEventListener("click", toggleNormalize);
   el("btn-csv")?.addEventListener("click", exportCSV);
   el("btn-copy-url")?.addEventListener("click", copyEpisodeURL);
 
   // Disable export buttons initially
-  setDisabled(["btn-export", "btn-csv", "btn-frame-values"], true);
+  setDisabled(["btn-export", "btn-csv", "btn-frame-values", "btn-frame-json"], true);
 
   el("speed-select").addEventListener("change", e => {
     state.speed = parseFloat(e.target.value);
@@ -3165,10 +4959,10 @@ document.addEventListener("DOMContentLoaded", () => {
     _scrubTooltipEl.textContent = `Frame ${hoverFrame}${tsStr}`;
     _scrubTooltipEl.style.left = `${e.clientX}px`;
     _scrubTooltipEl.style.top = `${rect.top - 30}px`;
-    _scrubTooltipEl.classList.remove("hidden");
+    show(_scrubTooltipEl);
   });
   el("scrubber").addEventListener("mouseleave", () => {
-    _scrubTooltipEl?.classList.add("hidden");
+    hide(_scrubTooltipEl);
   });
 
   el("expand-state").addEventListener("click",  () => toggleExpand("state"));
@@ -3187,16 +4981,16 @@ document.addEventListener("DOMContentLoaded", () => {
   };
   el("task-label").addEventListener("click", _copyTaskLabel);
   el("task-label").addEventListener("keydown", e => {
-    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); _copyTaskLabel(); }
+    if (isActivate(e)) { e.preventDefault(); _copyTaskLabel(); }
   });
   el("task-label").title = "Click to copy task description";
 
   el("corr-close").addEventListener("click", () => {
     const body = el("corr-body");
-    const nowCollapsed = body.classList.toggle("corr-collapsed");
+    const nowCollapsed = toggle(body, "corr-collapsed");
     el("corr-section").dataset.open = nowCollapsed ? "" : "1";
     toggle("corr-close", "active", !nowCollapsed);
-    attr("corr-close", "aria-expanded", String(!nowCollapsed));
+    attr("corr-close", "aria-expanded", boolStr(!nowCollapsed));
     lsFlag("corrOpen", !nowCollapsed);
     if (!nowCollapsed && state.episode) buildCorrelationHeatmap(state.episode);
   });
@@ -3204,10 +4998,10 @@ document.addEventListener("DOMContentLoaded", () => {
   el("timedim-toggle").addEventListener("click", () => {
     const card = el("timedim-card");
     const body = el("timedim-body");
-    const nowCollapsed = body.classList.toggle("timedim-collapsed");
+    const nowCollapsed = toggle(body, "timedim-collapsed");
     card.dataset.open = nowCollapsed ? "" : "1";
     toggle("timedim-toggle", "active", !nowCollapsed);
-    attr("timedim-toggle", "aria-expanded", String(!nowCollapsed));
+    attr("timedim-toggle", "aria-expanded", boolStr(!nowCollapsed));
     lsFlag("timedimOpen", !nowCollapsed);
     if (!nowCollapsed && state.episode) buildTimeDimHeatmap(state.episode);
   });
@@ -3231,9 +5025,22 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.key === "?" && !inInput) {
       e.preventDefault();
       const modal = el("shortcuts-modal");
-      const nowHidden = modal.classList.toggle("hidden");
-      attr("btn-shortcuts", "aria-expanded", String(!nowHidden));
+      const nowHidden = toggle(modal, "hidden");
+      attr("btn-shortcuts", "aria-expanded", boolStr(!nowHidden));
       return;
+    }
+
+    // Ctrl/Cmd shortcuts that should fire even when an input/select is focused
+    if (e.ctrlKey || e.metaKey) {
+      if (e.key === "s") {
+        e.preventDefault();
+        if (state.viewerTab === "annotate" && !isHidden("annotation-panel")) {
+          fillAndSaveAllAnnotations();
+        } else {
+          exportFrame();
+        }
+        return;
+      }
     }
 
     if (inInput) return;
@@ -3289,8 +5096,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     if (modKey && e.key === "s") {
-      e.preventDefault();
-      exportFrame();
+      // handled above (before inInput guard) to fire even when a select is focused
       return;
     }
     if (modKey && e.shiftKey && (e.key === "C" || e.key === "c")) {
@@ -3347,6 +5153,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (isKey(e, "v", "p")) {
       e.preventDefault();
       toggleFrameValuesPanel();
+      return;
+    }
+    if (isKey(e, "z")) {
+      e.preventDefault();
+      if (hasActiveEp()) toggleFrameJsonViewer();
       return;
     }
 
@@ -3431,15 +5242,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (isKey(e, "a")) {
       e.preventDefault();
-      // Scroll sidebar to active episode
-      const activeItem = document.querySelector(".ep-item.active");
-      if (activeItem) {
-        const wasCollapsed = el("main").classList.contains("sidebar-collapsed");
-        if (wasCollapsed) toggleSidebar();
-        // Wait for sidebar animation (200ms) before scrolling
-        setTimeout(() => activeItem.scrollIntoView({ block: "center", behavior: "smooth" }), wasCollapsed ? 220 : 0);
-        showCopyToast("Scrolled to current episode", "success");
-      }
+      if (hasActiveEp()) switchViewerTab(state.viewerTab === "annotate" ? "video" : "annotate");
+      return;
+    }
+    if (e.key === "Delete" && state.viewerTab === "annotate") {
+      e.preventDefault();
+      clearEpisodeAnnotations();
       return;
     }
     if (isKey(e, "o")) {
@@ -3571,6 +5379,15 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         break;
       case "Escape":
+        if (_annSettingsOpen) {
+          _annSettingsOpen = false;
+          const sp = el("ann-settings-panel");
+          const sb = el("ann-settings-btn");
+          if (sp) sp.classList.remove("open");
+          if (sb) { sb.classList.remove("active"); sb.setAttribute("aria-pressed", "false"); }
+          e.preventDefault();
+          break;
+        }
         if (state.compareEpisode) { e.preventDefault(); clearCompare(); }
         hide("shortcuts-modal");
         attr("btn-shortcuts", "aria-expanded", "false");
@@ -3588,12 +5405,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   el("btn-shortcuts").addEventListener("click", () => {
     const modal = el("shortcuts-modal");
-    const nowHidden = modal.classList.toggle("hidden"); // true = modal is now hidden
-    attr("btn-shortcuts", "aria-expanded", String(!nowHidden));
+    const nowHidden = toggle(modal, "hidden"); // true = modal is now hidden
+    attr("btn-shortcuts", "aria-expanded", boolStr(!nowHidden));
     if (!nowHidden) {
       // Modal just opened — focus the box for keyboard nav
       const box = modal.querySelector(".modal-box");
-      if (box && !box.hasAttribute("tabindex")) box.setAttribute("tabindex", "-1");
+      if (box && !box.hasAttribute("tabindex")) attr(box, "tabindex", "-1");
       requestAnimationFrame(() => box?.focus());
     }
   });
@@ -3616,7 +5433,7 @@ document.addEventListener("DOMContentLoaded", () => {
   el("shortcuts-modal").addEventListener("click", e => {
     if (e.target === el("shortcuts-modal")) {
       hide("shortcuts-modal");
-      el("btn-shortcuts").setAttribute("aria-expanded", "false");
+      attr("btn-shortcuts", "aria-expanded", "false");
     }
   });
   // Focus trap inside lightbox
@@ -3707,7 +5524,7 @@ document.addEventListener("DOMContentLoaded", () => {
   _mq.addEventListener("change", e => {
     if (e.matches && !el("main").classList.contains("sidebar-collapsed")) {
       el("main").classList.add("sidebar-collapsed");
-      el("sidebar-toggle").setAttribute("aria-pressed", "true");
+      attr("sidebar-toggle", "aria-pressed", "true");
     }
   });
 
@@ -3715,7 +5532,7 @@ document.addEventListener("DOMContentLoaded", () => {
   window.addEventListener("resize", () => {
     if (window.innerWidth < SIDEBAR_BREAKPOINT && !el("main").classList.contains("sidebar-collapsed")) {
       el("main").classList.add("sidebar-collapsed");
-      el("sidebar-toggle").setAttribute("aria-pressed", "true");
+      attr("sidebar-toggle", "aria-pressed", "true");
     }
   }, { passive: true });
 
@@ -3787,7 +5604,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const f = params.get("f");
       if (f != null) setFrame(parseInt(f, 10));
       const speedParam = parseFloat(params.get("speed") ?? "");
-      if (!isNaN(speedParam) && SPEEDS.includes(speedParam) && speedParam !== state.speed) {
+      if (!Number.isNaN(speedParam) && SPEEDS.includes(speedParam) && speedParam !== state.speed) {
         state.speed = speedParam;
         el("speed-select").value = speedParam;
         localStorage.setItem("speed", speedParam);
