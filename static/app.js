@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v94
+   LeRobot Visualizer — app.js  v95
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -3694,6 +3694,23 @@ function _buildAnnotateSection(body) {
   fillSaveBtn.addEventListener("click", fillAndSaveAllAnnotations);
   sec.appendChild(fillSaveBtn);
 
+  // Export as CSV button
+  const exportBtn = document.createElement("button");
+  exportBtn.type = "button";
+  exportBtn.className = "ann-export-csv-btn";
+  exportBtn.id = "ann-export-csv-btn";
+  exportBtn.title = "Export current episode annotations as CSV";
+  exportBtn.innerHTML =
+    `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">` +
+      `<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>` +
+      `<polyline points="14 2 14 8 20 8"/>` +
+      `<line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/>` +
+    `</svg>` +
+    ` Export as CSV`;
+  exportBtn.disabled = annotatedCount === 0;
+  exportBtn.addEventListener("click", exportAnnotationsAsCSV);
+  sec.appendChild(exportBtn);
+
   // Commit button
   const commitBtn = document.createElement("button");
   commitBtn.type = "button";
@@ -4201,6 +4218,57 @@ async function fillAndSaveAllAnnotations() {
     showCopyToast(`Save failed: ${err.message}`, "error");
     state.annotationDirty = true;
   }
+}
+
+function exportAnnotationsAsCSV() {
+  if (!state.activeDataset || state.activeEpIndex === null) return;
+  const count = Object.keys(state.annotations).length;
+  if (count === 0) {
+    showCopyToast("No annotations to export", "warn");
+    return;
+  }
+
+  // Collect all field names from schema
+  const headers = ["frame_index", ...state.annotationSchema.map(f => f.name)];
+  const total = state.episode?.length ?? 0;
+  const rows = [];
+
+  for (let f = 0; f < total; f++) {
+    const frameData = state.annotations[String(f)] ?? {};
+    const row = [String(f)];
+    state.annotationSchema.forEach(field => {
+      const val = frameData[field.name];
+      if (val === undefined || val === null) {
+        row.push("");
+      } else if (typeof val === "boolean") {
+        row.push(val ? "true" : "false");
+      } else {
+        row.push(String(val));
+      }
+    });
+    rows.push(row);
+  }
+
+  // Escape CSV values and join
+  const escapeCsv = v => {
+    if (v === "") return '""';
+    if (v.includes(",") || v.includes('"') || v.includes("\n")) {
+      return '"' + v.replace(/"/g, '""') + '"';
+    }
+    return v;
+  };
+
+  const csv = [headers.map(escapeCsv).join(","), ...rows.map(r => r.map(escapeCsv).join(","))].join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${state.activeDataset}_ep${epPad()}_annotations.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showCopyToast("Annotations exported as CSV", "success");
 }
 
 async function commitAnnotations() {
