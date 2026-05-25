@@ -6,9 +6,9 @@
   <meta name="description" content="Interactive visualizer for LeRobot robot learning datasets — browse episodes, inspect state/action trajectories, and view camera frames." />
   <meta name="color-scheme" content="light dark" />
   <title>LeRobot Visualizer</title>
-  <link rel="stylesheet" href="/style.css?v=88" />
+  <link rel="stylesheet" href="/style.css?v=89" />
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
-  <script defer src="/app.js?v=97"></script>
+  <script defer src="/app.js?v=98"></script>
 </head>
 <body>
   <div id="app">
@@ -41,6 +41,9 @@
       <aside id="sidebar">
         <div id="sidebar-header">
           <span class="sidebar-title">Datasets</span>
+          <button type="button" id="ssh-btn" class="icon-btn-sm" title="Connect to remote SSH server" aria-label="Connect SSH remote server">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+          </button>
           <button type="button" id="collapse-all-btn" class="icon-btn-sm" title="Collapse all tasks" aria-label="Collapse all task groups">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="10" y1="14" x2="21" y2="3"/><line x1="3" y1="21" x2="14" y2="10"/></svg>
           </button>
@@ -65,6 +68,7 @@
           <div class="recent-list"></div>
         </div>
         <div id="dataset-tree" role="tree" aria-label="Dataset and episode tree"></div>
+        <div id="ssh-remote-tree" role="tree" aria-label="Remote SSH datasets"></div>
       </aside>
 
       <!-- Main panel -->
@@ -336,6 +340,50 @@
     <button type="button" class="lightbox-nav lightbox-next" title="Next camera (→)" aria-label="Next camera">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
     </button>
+  </div>
+
+
+  <!-- SSH Connect Modal -->
+  <div id="ssh-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="ssh-modal-title">
+    <div class="modal-box ssh-modal-box">
+      <div class="modal-title" id="ssh-modal-title">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+        Remote SSH Server
+      </div>
+
+      <!-- Active sessions -->
+      <div id="ssh-active-sessions" class="ssh-sessions-list hidden">
+        <div class="ssh-section-label">Active Connections</div>
+        <div id="ssh-sessions-body"></div>
+      </div>
+
+      <!-- Connect form -->
+      <div class="ssh-section-label">New Connection</div>
+      <div class="ssh-form">
+        <div class="ssh-field">
+          <label class="ssh-label" for="ssh-cmd-input">SSH Command</label>
+          <input type="text" id="ssh-cmd-input" class="ssh-input" placeholder="ssh H100-SQZ  or  ssh user@host" spellcheck="false" autocomplete="off" />
+        </div>
+        <div class="ssh-field">
+          <label class="ssh-label" for="ssh-path-input">Remote Dataset Path</label>
+          <input type="text" id="ssh-path-input" class="ssh-input" placeholder="/opt/zhangchenyu/datasets" spellcheck="false" autocomplete="off" />
+        </div>
+        <div id="ssh-connect-error" class="ssh-error hidden"></div>
+        <div class="ssh-form-actions">
+          <button type="button" id="ssh-connect-btn" class="ssh-btn-primary">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>
+            Connect
+          </button>
+          <button type="button" id="ssh-cancel-btn" class="ssh-btn-ghost">Cancel</button>
+        </div>
+      </div>
+
+      <!-- History -->
+      <div id="ssh-history-section" class="hidden">
+        <div class="ssh-section-label">Recent Connections</div>
+        <div id="ssh-history-body"></div>
+      </div>
+    </div>
   </div>
 
 </body>

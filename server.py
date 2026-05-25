@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import json
+import os
+import re
+import stat as _stat
 import time
+import uuid
 from collections import OrderedDict
 from pathlib import Path
 from typing import Annotated, Any, List, Optional
@@ -17,6 +22,14 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel
+
+# Optional SSH support
+try:
+    import paramiko as _paramiko
+    _HAS_PARAMIKO = True
+except ImportError:
+    _paramiko = None
+    _HAS_PARAMIKO = False
 
 # Optional video support via cv2 (OpenCV)
 try:
@@ -92,6 +105,221 @@ def read_config_cached(base: Path) -> dict:
         labels.update(stored.get("camera_labels", {}))  # stored overrides defaults
         _CONFIG_CACHE[key] = {**stored, "camera_labels": labels}
     return _CONFIG_CACHE[key]
+
+# ── SSH remote dataset support ────────────────────────────────────────────────
+
+SSH_CACHE_BASE = Path("/tmp/lerobot_ssh_cache")
+SSH_HISTORY_FILE = Path.home() / ".lerobot_visualizer" / "ssh_history.json"
+
+_SSH_SESSIONS: dict[str, dict] = {}      # session_id → {client, sftp, ssh_command, remote_path, label}
+_SSH_DATASET_MAP: dict[str, dict] = {}   # virtual_name → {session_id, remote_path, local_hash}
+
+
+def _ssh_vname(session_id: str, remote_path: str) -> str:
+    h = hashlib.md5(f"{session_id}:{remote_path}".encode()).hexdigest()[:8]
+    return f"__ssh_{session_id}_{h}__"
+
+
+def _ssh_local_dir(session_id: str, remote_path: str) -> Path:
+    h = hashlib.md5(f"{session_id}:{remote_path}".encode()).hexdigest()[:8]
+    return SSH_CACHE_BASE / session_id / h
+
+
+def _is_ssh_dataset(base: Path) -> bool:
+    try:
+        return base.resolve().is_relative_to(SSH_CACHE_BASE.resolve())
+    except Exception:
+        return False
+
+
+def _ssh_entry_for(base: Path) -> dict | None:
+    if not _is_ssh_dataset(base):
+        return None
+    for entry in _SSH_DATASET_MAP.values():
+        local = _ssh_local_dir(entry["session_id"], entry["remote_path"])
+        if base == local or str(base).startswith(str(local)):
+            return entry
+    return None
+
+
+def _ensure_remote_file(session_id: str, remote_base: str, local_base: Path, rel_path: str) -> Path:
+    local_path = local_base / rel_path
+    if local_path.exists():
+        return local_path
+    if session_id not in _SSH_SESSIONS:
+        raise HTTPException(503, "SSH session expired — please reconnect")
+    sftp = _SSH_SESSIONS[session_id]["sftp"]
+    remote_path = remote_base.rstrip("/") + "/" + rel_path
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        sftp.get(remote_path, str(local_path))
+    except Exception as exc:
+        raise HTTPException(404, f"Remote file not found: {rel_path} ({exc})") from exc
+    return local_path
+
+
+def ensure_parquet(base: Path, episode_index: int, info: dict) -> Path:
+    p = parquet_path_for(base, episode_index, info)
+    if p.exists():
+        return p
+    entry = _ssh_entry_for(base)
+    if entry is None:
+        raise HTTPException(404, f"Episode {episode_index} not found")
+    chunk = episode_chunk(info, episode_index)
+    rel = f"data/chunk-{chunk:03d}/episode_{episode_index:06d}.parquet"
+    return _ensure_remote_file(entry["session_id"], entry["remote_path"], base, rel)
+
+
+def _parse_ssh_command(ssh_command: str) -> tuple[str, str | None, int]:
+    """Return (hostname, username, port) from an ssh command string."""
+    cmd = ssh_command.strip()
+    if cmd.lower().startswith("ssh "):
+        cmd = cmd[4:].strip()
+    # Parse optional -p port flag
+    port = 22
+    port_m = re.search(r"-p\s+(\d+)", cmd)
+    if port_m:
+        port = int(port_m.group(1))
+        cmd = cmd[:port_m.start()].strip()
+    # Parse user@host or just host
+    username = None
+    if "@" in cmd:
+        username, hostname = cmd.rsplit("@", 1)
+        hostname = hostname.strip()
+        username = username.strip()
+    else:
+        hostname = cmd.strip()
+    return hostname, username, port
+
+
+def _ssh_connect(ssh_command: str) -> tuple[Any, Any]:
+    if not _HAS_PARAMIKO:
+        raise HTTPException(501, "paramiko not installed — run: pip install paramiko")
+    hostname, username, port = _parse_ssh_command(ssh_command)
+    # Load ~/.ssh/config for host aliases (HostName, User, Port, IdentityFile, ProxyJump etc.)
+    ssh_cfg = _paramiko.SSHConfig()
+    cfg_path = Path.home() / ".ssh" / "config"
+    if cfg_path.exists():
+        with open(cfg_path) as f:
+            ssh_cfg.parse(f)
+    hcfg = ssh_cfg.lookup(hostname)
+    hostname = hcfg.get("hostname", hostname)
+    if username is None:
+        username = hcfg.get("user", os.environ.get("USER", "root"))
+    if port == 22:
+        port = int(hcfg.get("port", 22))
+    ident = hcfg.get("identityfile", [])
+    key_file = ident[0] if ident else None
+    # Handle ProxyJump / ProxyCommand via sock
+    proxy_sock = None
+    proxy_jump = hcfg.get("proxyjump", None)
+    proxy_cmd = hcfg.get("proxycommand", None)
+    if proxy_jump:
+        pj_host, pj_user, pj_port = _parse_ssh_command(f"ssh {proxy_jump}")
+        pj_cfg = ssh_cfg.lookup(pj_host)
+        pj_host = pj_cfg.get("hostname", pj_host)
+        pj_user = pj_user or pj_cfg.get("user", username)
+        pj_port = pj_port if pj_port != 22 else int(pj_cfg.get("port", 22))
+        pj_ident = pj_cfg.get("identityfile", [])
+        pj_key = pj_ident[0] if pj_ident else None
+        pj_client = _paramiko.SSHClient()
+        pj_client.set_missing_host_key_policy(_paramiko.AutoAddPolicy())
+        pj_client.connect(pj_host, username=pj_user, port=pj_port,
+                          key_filename=pj_key, timeout=15,
+                          allow_agent=True, look_for_keys=True)
+        transport = pj_client.get_transport()
+        proxy_sock = transport.open_channel("direct-tcpip", (hostname, port), ("127.0.0.1", 0))
+    elif proxy_cmd:
+        proxy_sock = _paramiko.ProxyCommand(proxy_cmd)
+    client = _paramiko.SSHClient()
+    client.set_missing_host_key_policy(_paramiko.AutoAddPolicy())
+    client.connect(hostname, username=username, port=port,
+                   key_filename=key_file, timeout=15,
+                   allow_agent=True, look_for_keys=True,
+                   sock=proxy_sock)
+    sftp = client.open_sftp()
+    return client, sftp
+
+
+def _discover_remote_datasets(sftp: Any, root_path: str, max_depth: int = 7) -> list[dict]:
+    results = []
+    def _walk(path: str, depth: int):
+        if depth > max_depth:
+            return
+        try:
+            entries = sftp.listdir_attr(path)
+        except Exception:
+            return
+        # Check if this is a dataset root
+        entry_names = {e.filename for e in entries}
+        if "meta" in entry_names:
+            try:
+                meta_entries = sftp.listdir(path + "/meta")
+                if "info.json" in meta_entries:
+                    try:
+                        info_bytes = sftp.open(path + "/meta/info.json").read()
+                        info = json.loads(info_bytes)
+                    except Exception:
+                        info = {}
+                    results.append({
+                        "path": path,
+                        "name": Path(path).name,
+                        "fps": info.get("fps", 10),
+                        "total_episodes": info.get("total_episodes", 0),
+                        "total_tasks": info.get("total_tasks", 1),
+                        "robot_type": info.get("robot_type", "unknown"),
+                    })
+                    return  # don't recurse into dataset subdirectories
+            except Exception:
+                pass
+        for e in entries:
+            if _stat.S_ISDIR(e.st_mode) and not e.filename.startswith("."):
+                _walk(path + "/" + e.filename, depth + 1)
+    _walk(root_path.rstrip("/"), 0)
+    return results
+
+
+def _cache_remote_meta(session_id: str, remote_path: str, sftp: Any) -> Path:
+    """Download meta files from remote dataset to local cache. Returns local base dir."""
+    local_base = _ssh_local_dir(session_id, remote_path)
+    meta_local = local_base / "meta"
+    meta_local.mkdir(parents=True, exist_ok=True)
+    meta_files = ["info.json", "tasks.jsonl", "episodes.jsonl",
+                  "config.json", "annotation_schema.json"]
+    for fname in meta_files:
+        local_f = meta_local / fname
+        if not local_f.exists():
+            try:
+                sftp.get(f"{remote_path}/meta/{fname}", str(local_f))
+            except Exception:
+                pass  # optional files may not exist
+    return local_base
+
+
+def _load_ssh_history() -> list[dict]:
+    try:
+        if SSH_HISTORY_FILE.exists():
+            return json.loads(SSH_HISTORY_FILE.read_text())
+    except Exception:
+        pass
+    return []
+
+
+def _save_ssh_history(entry: dict) -> None:
+    history = _load_ssh_history()
+    history = [h for h in history
+               if not (h.get("ssh_command") == entry["ssh_command"]
+                       and h.get("remote_path") == entry["remote_path"])]
+    history.insert(0, {**entry, "last_used": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
+    SSH_HISTORY_FILE.parent.mkdir(exist_ok=True)
+    SSH_HISTORY_FILE.write_text(json.dumps(history[:20], indent=2))
+
+
+class SSHConnectRequest(BaseModel):
+    ssh_command: str
+    remote_path: str
+    label: Optional[str] = None
+
 
 # ── Annotation models ─────────────────────────────────────────────────────────
 
@@ -211,6 +439,14 @@ _DATA_DIR_RESOLVED = DATA_DIR.resolve()
 
 
 def get_dataset_path(dataset: str) -> Path:
+    # SSH remote dataset
+    if dataset in _SSH_DATASET_MAP:
+        entry = _SSH_DATASET_MAP[dataset]
+        local = _ssh_local_dir(entry["session_id"], entry["remote_path"])
+        if is_valid_dataset(local):
+            return local
+        raise HTTPException(404, f"Remote dataset '{dataset}' not cached — please reconnect SSH")
+    # Local dataset
     resolved = (DATA_DIR / dataset).resolve()
     if not resolved.is_relative_to(_DATA_DIR_RESOLVED) or not is_valid_dataset(resolved):
         raise HTTPException(404, f"Dataset '{dataset}' not found")
@@ -352,9 +588,10 @@ def list_tasks(dataset: str):
     # Build task → name lookup for O(1) matching
     task_by_name: dict[str, int] = {tv["task"]: ti for ti, tv in tasks.items()}
 
+    is_ssh = _is_ssh_dataset(base)
     for ep in read_episodes_cached(base):
         ep_idx = ep["episode_index"]
-        if not parquet_path_for(base, ep_idx, info).exists():
+        if not is_ssh and not parquet_path_for(base, ep_idx, info).exists():
             continue
         task_name = ep["tasks"][0] if ep.get("tasks") else ""
         ti = task_by_name.get(task_name)
@@ -402,12 +639,13 @@ def list_episodes(dataset: str):
     """List all episodes with their metadata (index, length, tasks)."""
     base = get_dataset_path(dataset)
     info = read_info_cached(base)
+    is_ssh = _is_ssh_dataset(base)
     return [
         {
             "episode_index": ep["episode_index"],
             "length": ep.get("length", 0),
             "tasks": ep.get("tasks", []),
-            "has_data": parquet_path_for(base, ep["episode_index"], info).exists(),
+            "has_data": is_ssh or parquet_path_for(base, ep["episode_index"], info).exists(),
         }
         for ep in read_episodes_cached(base)
     ]
@@ -428,10 +666,7 @@ def get_episode(dataset: str, episode_index: Annotated[int, _PathParam(ge=0)]):
     info = read_info_cached(base)
 
     chunk = episode_chunk(info, episode_index)
-    parquet_path = parquet_path_for(base, episode_index, info)
-
-    if not parquet_path.exists():
-        raise HTTPException(404, f"Episode {episode_index} not found")
+    parquet_path = ensure_parquet(base, episode_index, info)
 
     table = read_parquet_cached(parquet_path)
     df_dict = table.to_pydict()
@@ -461,8 +696,19 @@ def get_episode(dataset: str, episode_index: Annotated[int, _PathParam(ge=0)]):
     _state_dim = len(_state_data[0]) if _state_data else 0
     _action_dim = len(_action_data[0]) if _action_data else 0
     action_feat_key = "actions" if "actions" in features else "action"
-    state_names = features.get("state", {}).get("names") or [f"state_{i}" for i in range(_state_dim)]
-    action_names = features.get(action_feat_key, {}).get("names") or [f"action_{i}" for i in range(_action_dim)]
+
+    def _resolve_names(raw, dim: int, prefix: str) -> list[str]:
+        if not raw or not isinstance(raw, list):
+            return [f"{prefix}_{i}" for i in range(dim)]
+        if len(raw) == dim:
+            return list(raw)
+        # Single descriptive name for the whole vector → generate per-dim names
+        if len(raw) == 1 and dim > 1:
+            return [f"{raw[0]}_{i}" for i in range(dim)]
+        return list(raw) + [f"{prefix}_{i}" for i in range(len(raw), dim)]
+
+    state_names = _resolve_names(features.get("state", {}).get("names"), _state_dim, "state")
+    action_names = _resolve_names(features.get(action_feat_key, {}).get("names"), _action_dim, "action")
 
     return {
         "episode_index": episode_index,
@@ -487,10 +733,7 @@ def get_frame(dataset: str, episode_index: Annotated[int, _PathParam(ge=0)], fra
     info = read_info_cached(base)
 
     chunk = episode_chunk(info, episode_index)
-    parquet_path = parquet_path_for(base, episode_index, info)
-
-    if not parquet_path.exists():
-        raise HTTPException(404, f"Episode {episode_index} not found")
+    parquet_path = ensure_parquet(base, episode_index, info)
 
     features = info.get("features", {})
     image_keys = [k for k, v in features.items() if v.get("dtype") == "image"]
@@ -546,13 +789,10 @@ def get_frame_scalar_values(
     """Return all non-image/video scalar columns for a single frame as a flat dict."""
     base = get_dataset_path(dataset)
     info = read_info_cached(base)
-    parquet_path = parquet_path_for(base, episode_index, info)
-    if not parquet_path.exists():
-        raise HTTPException(404, f"Episode {episode_index} not found")
-
     features = info.get("features", {})
     skip_keys = {k for k, v in features.items() if v.get("dtype") in ("image", "video")}
 
+    parquet_path = ensure_parquet(base, episode_index, info)
     table = read_parquet_cached(parquet_path)
     if frame_index >= table.num_rows:
         raise HTTPException(400, f"frame_index {frame_index} out of range (episode has {table.num_rows} frames)")
@@ -670,11 +910,6 @@ def save_annotation_frame(
     body: AnnotationFrameUpdate,
 ):
     base = get_dataset_path(dataset)
-    info = read_info_cached(base)
-    parquet_path = parquet_path_for(base, episode_index, info)
-    if not parquet_path.exists():
-        raise HTTPException(404, f"Episode {episode_index} not found")
-
     data = read_annotations(base, episode_index)
     key = str(body.frame_index)
     if body.values:
@@ -709,9 +944,7 @@ def commit_annotations(dataset: str, episode_index: Annotated[int, _PathParam(ge
         body = CommitBody()
     base = get_dataset_path(dataset)
     info = read_info_cached(base)
-    parquet_path = parquet_path_for(base, episode_index, info)
-    if not parquet_path.exists():
-        raise HTTPException(404, f"Episode {episode_index} not found")
+    parquet_path = ensure_parquet(base, episode_index, info)
 
     schema_list = []
     sp = annotation_schema_path(base)
@@ -779,6 +1012,124 @@ def commit_annotations(dataset: str, episode_index: Annotated[int, _PathParam(ge
     _TABLE_CACHE.pop(key, None)
 
     return {"ok": True, "columns_written": list(new_columns.keys()), "rows": n_rows}
+
+
+# ── SSH API ───────────────────────────────────────────────────────────────────
+
+@app.get("/api/ssh/status")
+def ssh_status():
+    return {"paramiko_available": _HAS_PARAMIKO, "active_sessions": len(_SSH_SESSIONS)}
+
+
+@app.post("/api/ssh/connect")
+def ssh_connect(body: SSHConnectRequest):
+    if not _HAS_PARAMIKO:
+        raise HTTPException(501, "paramiko not installed — run: pip install paramiko")
+    try:
+        client, sftp = _ssh_connect(body.ssh_command)
+    except Exception as exc:
+        raise HTTPException(500, f"SSH connection failed: {exc}") from exc
+    session_id = uuid.uuid4().hex[:8]
+    label = body.label or body.ssh_command.split()[-1]
+    _SSH_SESSIONS[session_id] = {
+        "client": client,
+        "sftp": sftp,
+        "ssh_command": body.ssh_command,
+        "remote_path": body.remote_path,
+        "label": label,
+        "connected_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    _save_ssh_history({"ssh_command": body.ssh_command, "remote_path": body.remote_path, "label": label})
+    return {"session_id": session_id, "label": label, "status": "connected"}
+
+
+@app.get("/api/ssh/sessions")
+def list_ssh_sessions():
+    active = [
+        {
+            "session_id": sid,
+            "ssh_command": info["ssh_command"],
+            "remote_path": info["remote_path"],
+            "label": info["label"],
+            "connected_at": info["connected_at"],
+            # Return full discover results if available, else minimal info from dataset map
+            "datasets": info.get("datasets") or [
+                {"virtual_name": vn, "remote_path": e["remote_path"],
+                 "name": Path(e["remote_path"]).name,
+                 "fps": 10, "total_episodes": 0, "total_tasks": 1, "robot_type": "unknown"}
+                for vn, e in _SSH_DATASET_MAP.items()
+                if e["session_id"] == sid
+            ],
+        }
+        for sid, info in _SSH_SESSIONS.items()
+    ]
+    return {"active": active, "history": _load_ssh_history()}
+
+
+@app.delete("/api/ssh/sessions/{session_id}")
+def disconnect_ssh(session_id: str):
+    info = _SSH_SESSIONS.pop(session_id, None)
+    if info:
+        try:
+            info["sftp"].close()
+            info["client"].close()
+        except Exception:
+            pass
+    # Remove associated datasets and invalidate caches
+    to_remove = [(vn, e) for vn, e in _SSH_DATASET_MAP.items() if e["session_id"] == session_id]
+    removed_names = []
+    for vn, entry in to_remove:
+        _SSH_DATASET_MAP.pop(vn, None)
+        removed_names.append(vn)
+        local = _ssh_local_dir(session_id, entry["remote_path"])
+        for cache in [_INFO_CACHE, _TASKS_CACHE, _EPISODES_CACHE, _CONFIG_CACHE]:
+            cache.pop(str(local), None)
+    return {"ok": True, "removed_datasets": removed_names}
+
+
+@app.get("/api/ssh/sessions/{session_id}/discover")
+def discover_ssh_datasets(session_id: str):
+    if session_id not in _SSH_SESSIONS:
+        raise HTTPException(404, f"SSH session {session_id} not found")
+    sess = _SSH_SESSIONS[session_id]
+    sftp = sess["sftp"]
+    root_path = sess["remote_path"]
+    try:
+        found = _discover_remote_datasets(sftp, root_path)
+    except Exception as exc:
+        raise HTTPException(500, f"Discovery failed: {exc}") from exc
+    results = []
+    for ds in found:
+        remote_ds_path = ds["path"]
+        vname = _ssh_vname(session_id, remote_ds_path)
+        _SSH_DATASET_MAP[vname] = {
+            "session_id": session_id,
+            "remote_path": remote_ds_path,
+            "local_hash": hashlib.md5(f"{session_id}:{remote_ds_path}".encode()).hexdigest()[:8],
+        }
+        # Cache meta files locally
+        try:
+            _cache_remote_meta(session_id, remote_ds_path, sftp)
+        except Exception:
+            pass
+        results.append({
+            "virtual_name": vname,
+            "remote_path": remote_ds_path,
+            "name": ds["name"],
+            "fps": ds["fps"],
+            "total_episodes": ds["total_episodes"],
+            "total_tasks": ds["total_tasks"],
+            "robot_type": ds["robot_type"],
+        })
+    # Update session's list in _SSH_SESSIONS (for listing)
+    _SSH_SESSIONS[session_id]["datasets"] = results
+    return results
+
+
+@app.get("/api/ssh/datasets/{virtual_name}/meta")
+def get_ssh_dataset_meta(virtual_name: str):
+    """Redirect to the standard meta endpoint using virtual name."""
+    return get_dataset_meta(virtual_name)
 
 
 # ── Static files ─────────────────────────────────────────────────────────────

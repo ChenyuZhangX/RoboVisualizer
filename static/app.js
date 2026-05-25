@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v97
+   LeRobot Visualizer — app.js  v98
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -68,6 +68,7 @@ const state = {
   viewerTab: "video",     // "video" | "annotate"
   annFillConfig: {},      // {fieldName: {strategy: "none"|"fixed"|"linear"|"prev", fixedValue: ""}}
   datasetConfig: {},      // per-dataset config: {camera_labels: {...}, ...}
+  sshSessions: [],        // active SSH sessions [{session_id, label, ssh_command, remote_path, datasets:[]}]
 };
 
 /* ── Frame navigation history ────────────────────────────── */
@@ -4903,6 +4904,186 @@ const IS_MAC = /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent
 const MOD_KEY = IS_MAC ? "⌘" : "Ctrl";
 
 /* ── Event wiring ────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════
+   SSH Remote Server Support
+   ═══════════════════════════════════════════════════════════ */
+
+function openSSHModal() {
+  show("ssh-modal");
+  el("ssh-cmd-input")?.focus();
+  loadSSHSessionsIntoModal();
+}
+
+function closeSSHModal() {
+  hide("ssh-modal");
+  hide("ssh-connect-error");
+}
+
+async function loadSSHSessionsIntoModal() {
+  try {
+    const data = await apiFetch("/api/ssh/sessions");
+    state.sshSessions = data.active || [];
+    _renderSSHActiveSessions(data.active || []);
+    _renderSSHHistory(data.history || []);
+  } catch (_) {}
+}
+
+function _renderSSHActiveSessions(sessions) {
+  const section = el("ssh-active-sessions");
+  const body = el("ssh-sessions-body");
+  if (!section || !body) return;
+  if (!sessions.length) { hide(section); return; }
+  show(section);
+  body.innerHTML = "";
+  for (const sess of sessions) {
+    const row = document.createElement("div");
+    row.className = "ssh-session-row";
+    const dsCount = sess.datasets?.length ?? 0;
+    row.innerHTML =
+      `<div class="ssh-session-info">` +
+      `<span class="ssh-session-label">${escapeHTML(sess.label)}</span>` +
+      `<span class="ssh-session-meta">${escapeHTML(sess.remote_path)} · ${dsCount} dataset${dsCount !== 1 ? "s" : ""}</span>` +
+      `</div>` +
+      `<button type="button" class="ssh-disconnect-btn" data-sid="${escapeHTML(sess.session_id)}" title="Disconnect">` +
+      `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>` +
+      `</button>`;
+    row.querySelector(".ssh-disconnect-btn").addEventListener("click", async (e) => {
+      const sid = e.currentTarget.dataset.sid;
+      await sshDisconnect(sid);
+      loadSSHSessionsIntoModal();
+    });
+    body.appendChild(row);
+  }
+}
+
+function _renderSSHHistory(history) {
+  const section = el("ssh-history-section");
+  const body = el("ssh-history-body");
+  if (!section || !body) return;
+  if (!history.length) { hide(section); return; }
+  show(section);
+  body.innerHTML = "";
+  for (const h of history.slice(0, 8)) {
+    const row = document.createElement("div");
+    row.className = "ssh-history-row";
+    const date = h.last_used ? new Date(h.last_used).toLocaleDateString() : "";
+    row.innerHTML =
+      `<div class="ssh-history-info">` +
+      `<span class="ssh-session-label">${escapeHTML(h.label || h.ssh_command)}</span>` +
+      `<span class="ssh-session-meta">${escapeHTML(h.remote_path)}${date ? ` · ${date}` : ""}</span>` +
+      `</div>` +
+      `<button type="button" class="ssh-history-use-btn" title="Use this connection">` +
+      `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>` +
+      `</button>`;
+    row.querySelector(".ssh-history-use-btn").addEventListener("click", () => {
+      el("ssh-cmd-input").value = h.ssh_command;
+      el("ssh-path-input").value = h.remote_path;
+    });
+    body.appendChild(row);
+  }
+}
+
+async function sshConnect() {
+  const cmd = el("ssh-cmd-input")?.value?.trim();
+  const path = el("ssh-path-input")?.value?.trim();
+  if (!cmd || !path) { _sshShowError("Please fill in both fields."); return; }
+  const btn = el("ssh-connect-btn");
+  btn.disabled = true;
+  btn.textContent = "Connecting…";
+  hide("ssh-connect-error");
+  try {
+    const data = await apiPost("/api/ssh/connect", { ssh_command: cmd, remote_path: path });
+    const sessionId = data.session_id;
+    btn.textContent = "Discovering…";
+    const datasets = await apiFetch(`/api/ssh/sessions/${sessionId}/discover`);
+    showCopyToast(`Connected to ${data.label}: ${datasets.length} dataset${datasets.length !== 1 ? "s" : ""} found`);
+    closeSSHModal();
+    await refreshSSHSections();
+  } catch (e) {
+    _sshShowError(e.message || "Connection failed");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg> Connect`;
+  }
+}
+
+async function sshDisconnect(sessionId) {
+  try {
+    await apiPost(`/api/ssh/sessions/${sessionId}`, null, "DELETE");
+    state.sshSessions = state.sshSessions.filter(s => s.session_id !== sessionId);
+    showCopyToast("SSH session disconnected");
+    await refreshSSHSections();
+  } catch (e) {
+    showCopyToast(`Disconnect failed: ${e.message}`, "error");
+  }
+}
+
+function _sshShowError(msg) {
+  const errEl = el("ssh-connect-error");
+  if (errEl) { errEl.textContent = msg; show(errEl); }
+}
+
+async function refreshSSHSections() {
+  try {
+    const data = await apiFetch("/api/ssh/sessions");
+    state.sshSessions = data.active || [];
+  } catch (_) {
+    state.sshSessions = [];
+  }
+  renderSSHSections();
+}
+
+function renderSSHSections() {
+  const container = el("ssh-remote-tree");
+  if (!container) return;
+  container.innerHTML = "";
+  if (!state.sshSessions.length) return;
+  for (const sess of state.sshSessions) {
+    const datasets = sess.datasets || [];
+    if (!datasets.length) continue;
+    // Section header
+    const sectionEl = document.createElement("div");
+    sectionEl.className = "ssh-section";
+    const headerEl = document.createElement("div");
+    headerEl.className = "ssh-section-header";
+    headerEl.innerHTML =
+      `<svg class="ssh-section-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>` +
+      `<span class="ssh-section-label-text">${escapeHTML(sess.label)}</span>` +
+      `<span class="ssh-section-path" title="${escapeHTML(sess.remote_path)}">${escapeHTML(sess.remote_path)}</span>` +
+      `<button type="button" class="ssh-section-disconnect" data-sid="${escapeHTML(sess.session_id)}" title="Disconnect">` +
+      `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>` +
+      `</button>`;
+    headerEl.querySelector(".ssh-section-disconnect").addEventListener("click", async (e) => {
+      e.stopPropagation();
+      await sshDisconnect(e.currentTarget.dataset.sid);
+    });
+    sectionEl.appendChild(headerEl);
+    // Dataset nodes
+    for (const ds of datasets) {
+      const node = buildDatasetNode({
+        name: ds.name,
+        path: ds.virtual_name,
+        total_episodes: ds.total_episodes,
+        total_tasks: ds.total_tasks,
+        robot_type: ds.robot_type,
+        fps: ds.fps,
+        isRemote: true,
+      });
+      node.classList.add("ds-node-remote");
+      const nameEl = node.querySelector(".ds-name");
+      if (nameEl) {
+        const badge = document.createElement("span");
+        badge.className = "ssh-remote-badge";
+        badge.title = ds.remote_path;
+        badge.innerHTML = `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M10.19 15.19l1.81 1.81 1.81-1.81"/><circle cx="12" cy="20" r="1"/></svg>`;
+        nameEl.parentNode.insertBefore(badge, nameEl);
+      }
+      sectionEl.appendChild(node);
+    }
+    container.appendChild(sectionEl);
+  }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   initDarkMode();
   initSidebarState();
@@ -4953,6 +5134,17 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   loadDatasets().then(() => loadHashState());
+
+  // SSH modal
+  el("ssh-btn")?.addEventListener("click", openSSHModal);
+  el("ssh-cancel-btn")?.addEventListener("click", closeSSHModal);
+  el("ssh-connect-btn")?.addEventListener("click", sshConnect);
+  el("ssh-modal")?.addEventListener("click", e => { if (e.target === el("ssh-modal")) closeSSHModal(); });
+  el("ssh-cmd-input")?.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); el("ssh-path-input")?.focus(); } });
+  el("ssh-path-input")?.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); sshConnect(); } });
+  // Load any previously active SSH sessions (backend state survives server restart? No, but
+  // we call this anyway in case the page is reloaded while server is still running)
+  refreshSSHSections();
 
   // Pause playback when tab becomes hidden
   document.addEventListener("visibilitychange", () => {

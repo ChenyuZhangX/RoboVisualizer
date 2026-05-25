@@ -2,8 +2,8 @@
 
 ## Current State
 
-**Version**: app.js v97, style.css v88, index.html updated
-**Status**: Fully functional with annotation system, JSON viewer, and extensive keyboard navigation
+**Version**: app.js v98, style.css v89, index.html updated
+**Status**: Fully functional with annotation system, JSON viewer, SSH remote support, and extensive keyboard navigation
 
 ### Architecture
 
@@ -14,6 +14,7 @@
 - **CORS enabled** for all methods (GET, POST, PUT, DELETE, OPTIONS)
 - **Annotation endpoints**: GET/POST/PUT/DELETE for draft management, POST for Parquet commit
 - **Frame scalar values endpoint**: Returns all non-binary columns (images excluded)
+- **SSH remote endpoints**: POST connect, GET sessions, DELETE session, GET discover
 
 #### Frontend (static/)
 - **Single-page app** (no build step)
@@ -27,6 +28,8 @@
 3. User annotates → `saveAnnotationFrame()` → debounced PUT to JSON sidecar
 4. User commits → `commitAnnotations()` → read Parquet, write new columns, invalidate cache
 5. Frame JSON viewer → `updateFrameJsonViewer()` → fetch from `/frame/{f}/values` endpoint
+6. SSH connect → `sshConnect()` → POST `/api/ssh/connect` → GET `.../discover` → `renderSSHSections()`
+7. Remote episode access → `get_dataset_path()` returns local cache path → `ensure_parquet()` downloads on demand
 
 ---
 
@@ -117,7 +120,24 @@ lsBool(k)              // localStorage bool persistence
 - Progress timeline (green = full, amber = partial)
 - Keyboard shortcuts (A for tab, Del to clear)
 
-### Session 5: Resolution Fix, Droid Dataset & Per-Dataset Config (Latest)
+### Session 6: SSH Remote Server Support (Latest)
+- **SSH remote dataset visualization**: connect to remote servers (e.g. `ssh H100-SQZ`) via paramiko
+  - Backend: `POST /api/ssh/connect`, `GET /api/ssh/sessions`, `DELETE /api/ssh/sessions/{id}`, `GET /api/ssh/sessions/{id}/discover`
+  - Discovery algorithm: recursive SFTP walk (max depth 7), detects `meta/info.json` markers
+  - Meta files cached to `/tmp/lerobot_ssh_cache/{session_id}/{path_hash}/` on first access
+  - Parquet files downloaded on-demand (first episode request triggers SFTP download, cached locally)
+  - Virtual dataset names: `__ssh_{session_id}_{path_hash}__` — transparent to all existing API endpoints
+  - SSH history persisted to `~/.lerobot_visualizer/ssh_history.json` (deduplicated, last 20 entries)
+  - SSH connect reads `~/.ssh/config` for aliases, ProxyJump, IdentityFile etc. via paramiko
+  - Added `paramiko>=3.0.0` to requirements.txt
+- **Frontend**: SSH button in sidebar header → modal → connect form + history
+  - Remote datasets appear in `#ssh-remote-tree` section with 📡 (wifi) badge and blue left border
+  - Session disconnect button in sidebar section header and modal
+  - History shows recent connections; click → pre-fills form
+  - `renderSSHSections()` + `refreshSSHSections()` functions added; called on DOMContentLoaded
+- **Fixed state/action names for single-label vectors**: `_resolve_names()` in `get_episode` handles `names:["state"]` with `shape:[9]` → generates `state_0`…`state_8` instead of returning single `["state"]`
+
+### Session 5: Resolution Fix, Droid Dataset & Per-Dataset Config
 - **Full-resolution re-downloads**: All datasets now at native resolution (was 128×128):
   - `libero_10_sample` — Franka Panda, 2 tasks × 2 eps, **256×256**, 2 cameras (Camera + Wrist)
   - `aloha_sim_multi` — ALOHA bimanual, 2 tasks × 2 eps, **640×480**, 1 camera (Top View)
@@ -257,4 +277,4 @@ lerobot-visualizer/
 
 ---
 
-Last updated: 2026-05-25 (v95)
+Last updated: 2026-05-25 (v98)
