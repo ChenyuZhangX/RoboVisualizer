@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   LeRobot Visualizer — style.css  v86
+   LeRobot Visualizer — style.css  v87
    ────────────────────────────────────────────────────────── */
 
 /* ── Reset & Base ─────────────────────────────────────────── */
@@ -194,11 +194,14 @@ body.is-playing #topbar {
   border-radius: var(--radius-md);
   display: flex;
   align-items: center;
+  justify-content: center;
   transition: color var(--transition), background var(--transition);
   flex-shrink: 0;
+  text-decoration: none;
 }
 .icon-btn:hover { color: var(--text); background: var(--bg-3); }
 .icon-btn:active { transform: scale(0.92); }
+#github-link-btn:hover { color: var(--text); }
 
 /* Small icon button (sidebar header) */
 .icon-btn-sm {
