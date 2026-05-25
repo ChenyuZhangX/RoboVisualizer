@@ -1,22 +1,56 @@
-# RoboVisualizer
+# LeRobot Visualizer
 
-A local web-based visualizer for [LeRobot](https://github.com/huggingface/lerobot) v2.0 datasets. Browse episodes, watch multi-camera playback, and inspect state/action trajectories — all from a clean browser UI backed by a lightweight FastAPI server.
-
----
-
-## Features
-
-- **Dataset browser** — sidebar tree of datasets → tasks → episodes, with episode length shown
-- **Multi-camera playback** — up to 3 camera views side-by-side; grey placeholder when fewer cameras are present
-- **State & Action charts** — Chart.js line plots with a synchronized red cursor that moves with playback
-- **Per-dimension expand** — toggle any chart to split each dimension into its own mini-plot
-- **Normalization** — auto-detects `norm_stats.json`; if present, normalizes data to \[−1, 1\] using Q01/Q99 clip normalization with a green badge indicator
-- **Playback controls** — play/pause, rewind, scrubber, frame counter; driven by dataset FPS from `info.json`
-- **Conversion tools** — scripts to convert HDF5 (ALOHA, RoboMimic, LIBERO) and folder-based datasets into LeRobot format
+A clean, modern web-based visualizer for [LeRobot](https://github.com/huggingface/lerobot) v2.0 datasets. Browse episodes, watch multi-camera playback, inspect state/action trajectories, and annotate frames with custom metadata — all from a polished browser UI backed by a lightweight FastAPI server.
 
 ---
 
-## Quick Start
+## ✨ Features
+
+### Playback & Visualization
+- **Dataset browser** — sidebar tree view: datasets → tasks → episodes with frame counts
+- **Multi-camera playback** — up to 6 synchronized camera views; grey placeholders for missing feeds
+- **State & Action charts** — Chart.js line plots with synchronized playback cursor; real-time updates as frame advances
+- **Per-dimension expand** — split any chart into individual mini-plots; isolate dimensions via Ctrl+click
+- **Normalization** — auto-detects `norm_stats.json`; Q01/Q99 clip normalization to [−1, 1] with toggle badge
+- **Playback controls** — play/pause, rewind, scrubber, speed (0.25×–4×), frame counter, loop mode
+- **Keyboard shortcuts** — 40+ shortcuts for navigation, chart control, speed adjustment, and more
+
+### Frame Inspection
+- **Raw frame data viewer** — JSON-style display of all Parquet columns (scalars, arrays, annotations)
+- **Column filter/search** — search Parquet keys by name; live re-render without refetch
+- **Frame-to-frame delta display** — green/red badges showing numeric changes between consecutive frames
+- **Expandable arrays** — inline view of vector/image array dimensions
+- **Copy-to-clipboard** — export current frame as JSON or CSV
+
+### Data Annotation
+- **Per-frame metadata** — define custom annotation fields (number, string, boolean, category)
+- **Interactive UI** — dedicated Annotate tab with input chips, progress timeline, and sparkline charts
+- **Fill strategies** — auto-fill unannotated frames using fixed value, forward fill, or linear interpolation
+- **Draft & commit workflow** — save annotations to JSON sidecar; commit to Parquet when ready
+- **Annotated tab** — view completion stats, distribution charts, and per-field sparklines
+- **Keyboard navigation** — arrow keys move between fields/frames; Tab to cycle through annotation inputs
+- **CSV export** — download episode annotations as structured CSV file
+- **Persistent storage** — draft annotations saved in `data/annotations/episode_XXXXXX.json`
+
+### UI/UX Polish
+- **Dark mode** — toggle between light and dark themes with persistent preference
+- **Responsive layout** — mobile-friendly sidebar collapse; adapts to small screens
+- **Recent episodes** — quick-access list of last 8 visited episodes
+- **Mirror mode** — hide labels and UI chrome for clean screen recordings
+- **Compare overlay** — Ctrl+click episodes to overlay two episode videos side-by-side
+- **GitHub link** — top-right button links to repository
+- **Toast notifications** — user feedback for copy, save, commit, and error events
+- **Accessibility** — keyboard navigation, ARIA labels, focus rings, semantic HTML
+
+### Performance
+- **LRU frame cache** — in-memory Parquet caching (24 most-recent episodes)
+- **Lazy image loading** — prefetch frames ahead of playback
+- **Debounced updates** — chart renders throttled during playback
+- **GZip compression** — API responses compressed on-the-fly
+
+---
+
+## 🚀 Quick Start
 
 ### 1. Install dependencies
 
@@ -50,42 +84,122 @@ Open **http://localhost:8765** in your browser.
 
 ---
 
-## Interface
+## 📺 Interface Walkthrough
 
+### Main Layout
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  RoboVisualizer                                                  │
-├──────────────────┬──────────────────────────────────────────────┤
-│  DATASETS        │  ┌──────────┬──────────┬──────────┐         │
-│  ▼ libero        │  │  image   │  wrist   │  (grey)  │         │
-│    ▼ Task 0      │  └──────────┴──────────┴──────────┘         │
-│      ep_000000   │                                              │
-│      ep_000018   │  "put the white mug on the left plate…"      │
-│    ▼ Task 1      │                                              │
-│      ep_000001   │  State ⊞  [normalized −1,1]                 │
-│      ...         │  ──────────╫──────────────────────           │
-│                  │                                              │
-│                  │  Action ⊞  [normalized −1,1]                 │
-│                  │  ──────────╫──────────────────────           │
-│                  │                                              │
-│                  │  [⏮]  [▶]  ━━━━━●━━━━━━━━━  42 / 214       │
-└──────────────────┴──────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│  LeRobot Visualizer                                  🌙  GitHub  ?    │
+├──────────────────────┬─────────────────────────────────────────────┤
+│  DATASETS            │ ┌────────┬────────┬────────┐                │
+│  ▼ libero_reduced    │ │ top    │ wrist  │ (grey) │                │
+│    ▼ pick_cup        │ └────────┴────────┴────────┘                │
+│      ep_000000  214f │                                              │
+│      ep_000018  267f │ "put the white mug on the left plate…"       │
+│    ▼ put_down       │                                              │
+│      ep_000001  281f │ [Video] [Annotate]  C  CSV  V  Z  Export   │
+│                      │                                              │
+│  Recent             │ State    ⊞  [normalized −1,1]  ◀  ▶          │
+│  • ep_000000        │ ───────────╫────────────────────              │
+│  • ep_000018        │                                              │
+│                      │ Action   ⊞  [normalized −1,1]  ◀  ▶          │
+│                      │ ───────────╫────────────────────              │
+│                      │                                              │
+│                      │ Raw Data (JSON Viewer)                      │
+│                      │ Frame 42 · 23 cols  🔍 [ ] 📋             │
+│                      │ ┌────────────────────────────┐              │
+│                      │ │ annotations                │              │
+│                      │ │ - progress: 2 +0.05       │              │
+│                      │ │ - quality:  4 (unchanged) │              │
+│                      │ │ metadata                   │              │
+│                      │ │ - state_0: 1.234          │              │
+│                      │ │ - action_0: -0.456        │              │
+│                      │ └────────────────────────────┘              │
+│                      │                                              │
+│ [⏮] [▶] ━●━ 42/213  Speed: 1×  Loop  ⏱️ 21fps                    │
+└──────────────────────┴─────────────────────────────────────────────┘
+```
+
+### Annotation Tab
+```
+┌────────────────────────────────────────────┐
+│ Annotation   [Annotate] [Annotated] [→]  ⚙️ │
+├────────────────────────────────────────────┤
+│ quality:     [====●======]  4/5 frames    │
+│ note:        [open text input]             │
+│ success:     [checkbox: ☑️]                │
+│                                            │
+│ ← Prev unannotated    Next unannotated →  │
+│ [Fill & Save] [Export CSV] [Commit]      │
+│                                            │
+│ Timeline: ████▓░░░░░░░░░░░░░░░░░░░░░░░░ │
+└────────────────────────────────────────────┘
 ```
 
 ---
 
-## Normalization
+## 🎯 Annotation Workflow
 
-Run the following script against a full LeRobot dataset to generate `meta/norm_stats.json`:
+### 1. Define Fields (Schema Tab)
+Create annotation fields in the **Schema** tab:
+- Field name: `quality`, Type: `number` (min 0, max 5)
+- Field name: `note`, Type: `string`
+- Field name: `success`, Type: `boolean`
+
+Schema is stored in `meta/annotation_schema.json`.
+
+### 2. Annotate Frames (Annotate Tab)
+- Navigate through frames using playback or ← / → keys
+- Fill in input chips for current frame
+- Auto-saves to `data/annotations/episode_XXXXXX.json` (800ms debounce)
+- **Keyboard navigation**: Arrow keys move between fields; Up/Down seek frames
+
+### 3. View Stats (Annotated Tab)
+Once all frames are annotated for a field, it appears in the **Annotated** tab showing:
+- **Numeric**: min, avg, max + sparkline chart (click to seek)
+- **Category**: top 5 values + percentages
+- **Boolean**: true/false counts + percentages
+- **Progress**: current frame's value highlighted
+
+### 4. Fill Unannotated Frames (Settings ⚙️)
+Configure fill strategies per field:
+- `None` — leave null
+- `Fixed value` — fill all unannotated with a constant
+- `Forward fill` — propagate last known value forward
+- `Linear interpolation` — (numbers only) linearly interpolate between keyframes
+
+Then click **Fill & Save** (Ctrl+S) to apply and save to sidecar.
+
+### 5. Commit to Dataset
+When satisfied, click **Commit** to permanently write annotations as new Parquet columns.
+- This overwrites the episode's parquet file with new columns
+- Commits use fill strategies to ensure all frames are covered
+- JSON sidecar is not deleted; can be used for version control
+
+### 6. Export Annotations
+Click **Export as CSV** to download a structured CSV file:
+```
+frame_index,quality,note,success
+0,4,open,true
+1,4,open,true
+2,3,closed,false
+...
+```
+
+---
+
+## 🛠️ Normalization
+
+Run the following script to compute normalization statistics for a dataset:
 
 ```bash
 # Edit DATASET path at the top of the script, then:
 python compute_norm_stats.py
 ```
 
-The script computes per-dimension **mean, std, min, max, Q01, Q99** for `state`, `action`, and `delta_action` (frame-to-frame action differences) across all episodes.
+The script computes per-dimension **mean, std, min, max, Q01, Q99** for `state`, `action`, and `delta_action` across all episodes.
 
-Once `norm_stats.json` is present in `meta/`, the visualizer automatically normalizes state and action plots to \[−1, 1\] using:
+Once `meta/norm_stats.json` is in place, the visualizer automatically normalizes to [−1, 1]:
 
 ```
 x_clipped  = clip(x, q01, q99)
@@ -94,13 +208,13 @@ x_norm     = 2 × (x_clipped − q01) / (q99 − q01) − 1
 
 ---
 
-## Conversion Tools
+## 🔄 Conversion Tools
 
-Convert other dataset formats into LeRobot v2.0 parquet format using the scripts in `tools/`.
+Convert HDF5 or folder-based datasets into LeRobot v2.0 Parquet format using scripts in `tools/`.
 
 ### HDF5 datasets
 
-Supports **ALOHA/ACT**, **RoboMimic**, and **LIBERO** out of the box, plus a fully configurable custom mode.
+Supports **ALOHA/ACT**, **RoboMimic**, **LIBERO**, plus fully configurable custom mode.
 
 ```bash
 # ALOHA / ACT
@@ -173,19 +287,19 @@ python tools/convert_folder.py /path/to/dataset output/my_dataset \
 
 ---
 
-## Project Structure
+## 📁 Project Structure
 
 ```
-RoboVisualizer/
-├── server.py               FastAPI backend (dataset / episode / frame APIs)
+lerobot-visualizer/
+├── server.py               FastAPI backend (dataset / episode / frame / annotation APIs)
 ├── requirements.txt
-├── compute_norm_stats.py   Compute Q01/Q99 norm stats for a full dataset
+├── compute_norm_stats.py   Compute Q01/Q99 normalization stats for a full dataset
 ├── static/
-│   ├── index.html          Single-page UI
-│   ├── app.js              Dataset browser, charts, playback logic
-│   └── style.css           White-background, blue accent theme
+│   ├── index.html          Single-page UI (v88)
+│   ├── app.js              Playback, charts, annotation, keyboard shortcuts (v95)
+│   └── style.css           Polished light/dark theme with blue accent (v88)
 ├── tools/
-│   ├── utils.py            LeRobotWriter — exact v2.0 parquet schema writer
+│   ├── utils.py            LeRobotWriter — exact v2.0 Parquet schema
 │   ├── convert_hdf5.py     HDF5 → LeRobot (ALOHA / RoboMimic / LIBERO / custom)
 │   └── convert_folder.py   Folder + CSV → LeRobot (layout A & B)
 └── data/                   ← place datasets here (git-ignored)
@@ -193,9 +307,9 @@ RoboVisualizer/
 
 ---
 
-## API Reference
+## 🔌 API Reference
 
-The FastAPI server exposes the following endpoints (also browsable at `/docs`):
+FastAPI server endpoints (also browsable at `/docs`):
 
 | Method | Path | Description |
 |---|---|---|
@@ -203,18 +317,103 @@ The FastAPI server exposes the following endpoints (also browsable at `/docs`):
 | `GET` | `/api/datasets/{ds}/tasks` | Tasks and their local episodes |
 | `GET` | `/api/datasets/{ds}/episodes/{idx}` | Episode state/action/metadata |
 | `GET` | `/api/datasets/{ds}/episodes/{idx}/frame/{f}` | Camera images for one frame (base64 JPEG) |
-| `GET` | `/api/datasets/{ds}/norm_stats` | Normalization statistics (or `null`) |
+| `GET` | `/api/datasets/{ds}/episodes/{idx}/frame/{f}/values` | All scalar + array columns for a frame (excluding images) |
+| `GET` | `/api/datasets/{ds}/norm_stats` | Normalization statistics (or `null` if not present) |
+| `GET` | `/api/datasets/{ds}/annotation_schema` | Annotation field definitions |
+| `POST` | `/api/datasets/{ds}/annotation_schema` | Update annotation schema |
+| `GET` | `/api/datasets/{ds}/episodes/{idx}/annotations` | Get draft annotations for an episode |
+| `PUT` | `/api/datasets/{ds}/episodes/{idx}/annotations` | Bulk save/update annotations (JSON sidecar) |
+| `POST` | `/api/datasets/{ds}/episodes/{idx}/annotations/commit` | Commit annotations to Parquet (permanent write) |
+| `DELETE` | `/api/datasets/{ds}/episodes/{idx}/annotations` | Clear draft annotations for an episode |
 
 ---
 
-## Requirements
+## ⌨️ Keyboard Shortcuts
+
+### Playback
+| Key | Action |
+|---|---|
+| `Space` | Play / Pause |
+| `←` / `→` | Step ±1 frame |
+| `Shift+←` / `Shift+→` | Step ±10 frames |
+| `Alt+←` / `Alt+→` | Navigate frame history |
+| `R` / `Home` | Rewind to start |
+| `End` | Jump to last frame |
+| `+` / `−` | Speed up / slow down |
+| `L` | Toggle loop |
+
+### Navigation
+| Key | Action |
+|---|---|
+| `Ctrl+J` | Jump to frame (with timestamp support) |
+| `[` / `]` | Previous / next episode |
+| `Shift+[` / `Shift+]` | First / last episode |
+| `0`–`9` | Jump to 0%–90% of episode |
+| `/` / `G` / `Ctrl+K` | Focus search |
+
+### Charts & View
+| Key | Action |
+|---|---|
+| `H` / `Shift+H` | Toggle state / action histogram |
+| `E` / `Shift+E` | Split state / action chart by dimension |
+| `T` | Toggle time × dimension heatmap |
+| `K` | Toggle action correlation matrix |
+| `N` | Toggle normalization |
+| `I` | Toggle episode info strip |
+
+### Annotations
+| Key | Action |
+|---|---|
+| `A` | Switch to Annotate tab |
+| `Ctrl+S` | Fill & Save annotations (Annotate tab) |
+| `Del` | Clear all annotations for episode |
+| `Arrow keys` | Navigate between fields / frames (in Annotate tab) |
+
+### Export & UI
+| Key | Action |
+|---|---|
+| `C` | Copy episode URL |
+| `Ctrl+Shift+C` | Copy current frame values as JSON |
+| `X` | Export episode as CSV |
+| `J` | Export episode as JSON |
+| `D` | Download current frame / image |
+| `Ctrl+D` | Toggle dark mode |
+| `V` / `P` | Toggle frame values panel |
+| `Z` | Toggle raw frame data (JSON) viewer |
+| `F` | Fullscreen camera |
+| `M` | Mirror mode (hide labels) |
+| `B` | Toggle sidebar |
+| `?` | Show this help |
+
+---
+
+## 📋 Requirements
 
 - Python ≥ 3.9
 - `fastapi`, `uvicorn`, `pyarrow`, `pillow`
-- A modern browser (Chrome / Firefox / Safari)
+- Modern browser (Chrome / Firefox / Safari)
 
 For conversion tools, additionally: `h5py` (HDF5), `numpy`
 
 ```bash
 pip install h5py   # only needed for convert_hdf5.py
 ```
+
+---
+
+## 📝 License
+
+MIT
+
+---
+
+## 🤝 Contributing
+
+Bug reports and pull requests welcome! This is an active research project.
+
+---
+
+## 📚 Related
+
+- [LeRobot](https://github.com/huggingface/lerobot) — Main robot learning dataset framework
+- [HuggingFace](https://huggingface.co/) — Model and dataset hub
