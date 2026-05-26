@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v98
+   LeRobot Visualizer — app.js  v99
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -224,7 +224,8 @@ function formatDuration(secs) {
 }
 
 function escapeHTML(str) {
-  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  if (str == null) return "";
+  return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
             .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
@@ -769,6 +770,7 @@ function buildDatasetNode(ds) {
           children.querySelector(".task-group")?.classList.add("open");
         }
       } catch (e) {
+        loaded = false;  // allow retry on next click
         children.innerHTML = `<div class="error-msg">Failed to load tasks: ${escapeHTML(e.message ?? String(e))}</div>`;
       }
     }
@@ -799,7 +801,7 @@ function buildTaskNode(dsPath, task, allLengths = [], fps = 10) {
   const statsTitle = `${task.task}\n\n${task.episodes.length} episodes · avg ${avgLen}f (${avgDur}) · min ${minLen}f · max ${maxLen}f\nTotal: ${totalFrames}f (${totalDur})`;
 
   group.innerHTML = `
-    <div class="task-header" title="${statsTitle.replace(/"/g, '&quot;').replace(/\n/g, '&#10;')}">
+    <div class="task-header" title="${escapeHTML(statsTitle).replace(/\n/g, '&#10;')}">
       <svg class="task-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
       <span class="task-name">${escapeHTML(shortTask)}</span>
       <span class="task-avg-len" title="Average episode length">${avgLen}f</span>

@@ -156,13 +156,21 @@ def _ssh_evict_cache() -> None:
     """Delete oldest cached parquet files until total cache is under SSH_CACHE_MAX_BYTES."""
     if not SSH_CACHE_BASE.exists():
         return
-    parquets = sorted(SSH_CACHE_BASE.rglob("*.parquet"), key=lambda p: p.stat().st_mtime)
-    total = sum(p.stat().st_size for p in parquets)
-    for p in parquets:
+    # Collect (path, stat) in one pass to avoid TOCTOU races
+    entries = []
+    for p in SSH_CACHE_BASE.rglob("*.parquet"):
+        try:
+            st = p.stat()
+            entries.append((p, st.st_mtime, st.st_size))
+        except OSError:
+            pass  # file deleted between rglob and stat — skip
+    entries.sort(key=lambda x: x[1])  # oldest first
+    total = sum(e[2] for e in entries)
+    for p, _mtime, size in entries:
         if total <= SSH_CACHE_MAX_BYTES:
             break
-        size = p.stat().st_size
         p.unlink(missing_ok=True)
+        _TABLE_CACHE.pop(str(p), None)  # invalidate LRU so stale data is not served
         total -= size
 
 
@@ -175,8 +183,10 @@ def _ensure_remote_file(session_id: str, remote_base: str, local_base: Path, rel
     sftp = _SSH_SESSIONS[session_id]["sftp"]
     remote_path = remote_base.rstrip("/") + "/" + rel_path
     local_path.parent.mkdir(parents=True, exist_ok=True)
+    lock = _get_sftp_lock(session_id)
     try:
-        sftp.get(remote_path, str(local_path))
+        with lock:
+            sftp.get(remote_path, str(local_path))
     except Exception as exc:
         raise HTTPException(404, f"Remote file not found: {rel_path} ({exc})") from exc
     return local_path
@@ -205,6 +215,10 @@ def ensure_parquet(base: Path, episode_index: int, info: dict) -> Path:
                 break
         if p.exists():
             return p
+        final_status = _SFTP_DOWNLOADS.get(dl_key, {}).get("status", "timeout")
+        if final_status == "error":
+            err_msg = _SFTP_DOWNLOADS[dl_key].get("error", "unknown error")
+            raise HTTPException(502, f"Remote download failed: {err_msg}")
         raise HTTPException(504, "Remote download timed out")
     # Start download with progress tracking
     sftp = _SSH_SESSIONS[session_id]["sftp"]
@@ -315,8 +329,8 @@ def _discover_remote_datasets(sftp: Any, root_path: str, max_depth: int = 7) -> 
                 meta_entries = sftp.listdir(path + "/meta")
                 if "info.json" in meta_entries:
                     try:
-                        info_bytes = sftp.open(path + "/meta/info.json").read()
-                        info = json.loads(info_bytes)
+                        with sftp.open(path + "/meta/info.json") as fh:
+                            info = json.loads(fh.read())
                     except Exception:
                         info = {}
                     results.append({
@@ -354,11 +368,13 @@ def _cache_remote_meta(session_id: str, remote_path: str, sftp: Any) -> Path:
     meta_local.mkdir(parents=True, exist_ok=True)
     meta_files = ["info.json", "tasks.jsonl", "episodes.jsonl",
                   "config.json", "annotation_schema.json"]
+    lock = _get_sftp_lock(session_id)
     for fname in meta_files:
         local_f = meta_local / fname
         if not local_f.exists():
             try:
-                sftp.get(f"{remote_path}/meta/{fname}", str(local_f))
+                with lock:
+                    sftp.get(f"{remote_path}/meta/{fname}", str(local_f))
             except Exception:
                 pass  # optional files may not exist
     return local_base
@@ -1146,12 +1162,17 @@ def disconnect_ssh(session_id: str):
     # Remove associated datasets and invalidate caches
     to_remove = [(vn, e) for vn, e in _SSH_DATASET_MAP.items() if e["session_id"] == session_id]
     removed_names = []
+    session_cache_prefix = str(SSH_CACHE_BASE / session_id)
     for vn, entry in to_remove:
         _SSH_DATASET_MAP.pop(vn, None)
         removed_names.append(vn)
         local = _ssh_local_dir(session_id, entry["remote_path"])
         for cache in [_INFO_CACHE, _TASKS_CACHE, _EPISODES_CACHE, _CONFIG_CACHE]:
             cache.pop(str(local), None)
+    # Clear parquet LRU cache entries for this session
+    stale = [k for k in _TABLE_CACHE if k.startswith(session_cache_prefix)]
+    for k in stale:
+        _TABLE_CACHE.pop(k, None)
     return {"ok": True, "removed_datasets": removed_names}
 
 
@@ -1162,10 +1183,14 @@ def discover_ssh_datasets(session_id: str):
     sess = _SSH_SESSIONS[session_id]
     sftp = sess["sftp"]
     root_path = sess["remote_path"]
-    try:
-        found = _discover_remote_datasets(sftp, root_path)
-    except Exception as exc:
-        raise HTTPException(500, f"Discovery failed: {exc}") from exc
+    lock = _get_sftp_lock(session_id)
+    # Hold the SFTP lock for the entire discovery + meta-download phase so the
+    # background prefetch thread from a prior discover can't corrupt the connection.
+    with lock:
+        try:
+            found = _discover_remote_datasets(sftp, root_path)
+        except Exception as exc:
+            raise HTTPException(500, f"Discovery failed: {exc}") from exc
     results = []
     for ds in found:
         remote_ds_path = ds["path"]
@@ -1175,7 +1200,7 @@ def discover_ssh_datasets(session_id: str):
             "remote_path": remote_ds_path,
             "local_hash": hashlib.md5(f"{session_id}:{remote_ds_path}".encode()).hexdigest()[:8],
         }
-        # Cache meta files locally
+        # Cache meta files locally (each file download acquires the lock internally)
         try:
             _cache_remote_meta(session_id, remote_ds_path, sftp)
         except Exception:
