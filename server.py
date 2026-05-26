@@ -298,6 +298,8 @@ def _ssh_connect(ssh_command: str) -> tuple[Any, Any]:
 
 
 def _discover_remote_datasets(sftp: Any, root_path: str, max_depth: int = 7) -> list[dict]:
+    """Walk remote path and return dataset summaries. Each entry includes 'info_raw' with the
+    full parsed info.json so callers can write it locally without a second SFTP round-trip."""
     results = []
     def _walk(path: str, depth: int):
         if depth > max_depth:
@@ -324,6 +326,7 @@ def _discover_remote_datasets(sftp: Any, root_path: str, max_depth: int = 7) -> 
                         "total_episodes": info.get("total_episodes", 0),
                         "total_tasks": info.get("total_tasks", 1),
                         "robot_type": info.get("robot_type", "unknown"),
+                        "info_raw": info,  # full info.json for local write
                     })
                     return  # don't recurse into dataset subdirectories
             except Exception:
@@ -1181,8 +1184,8 @@ def discover_ssh_datasets(session_id: str):
     sftp = sess["sftp"]
     root_path = sess["remote_path"]
     lock = _get_sftp_lock(session_id)
-    # Hold the SFTP lock for the entire discovery + meta-download phase so the
-    # background prefetch thread from a prior discover can't corrupt the connection.
+    # Hold the SFTP lock for the entire SFTP walk — prevents a background thread
+    # from a prior discover from sharing the connection simultaneously.
     with lock:
         try:
             found = _discover_remote_datasets(sftp, root_path)
@@ -1197,11 +1200,13 @@ def discover_ssh_datasets(session_id: str):
             "remote_path": remote_ds_path,
             "local_hash": hashlib.md5(f"{session_id}:{remote_ds_path}".encode()).hexdigest()[:8],
         }
-        # Cache meta files locally (each file download acquires the lock internally)
-        try:
-            _cache_remote_meta(session_id, remote_ds_path, sftp)
-        except Exception:
-            pass
+        # Write info.json immediately from already-fetched in-memory copy (no extra SFTP round-trip)
+        local_base = _ssh_local_dir(session_id, remote_ds_path)
+        meta_local = local_base / "meta"
+        meta_local.mkdir(parents=True, exist_ok=True)
+        info_local = meta_local / "info.json"
+        if not info_local.exists():
+            info_local.write_text(json.dumps(ds["info_raw"], ensure_ascii=False))
         results.append({
             "virtual_name": vname,
             "remote_path": remote_ds_path,
@@ -1213,19 +1218,24 @@ def discover_ssh_datasets(session_id: str):
         })
     # Update session's list in _SSH_SESSIONS (for listing)
     _SSH_SESSIONS[session_id]["datasets"] = results
-    # Background-prefetch episode 0 for each dataset so first click feels instant
-    def _prefetch_all():
-        for ds in results:
-            vname = ds["virtual_name"]
+    # Background: cache remaining meta files (tasks.jsonl, episodes.jsonl, etc.) + prefetch episode 0
+    def _background_init():
+        for ds in found:
+            remote_ds_path = ds["path"]
+            vname = _ssh_vname(session_id, remote_ds_path)
             if vname not in _SSH_DATASET_MAP:
                 continue
             try:
-                base = _ssh_local_dir(session_id, ds["remote_path"])
+                _cache_remote_meta(session_id, remote_ds_path, sftp)
+            except Exception:
+                pass
+            try:
+                base = _ssh_local_dir(session_id, remote_ds_path)
                 info = read_info_cached(base)
                 ensure_parquet(base, 0, info)
             except Exception:
                 pass
-    threading.Thread(target=_prefetch_all, daemon=True).start()
+    threading.Thread(target=_background_init, daemon=True).start()
     return results
 
 
