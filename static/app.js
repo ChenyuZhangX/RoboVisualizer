@@ -3887,7 +3887,7 @@ function _buildAnnotatedSection(body) {
 }
 
 function _readInputValue(input, ftype) {
-  if (ftype === "boolean") return input.checked ? true : null;
+  if (ftype === "boolean") return input.checked;  // false is a valid annotation value
   if (ftype === "number") return input.value === "" ? null : parseFloat(input.value);
   return input.value === "" ? null : input.value;
 }
