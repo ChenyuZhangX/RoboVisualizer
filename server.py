@@ -111,6 +111,7 @@ def read_config_cached(base: Path) -> dict:
 
 SSH_CACHE_BASE = Path("/tmp/lerobot_ssh_cache")
 SSH_HISTORY_FILE = Path.home() / ".lerobot_visualizer" / "ssh_history.json"
+SSH_CACHE_MAX_BYTES = int(os.environ.get("SSH_CACHE_MAX_GB", "2")) * 1024 ** 3
 
 _SSH_SESSIONS: dict[str, dict] = {}      # session_id → {client, sftp, ssh_command, remote_path, label}
 _SSH_DATASET_MAP: dict[str, dict] = {}   # virtual_name → {session_id, remote_path, local_hash}
@@ -149,6 +150,20 @@ def _ssh_entry_for(base: Path) -> dict | None:
         if base == local or str(base).startswith(str(local)):
             return entry
     return None
+
+
+def _ssh_evict_cache() -> None:
+    """Delete oldest cached parquet files until total cache is under SSH_CACHE_MAX_BYTES."""
+    if not SSH_CACHE_BASE.exists():
+        return
+    parquets = sorted(SSH_CACHE_BASE.rglob("*.parquet"), key=lambda p: p.stat().st_mtime)
+    total = sum(p.stat().st_size for p in parquets)
+    for p in parquets:
+        if total <= SSH_CACHE_MAX_BYTES:
+            break
+        size = p.stat().st_size
+        p.unlink(missing_ok=True)
+        total -= size
 
 
 def _ensure_remote_file(session_id: str, remote_base: str, local_base: Path, rel_path: str) -> Path:
@@ -203,6 +218,7 @@ def ensure_parquet(base: Path, episode_index: int, info: dict) -> Path:
         with lock:
             sftp.get(remote_path, str(p), callback=_progress)
         _SFTP_DOWNLOADS[dl_key]["status"] = "done"
+        _ssh_evict_cache()
     except Exception as exc:
         _SFTP_DOWNLOADS[dl_key]["status"] = "error"
         _SFTP_DOWNLOADS[dl_key]["error"] = str(exc)
