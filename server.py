@@ -210,6 +210,10 @@ def ensure_parquet(base: Path, episode_index: int, info: dict) -> Path:
         _SFTP_DOWNLOADS[dl_key].update({"downloaded": downloaded, "total": total})
     try:
         with lock:
+            # Re-check after acquiring lock: another thread may have finished by now
+            if p.exists():
+                _SFTP_DOWNLOADS[dl_key]["status"] = "done"
+                return p
             sftp.get(remote_path, str(p), callback=_progress)
         _SFTP_DOWNLOADS[dl_key]["status"] = "done"
         _ssh_evict_cache()
