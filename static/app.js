@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v99
+   LeRobot Visualizer — app.js  v100
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -3063,7 +3063,7 @@ function buildAnnotationPanel() {
   hdr.querySelectorAll(".ann-tab").forEach(btn => {
     btn.addEventListener("click", () => {
       _annActiveTab = btn.dataset.tab;
-      lsFlag(`annTab-${btn.dataset.tab}`, true);  // persist tab preference
+      try { localStorage.setItem("annActiveTab", btn.dataset.tab); } catch (_) {}
       buildAnnotationPanel();
     });
   });
@@ -5124,10 +5124,11 @@ document.addEventListener("DOMContentLoaded", () => {
   // Restore frame values sort preference
   _fvSortActive = lsBool("fvSort");
 
-  // Restore annotation tab preference
-  if (lsBool("annTab-annotated")) _annActiveTab = "annotated";
-  else if (lsBool("annTab-schema")) _annActiveTab = "schema";
-  else if (lsBool("annTab-saved")) _annActiveTab = "saved";
+  // Restore annotation tab preference (single key replaces old multi-flag scheme)
+  const _savedAnnTab = localStorage.getItem("annActiveTab");
+  if (_savedAnnTab && ["annotate", "annotated", "schema", "saved"].includes(_savedAnnTab)) {
+    _annActiveTab = _savedAnnTab;
+  }
 
   // Restore corr/timedim open state (will take effect after episode loads)
   if (lsBool("corrOpen")) {

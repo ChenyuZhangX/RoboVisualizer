@@ -130,9 +130,7 @@ def _ssh_local_dir(session_id: str, remote_path: str) -> Path:
 
 
 def _get_sftp_lock(session_id: str) -> threading.Lock:
-    if session_id not in _SSH_SFTP_LOCKS:
-        _SSH_SFTP_LOCKS[session_id] = threading.Lock()
-    return _SSH_SFTP_LOCKS[session_id]
+    return _SSH_SFTP_LOCKS.setdefault(session_id, threading.Lock())
 
 
 def _is_ssh_dataset(base: Path) -> bool:
@@ -234,7 +232,7 @@ def _parse_ssh_command(ssh_command: str) -> tuple[str, str | None, int]:
     port_m = re.search(r"-p\s+(\d+)", cmd)
     if port_m:
         port = int(port_m.group(1))
-        cmd = cmd[:port_m.start()].strip()
+        cmd = (cmd[:port_m.start()] + cmd[port_m.end():]).strip()
     # Parse user@host or just host
     username = None
     if "@" in cmd:
@@ -1160,6 +1158,8 @@ def disconnect_ssh(session_id: str):
     stale = [k for k in _TABLE_CACHE if k.startswith(session_cache_prefix)]
     for k in stale:
         _TABLE_CACHE.pop(k, None)
+    # Remove SFTP lock to avoid unbounded accumulation across reconnects
+    _SSH_SFTP_LOCKS.pop(session_id, None)
     return {"ok": True, "removed_datasets": removed_names}
 
 
