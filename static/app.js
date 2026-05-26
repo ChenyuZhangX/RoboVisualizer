@@ -4132,8 +4132,8 @@ function _drawAnnotatedSparkline(canvas, fieldName, totalFrames) {
 
 function _persistAnnotationFrame(frameIndex) {
   if (!state.activeDataset || state.activeEpIndex == null) return;
-  const values = state.annotations[String(frameIndex)];
-  if (!values || Object.keys(values).length === 0) return; // nothing to save
+  const values = state.annotations[String(frameIndex)] ?? {};
+  // Send even when empty — server interprets empty values as a delete for this frame
   apiPost(
     `${apiDs(state.activeDataset)}/episodes/${state.activeEpIndex}/annotations`,
     { frame_index: frameIndex, values }

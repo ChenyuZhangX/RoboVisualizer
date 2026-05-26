@@ -174,24 +174,6 @@ def _ssh_evict_cache() -> None:
         total -= size
 
 
-def _ensure_remote_file(session_id: str, remote_base: str, local_base: Path, rel_path: str) -> Path:
-    local_path = local_base / rel_path
-    if local_path.exists():
-        return local_path
-    if session_id not in _SSH_SESSIONS:
-        raise HTTPException(503, "SSH session expired — please reconnect")
-    sftp = _SSH_SESSIONS[session_id]["sftp"]
-    remote_path = remote_base.rstrip("/") + "/" + rel_path
-    local_path.parent.mkdir(parents=True, exist_ok=True)
-    lock = _get_sftp_lock(session_id)
-    try:
-        with lock:
-            sftp.get(remote_path, str(local_path))
-    except Exception as exc:
-        raise HTTPException(404, f"Remote file not found: {rel_path} ({exc})") from exc
-    return local_path
-
-
 def ensure_parquet(base: Path, episode_index: int, info: dict) -> Path:
     p = parquet_path_for(base, episode_index, info)
     if p.exists():
@@ -796,9 +778,14 @@ def get_episode(dataset: str, episode_index: Annotated[int, _PathParam(ge=0)]):
 
     return {
         "episode_index": episode_index,
-        "length": len(df_dict.get("timestamp", [])),
+        "length": table.num_rows,
         "fps": info.get("fps", 10),
-        "timestamps": [float(t[0]) if isinstance(t, (list, tuple)) else float(t) for t in df_dict.get("timestamp", [])],
+        "timestamps": [
+            float(t[0]) if isinstance(t, (list, tuple)) else (
+                t.timestamp() if hasattr(t, "timestamp") else float(t)
+            )
+            for t in df_dict.get("timestamp", [])
+        ],
         "state": _to_list(df_dict.get("state", [])),
         "actions": _to_list(df_dict.get(action_col, [])),
         "state_names": state_names if isinstance(state_names, list) else list(state_names),
