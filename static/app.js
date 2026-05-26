@@ -5033,11 +5033,11 @@ async function sshConnect() {
 async function sshDisconnect(sessionId) {
   try {
     await apiPost(`/api/ssh/sessions/${sessionId}`, null, "DELETE");
-    state.sshSessions = state.sshSessions.filter(s => s.session_id !== sessionId);
     showCopyToast("SSH session disconnected");
-    await refreshSSHSections();
   } catch (e) {
     showCopyToast(`Disconnect failed: ${e.message}`, "error");
+  } finally {
+    await refreshSSHSections();
   }
 }
 
