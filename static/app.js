@@ -2769,6 +2769,7 @@ function initFrameCounterJump() {
     let _jumpCancelled = false;
     const commit = (andPlay = false) => {
       if (_jumpCancelled) return;
+      _jumpCancelled = true;  // prevent double-fire from blur triggered by replaceWith
       const raw = input.value.trim();
       let f;
       // Support "M:SS" or "H:MM:SS" timestamp formats as well as frame numbers
@@ -3035,6 +3036,8 @@ function buildAnnotationPanel() {
   if (!panel) return;
   _annChipInputs = null;  // force DOM rebuild
   if (_annTimelineRO) { _annTimelineRO.disconnect(); _annTimelineRO = null; }
+  if (_annTimelineMove) { document.removeEventListener("mousemove", _annTimelineMove); _annTimelineMove = null; }
+  if (_annTimelineUp)   { document.removeEventListener("mouseup",   _annTimelineUp);   _annTimelineUp   = null; }
   const ttOld = document.getElementById("ann-timeline-tt");
   if (ttOld) ttOld.style.display = "none";
   panel.innerHTML = "";

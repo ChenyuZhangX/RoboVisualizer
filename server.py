@@ -589,11 +589,13 @@ def clear_cache():
         "info": len(_INFO_CACHE),
         "tasks": len(_TASKS_CACHE),
         "episodes": len(_EPISODES_CACHE),
+        "config": len(_CONFIG_CACHE),
     }
     _TABLE_CACHE.clear()
     _INFO_CACHE.clear()
     _TASKS_CACHE.clear()
     _EPISODES_CACHE.clear()
+    _CONFIG_CACHE.clear()
     return {"cleared": counts, "total": sum(counts.values())}
 
 
