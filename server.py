@@ -1162,6 +1162,10 @@ def disconnect_ssh(session_id: str):
     stale = [k for k in _TABLE_CACHE if k.startswith(session_cache_prefix)]
     for k in stale:
         _TABLE_CACHE.pop(k, None)
+    # Clean up download progress entries for this session to avoid unbounded growth
+    stale_dl = [k for k in _SFTP_DOWNLOADS if k.startswith(f"{session_id}:")]
+    for k in stale_dl:
+        _SFTP_DOWNLOADS.pop(k, None)
     # Remove SFTP lock to avoid unbounded accumulation across reconnects
     _SSH_SFTP_LOCKS.pop(session_id, None)
     return {"ok": True, "removed_datasets": removed_names}
