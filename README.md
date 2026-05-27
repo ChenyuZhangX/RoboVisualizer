@@ -1,52 +1,57 @@
 # LeRobot Visualizer
 
-A clean, modern web-based visualizer for [LeRobot](https://github.com/huggingface/lerobot) v2.0 datasets. Browse episodes, watch multi-camera playback, inspect state/action trajectories, and annotate frames with custom metadata — all from a polished browser UI backed by a lightweight FastAPI server.
+A polished, browser-based viewer for [LeRobot](https://github.com/huggingface/lerobot) v2.0 datasets. Browse episodes, watch synchronized multi-camera playback, inspect state/action trajectories, annotate frames with custom metadata, and connect to remote GPU servers over SSH — all from a fast, keyboard-driven UI backed by a lightweight FastAPI server.
 
 ---
 
 ## ✨ Features
 
-### Playback & Visualization
-- **Dataset browser** — sidebar tree view: datasets → tasks → episodes with frame counts
-- **Multi-camera playback** — up to 6 synchronized camera views; grey placeholders for missing feeds
-- **State & Action charts** — Chart.js line plots with synchronized playback cursor; real-time updates as frame advances
-- **Per-dimension expand** — split any chart into individual mini-plots; isolate dimensions via Ctrl+click
-- **Normalization** — auto-detects `norm_stats.json`; Q01/Q99 clip normalization to [−1, 1] with toggle badge
-- **Playback controls** — play/pause, rewind, scrubber, speed (0.25×–4×), frame counter, loop mode
-- **Keyboard shortcuts** — 40+ shortcuts for navigation, chart control, speed adjustment, and more
+### Playback & Navigation
+- **Dataset browser** — sidebar tree: datasets → tasks → episodes with frame counts and durations
+- **Multi-camera playback** — up to 6 synchronized camera views with grey placeholders for missing feeds
+- **Smooth scrubbing** — click/drag timeline, click frame counter to jump-by-number, frame history with Alt+←/→
+- **Speed control** — 0.25× to 4× in half-steps; loop mode; rewind; jump to 0–90% with digit keys
+- **Episode navigation** — `[` / `]` to step episodes, `Shift+[`/`Shift+]` for first/last, `Backspace` for previous
+- **Compare overlay** — Ctrl+click any episode to overlay its trajectory as a dashed line over the active one
+
+### Charts & Inspection
+- **State & Action charts** — Chart.js line plots with live playback cursor and per-frame highlight
+- **Per-dimension expand** — split any chart into individual mini-plots; Ctrl+click to isolate one dimension
+- **Time × dimension heatmap** — colour-coded magnitude map across the full episode
+- **Action correlation matrix** — interactive heatmap of pairwise correlations
+- **Normalization** — auto-detects `norm_stats.json`; Q01/Q99 clip-normalize to [−1, 1] with one keypress
+- **Histogram overlay** — per-dimension distribution bars overlaid on the chart
 
 ### Frame Inspection
-- **Raw frame data viewer** — JSON-style display of all Parquet columns (scalars, arrays, annotations)
-- **Column filter/search** — search Parquet keys by name; live re-render without refetch
-- **Frame-to-frame delta display** — green/red badges showing numeric changes between consecutive frames
-- **Expandable arrays** — inline view of vector/image array dimensions
-- **Copy-to-clipboard** — export current frame as JSON or CSV
+- **Raw data viewer** — JSON-style display of every Parquet column (scalars, vectors, annotations)
+- **Column search** — filter keys by name with live re-render, no re-fetch
+- **Delta display** — green/red badges show numeric change vs previous frame
+- **Expandable arrays** — inline vector/array expansion; large arrays truncated with "show more"
 
 ### Data Annotation
-- **Per-frame metadata** — define custom annotation fields (number, string, boolean, category)
-- **Interactive UI** — dedicated Annotate tab with input chips, progress timeline, and sparkline charts
-- **Fill strategies** — auto-fill unannotated frames using fixed value, forward fill, or linear interpolation
-- **Draft & commit workflow** — save annotations to JSON sidecar; commit to Parquet when ready
-- **Annotated tab** — view completion stats, distribution charts, and per-field sparklines
-- **Keyboard navigation** — arrow keys move between fields/frames; Tab to cycle through annotation inputs
-- **CSV export** — download episode annotations as structured CSV file
-- **Persistent storage** — draft annotations saved in `data/annotations/episode_XXXXXX.json`
+- **Custom fields** — define number, string, boolean, or category fields per dataset
+- **Input chips** — one compact chip per field at the current frame; auto-saves on change (800 ms debounce)
+- **Fill strategies** — fixed value, forward fill, or linear interpolation for unannotated frames
+- **Draft → Commit** — edits land in a JSON sidecar first; one click permanently writes new Parquet columns
+- **Stats tab** — sparklines, min/avg/max, category distributions, and boolean counts per field
+- **Progress timeline** — canvas bar shows annotation coverage at a glance; click to seek
+- **CSV export** — download all annotations for an episode as a structured CSV
 
-### UI/UX Polish
-- **Dark mode** — toggle between light and dark themes with persistent preference
-- **Responsive layout** — mobile-friendly sidebar collapse; adapts to small screens
-- **Recent episodes** — quick-access list of last 8 visited episodes
-- **Mirror mode** — hide labels and UI chrome for clean screen recordings
-- **Compare overlay** — Ctrl+click episodes to overlay two episode videos side-by-side
-- **GitHub link** — top-right button links to repository
-- **Toast notifications** — user feedback for copy, save, commit, and error events
-- **Accessibility** — keyboard navigation, ARIA labels, focus rings, semantic HTML
+### SSH Remote Datasets
+- **Connect to any server** — paste an SSH command (`ssh user@host` or an alias from `~/.ssh/config`)
+- **Auto-discovery** — recursive SFTP walk finds all LeRobot datasets under the remote path
+- **On-demand download** — Parquet files are fetched the first time an episode is opened and cached locally
+- **Connection history** — recent connections remembered; one click to reconnect
+- **Transparent integration** — remote datasets appear alongside local ones; all features work identically
 
-### Performance
-- **LRU frame cache** — in-memory Parquet caching (24 most-recent episodes)
-- **Lazy image loading** — prefetch frames ahead of playback
-- **Debounced updates** — chart renders throttled during playback
-- **GZip compression** — API responses compressed on-the-fly
+### UI / UX
+- **Dark mode** — polished light and dark themes with persistent preference
+- **Keyboard first** — 40+ shortcuts for every action; `?` shows the full reference
+- **Mirror mode** — hide all labels and UI chrome for clean screen recordings
+- **Episode info strip** — task description, episode index, fps, duration, and camera list
+- **Responsive layout** — sidebar collapses on small screens; mobile-friendly touch controls
+- **Recent episodes** — quick-access list of the last 8 visited episodes
+- **Toast notifications** — feedback for save, commit, copy, and error events
 
 ---
 
@@ -57,6 +62,8 @@ A clean, modern web-based visualizer for [LeRobot](https://github.com/huggingfac
 ```bash
 pip install -r requirements.txt
 ```
+
+Python ≥ 3.9 required. `paramiko` (for SSH remote datasets) is included by default.
 
 ### 2. Add a dataset
 
@@ -84,144 +91,154 @@ Open **http://localhost:8765** in your browser.
 
 ---
 
-## 📺 Interface Walkthrough
+## 🖥️ Interface Overview
 
-### Main Layout
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│  LeRobot Visualizer                                  🌙  GitHub  ?    │
-├──────────────────────┬─────────────────────────────────────────────┤
-│  DATASETS            │ ┌────────┬────────┬────────┐                │
-│  ▼ libero_reduced    │ │ top    │ wrist  │ (grey) │                │
-│    ▼ pick_cup        │ └────────┴────────┴────────┘                │
-│      ep_000000  214f │                                              │
-│      ep_000018  267f │ "put the white mug on the left plate…"       │
-│    ▼ put_down       │                                              │
-│      ep_000001  281f │ [Video] [Annotate]  C  CSV  V  Z  Export   │
-│                      │                                              │
-│  Recent             │ State    ⊞  [normalized −1,1]  ◀  ▶          │
-│  • ep_000000        │ ───────────╫────────────────────              │
-│  • ep_000018        │                                              │
-│                      │ Action   ⊞  [normalized −1,1]  ◀  ▶          │
-│                      │ ───────────╫────────────────────              │
-│                      │                                              │
-│                      │ Raw Data (JSON Viewer)                      │
-│                      │ Frame 42 · 23 cols  🔍 [ ] 📋             │
-│                      │ ┌────────────────────────────┐              │
-│                      │ │ annotations                │              │
-│                      │ │ - progress: 2 +0.05       │              │
-│                      │ │ - quality:  4 (unchanged) │              │
-│                      │ │ metadata                   │              │
-│                      │ │ - state_0: 1.234          │              │
-│                      │ │ - action_0: -0.456        │              │
-│                      │ └────────────────────────────┘              │
-│                      │                                              │
-│ [⏮] [▶] ━●━ 42/213  Speed: 1×  Loop  ⏱️ 21fps                    │
-└──────────────────────┴─────────────────────────────────────────────┘
-```
-
-### Annotation Tab
-```
-┌────────────────────────────────────────────┐
-│ Annotation   [Annotate] [Annotated] [→]  ⚙️ │
-├────────────────────────────────────────────┤
-│ quality:     [====●======]  4/5 frames    │
-│ note:        [open text input]             │
-│ success:     [checkbox: ☑️]                │
-│                                            │
-│ ← Prev unannotated    Next unannotated →  │
-│ [Fill & Save] [Export CSV] [Commit]      │
-│                                            │
-│ Timeline: ████▓░░░░░░░░░░░░░░░░░░░░░░░░ │
-└────────────────────────────────────────────┘
+│  LeRobot Visualizer                              🌙  GitHub  ?      │
+├──────────────────────┬───────────────────────────────────────────────┤
+│  🔍 Search           │                                               │
+│                      │  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
+│  LOCAL               │  │  cam_top │  │  wrist   │  │  ext_1   │   │
+│  ▼ my_dataset        │  └──────────┘  └──────────┘  └──────────┘   │
+│    ▼ pick up cup     │                                               │
+│      ep_000000  214f │  "put the white mug on the left plate"        │
+│      ep_000001  267f │                                               │
+│    ▼ place down      │  [Video]  [Annotate]    C  CSV  V  Z  ↓     │
+│      ep_000002  281f │                                               │
+│                      │  State ────────────────────────────  ⊞  [N]  │
+│  REMOTE (gpu-server)  │  ──────╫──────────────────────────────────   │
+│  ▼ bridge_dataset 📡 │                                               │
+│    ▼ pick up …       │  Action ───────────────────────────  ⊞  [N]  │
+│      ep_000000  450f │  ──────╫──────────────────────────────────   │
+│                      │                                               │
+│  Recent              │  Raw Data (JSON Viewer)                       │
+│  • ep_000000         │  Frame 42 · 15 cols    🔍          📋        │
+│  • ep_000001         │  ┌──────────────────────────────────────┐    │
+│                      │  │ quality      4      Δ+1              │    │
+│                      │  │ state_0   1.234     Δ−0.012          │    │
+│                      │  └──────────────────────────────────────┘    │
+│                      │                                               │
+│  [⏮] [▶] ━━━●━ 42/213  Speed: 1×  Loop  ⏱ 21fps                  │
+└──────────────────────┴───────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🎯 Annotation Workflow
+## 📡 SSH Remote Datasets
 
-### 1. Define Fields (Schema Tab)
-Create annotation fields in the **Schema** tab:
-- Field name: `quality`, Type: `number` (min 0, max 5)
-- Field name: `note`, Type: `string`
-- Field name: `success`, Type: `boolean`
+Connect to a remote server and browse its datasets without copying files locally.
 
-Schema is stored in `meta/annotation_schema.json`.
+### Connect
 
-### 2. Annotate Frames (Annotate Tab)
-- Navigate through frames using playback or ← / → keys
-- Fill in input chips for current frame
-- Auto-saves to `data/annotations/episode_XXXXXX.json` (800ms debounce)
-- **Keyboard navigation**: Arrow keys move between fields; Up/Down seek frames
+1. Click the **SSH** button in the sidebar header (or open it from the modal).
+2. Enter the SSH command — exactly as you'd type it in a terminal:
 
-### 3. View Stats (Annotated Tab)
-Once all frames are annotated for a field, it appears in the **Annotated** tab showing:
-- **Numeric**: min, avg, max + sparkline chart (click to seek)
-- **Category**: top 5 values + percentages
-- **Boolean**: true/false counts + percentages
-- **Progress**: current frame's value highlighted
+   ```
+   ssh myserver
+   ssh user@192.168.1.100
+   ssh -p 2222 user@host
+   ```
 
-### 4. Fill Unannotated Frames (Settings ⚙️)
-Configure fill strategies per field:
-- `None` — leave null
-- `Fixed value` — fill all unannotated with a constant
-- `Forward fill` — propagate last known value forward
-- `Linear interpolation` — (numbers only) linearly interpolate between keyframes
+   Aliases, `ProxyJump`, and `IdentityFile` in `~/.ssh/config` are all honoured automatically.
 
-Then click **Fill & Save** (Ctrl+S) to apply and save to sidecar.
+3. Enter the **remote path** — the directory that contains your dataset folders.
+4. Click **Connect**. The server walks the remote directory, detects all LeRobot datasets, and lists them in the sidebar under a **Remote** section.
 
-### 5. Commit to Dataset
-When satisfied, click **Commit** to permanently write annotations as new Parquet columns.
-- This overwrites the episode's parquet file with new columns
-- Commits use fill strategies to ensure all frames are covered
-- JSON sidecar is not deleted; can be used for version control
+### What happens under the hood
 
-### 6. Export Annotations
-Click **Export as CSV** to download a structured CSV file:
+- `meta/info.json` is written locally immediately (so datasets appear in the sidebar at once).
+- `tasks.jsonl`, `episodes.jsonl`, and other meta files are downloaded in the background.
+- Parquet files are fetched on demand the first time you open an episode; subsequent opens use the local cache.
+- The cache lives at `/tmp/lerobot_ssh_cache/` and is evicted when it exceeds 4 GB.
+- Sessions are in-memory and lost on server restart; the connection history is persisted to `~/.lerobot_visualizer/ssh_history.json`.
+
+---
+
+## 🎯 Data Annotation
+
+### Workflow
+
+#### 1. Define fields — Schema tab
+Add annotation fields for the dataset. Each field has a name and one of four types:
+
+| Type | Input | Parquet column type |
+|------|-------|---------------------|
+| `number` | numeric input | `float64` |
+| `string` | text input | `string` |
+| `boolean` | checkbox | `bool` |
+| `category` | dropdown | `string` |
+
+Schema is stored in `meta/annotation_schema.json` inside the dataset directory.
+
+#### 2. Annotate — Annotate tab
+Navigate through frames and fill in the input chips. Each change auto-saves to a JSON sidecar (`data/annotations/episode_XXXXXX.json`) after an 800 ms debounce. Keyboard shortcuts:
+
+| Key | Action |
+|-----|--------|
+| `←` / `→` | Step frame |
+| `Tab` / `Shift+Tab` | Move between annotation fields |
+| `↑` / `↓` | Jump to previous / next unannotated frame for the focused field |
+| `Ctrl+S` | Fill unannotated frames and save |
+| `Del` | Clear all annotations for the episode |
+
+#### 3. View stats — Annotated tab
+Once you've annotated at least one frame, the **Annotated** tab shows per-field completion stats: sparklines, min/avg/max for numbers, top-value distributions for categories, and true/false counts for booleans.
+
+#### 4. Configure fill — Settings ⚙️
+For each field, choose what to do with unannotated frames at commit time:
+
+| Strategy | Description |
+|----------|-------------|
+| `None` | Leave as `null` |
+| `Fixed value` | Fill every unannotated frame with a constant |
+| `Forward fill` | Propagate the last annotated value forward |
+| `Linear interpolation` | Interpolate between annotated keyframes *(numbers only)* |
+
+#### 5. Commit to Parquet
+Click **Commit** to permanently write annotation columns into the episode's Parquet file. The existing columns are preserved; annotation fields are appended (or replaced if they already exist). The JSON sidecar is kept as a backup.
+
+#### 6. Export as CSV
 ```
 frame_index,quality,note,success
 0,4,open,true
 1,4,open,true
 2,3,closed,false
-...
 ```
 
 ---
 
 ## 🛠️ Normalization
 
-Run the following script to compute normalization statistics for a dataset:
+Run `compute_norm_stats.py` to compute per-dimension statistics for a dataset:
 
 ```bash
-# Edit DATASET path at the top of the script, then:
+# Edit the DATASET constant at the top, then:
 python compute_norm_stats.py
 ```
 
-The script computes per-dimension **mean, std, min, max, Q01, Q99** for `state`, `action`, and `delta_action` across all episodes.
-
-Once `meta/norm_stats.json` is in place, the visualizer automatically normalizes to [−1, 1]:
+Outputs `meta/norm_stats.json` with **mean, std, min, max, Q01, Q99** for `state`, `action`, and `delta_action` across all episodes. Once present, the visualizer's **N** toggle normalizes all charts to [−1, 1] using:
 
 ```
-x_clipped  = clip(x, q01, q99)
-x_norm     = 2 × (x_clipped − q01) / (q99 − q01) − 1
+x_norm = 2 × (clip(x, q01, q99) − q01) / (q99 − q01) − 1
 ```
 
 ---
 
 ## 🔄 Conversion Tools
 
-Convert HDF5 or folder-based datasets into LeRobot v2.0 Parquet format using scripts in `tools/`.
+Convert existing datasets into LeRobot v2.0 Parquet format using scripts in `tools/`.
 
 ### HDF5 datasets
 
-Supports **ALOHA/ACT**, **RoboMimic**, **LIBERO**, plus fully configurable custom mode.
+Supports ALOHA/ACT, RoboMimic, and LIBERO out of the box, plus a fully configurable custom mode.
 
 ```bash
 # ALOHA / ACT
 python tools/convert_hdf5.py dataset.hdf5 output/my_dataset \
     --profile aloha --task "pick up the cup"
 
-# RoboMimic (task inferred from demo attributes)
+# RoboMimic (task description inferred from demo attributes)
 python tools/convert_hdf5.py robosuite.hdf5 output/my_dataset \
     --profile robomimic
 
@@ -229,7 +246,7 @@ python tools/convert_hdf5.py robosuite.hdf5 output/my_dataset \
 python tools/convert_hdf5.py libero_task.hdf5 output/my_dataset \
     --profile libero
 
-# Custom field mapping
+# Custom — configure keys explicitly
 python tools/convert_hdf5.py custom.hdf5 output/my_dataset \
     --profile custom --config '{
         "demos_key":    "data",
@@ -241,12 +258,12 @@ python tools/convert_hdf5.py custom.hdf5 output/my_dataset \
     }'
 ```
 
-| Profile | Format | State source | Camera keys |
-|---|---|---|---|
+| Profile | Format | State | Cameras |
+|---------|--------|-------|---------|
 | `aloha` | ALOHA / ACT | `obs/qpos` | `obs/images/top`, `obs/images/wrist` |
-| `robomimic` | RoboMimic | all 1-D obs fields (auto) | `obs/agentview_image`, `obs/robot0_eye_in_hand_image` |
-| `libero` | LIBERO original | joint + gripper + ee pos/ori | `obs/agentview_rgb`, `obs/eye_in_hand_rgb` |
-| `custom` | any HDF5 | configured via `--config` | configured via `--config` |
+| `robomimic` | RoboMimic | all 1-D obs fields | `obs/agentview_image`, `obs/robot0_eye_in_hand_image` |
+| `libero` | LIBERO | joint + gripper + EE pos/ori | `obs/agentview_rgb`, `obs/eye_in_hand_rgb` |
+| `custom` | any HDF5 | `--config` | `--config` |
 
 ### Folder-based datasets
 
@@ -255,25 +272,25 @@ python tools/convert_hdf5.py custom.hdf5 output/my_dataset \
 ```
 dataset/
   episode_000/
-    image/          ← camera frames (*.jpg / *.png, sorted)
+    image/            ← camera frames (*.jpg / *.png, sorted by name)
     wrist_image/
-    states.csv      ← one row per timestep
+    states.csv        ← one row per timestep
     actions.csv
-    task.txt        ← (optional) task description
+    task.txt          ← optional task description
   episode_001/
     ...
 ```
 
 ```bash
 python tools/convert_folder.py /path/to/dataset output/my_dataset \
-    --fps 10 --task "default task description"
+    --fps 10 --task "default task"
 ```
 
 **Layout B** — flat CSV with image paths:
 
 ```
 dataset/
-  data.csv          ← columns: episode, frame, state_*, action_*, <cam>_path
+  data.csv            ← columns: episode, frame, state_*, action_*, <cam>_path
   images/
 ```
 
@@ -287,117 +304,160 @@ python tools/convert_folder.py /path/to/dataset output/my_dataset \
 
 ---
 
-## 📁 Project Structure
+## ⌨️ Keyboard Shortcuts
 
-```
-lerobot-visualizer/
-├── server.py               FastAPI backend (dataset / episode / frame / annotation APIs)
-├── requirements.txt
-├── compute_norm_stats.py   Compute Q01/Q99 normalization stats for a full dataset
-├── static/
-│   ├── index.html          Single-page UI (v88)
-│   ├── app.js              Playback, charts, annotation, keyboard shortcuts (v95)
-│   └── style.css           Polished light/dark theme with blue accent (v88)
-├── tools/
-│   ├── utils.py            LeRobotWriter — exact v2.0 Parquet schema
-│   ├── convert_hdf5.py     HDF5 → LeRobot (ALOHA / RoboMimic / LIBERO / custom)
-│   └── convert_folder.py   Folder + CSV → LeRobot (layout A & B)
-└── data/                   ← place datasets here (git-ignored)
-```
+### Playback
+| Key | Action |
+|-----|--------|
+| `Space` | Play / Pause |
+| `←` / `→` | Step ±1 frame |
+| `Shift+←` / `Shift+→` | Step ±10 frames |
+| `Alt+←` / `Alt+→` | Navigate frame history |
+| `0`–`9` | Jump to 0%–90% of episode |
+| `Home` / `R` | Rewind to first frame |
+| `End` | Jump to last frame |
+| `PageUp` / `PageDown` | Jump ±10% |
+| `Shift+PageUp/Down` | Jump ±25% |
+| `+` / `−` | Speed up / slow down |
+| `L` | Toggle loop |
+| `Shift+R` | Random episode |
+
+### Navigation
+| Key | Action |
+|-----|--------|
+| `[` / `]` | Previous / next episode |
+| `Shift+[` / `Shift+]` | First / last episode |
+| `Backspace` | Previous episode |
+| `Ctrl+J` | Jump to frame number |
+| `/` / `G` / `Ctrl+K` | Focus search |
+| `O` | Collapse all task groups except current |
+| `Ctrl+R` | Reload current episode (clears frame cache) |
+
+### Charts & View
+| Key | Action |
+|-----|--------|
+| `H` / `Shift+H` | Toggle state / action histogram |
+| `E` / `Shift+E` | Expand state / action chart by dimension |
+| `T` | Toggle time × dimension heatmap |
+| `K` | Toggle action correlation matrix |
+| `N` | Toggle normalization |
+| `I` | Toggle episode info strip |
+| `Ctrl+M` | Jump to midpoint of episode |
+
+### Annotations
+| Key | Action |
+|-----|--------|
+| `A` | Toggle Annotate tab |
+| `Ctrl+S` | Fill & save annotations |
+| `Del` | Clear all annotations for episode |
+| `Tab` / `Shift+Tab` | Move between annotation fields |
+| `↑` / `↓` | Prev / next unannotated frame |
+
+### Export & UI
+| Key | Action |
+|-----|--------|
+| `C` | Copy episode URL |
+| `Ctrl+Shift+C` | Copy current frame values as JSON |
+| `X` | Export episode annotations as CSV |
+| `J` | Export episode as JSON |
+| `W` | Export timestamps as CSV |
+| `D` | Download current camera frame |
+| `Ctrl+D` | Toggle dark mode |
+| `V` / `P` | Toggle frame values panel |
+| `Z` | Toggle raw data JSON viewer |
+| `F` | Fullscreen camera |
+| `M` | Mirror mode (hide labels) |
+| `B` | Toggle sidebar |
+| `?` | Show keyboard shortcut reference |
+| `Escape` | Close lightbox / modal; clear compare overlay |
 
 ---
 
 ## 🔌 API Reference
 
-FastAPI server endpoints (also browsable at `/docs`):
+The FastAPI server exposes a REST API at port 8765. Interactive docs are available at `/docs`.
+
+### Dataset endpoints
 
 | Method | Path | Description |
-|---|---|---|
-| `GET` | `/api/datasets` | List all datasets in `./data/` |
-| `GET` | `/api/datasets/{ds}/tasks` | Tasks and their local episodes |
-| `GET` | `/api/datasets/{ds}/episodes/{idx}` | Episode state/action/metadata |
+|--------|------|-------------|
+| `GET` | `/api/datasets` | List all local datasets |
+| `GET` | `/api/datasets/{ds}/meta` | Dataset metadata (info.json) |
+| `GET` | `/api/datasets/{ds}/tasks` | Tasks and their episodes |
+| `GET` | `/api/datasets/{ds}/stats` | Per-task episode count and length stats |
+| `GET` | `/api/datasets/{ds}/norm_stats` | Normalization statistics (or `null`) |
+| `GET` | `/api/datasets/{ds}/config` | Per-dataset config (camera labels, etc.) |
+| `PUT` | `/api/datasets/{ds}/config` | Update per-dataset config |
+
+### Episode endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/datasets/{ds}/episodes/{idx}` | Full episode data (state, action, timestamps) |
 | `GET` | `/api/datasets/{ds}/episodes/{idx}/frame/{f}` | Camera images for one frame (base64 JPEG) |
-| `GET` | `/api/datasets/{ds}/episodes/{idx}/frame/{f}/values` | All scalar + array columns for a frame (excluding images) |
-| `GET` | `/api/datasets/{ds}/norm_stats` | Normalization statistics (or `null` if not present) |
-| `GET` | `/api/datasets/{ds}/annotation_schema` | Annotation field definitions |
-| `POST` | `/api/datasets/{ds}/annotation_schema` | Update annotation schema |
-| `GET` | `/api/datasets/{ds}/episodes/{idx}/annotations` | Get draft annotations for an episode |
-| `PUT` | `/api/datasets/{ds}/episodes/{idx}/annotations` | Bulk save/update annotations (JSON sidecar) |
-| `POST` | `/api/datasets/{ds}/episodes/{idx}/annotations/commit` | Commit annotations to Parquet (permanent write) |
-| `DELETE` | `/api/datasets/{ds}/episodes/{idx}/annotations` | Clear draft annotations for an episode |
+| `GET` | `/api/datasets/{ds}/episodes/{idx}/frame/{f}/values` | All scalar + vector columns for a frame |
+
+### Annotation endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/datasets/{ds}/annotation_schema` | Schema field definitions |
+| `POST` | `/api/datasets/{ds}/annotation_schema` | Update schema |
+| `GET` | `/api/datasets/{ds}/episodes/{idx}/annotations` | Draft annotations for an episode |
+| `PUT` | `/api/datasets/{ds}/episodes/{idx}/annotations` | Bulk save annotations to JSON sidecar |
+| `DELETE` | `/api/datasets/{ds}/episodes/{idx}/annotations` | Clear draft annotations |
+| `POST` | `/api/datasets/{ds}/episodes/{idx}/annotations/commit` | Write annotations as Parquet columns |
+
+### SSH endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/ssh/connect` | Open SSH + SFTP connection |
+| `GET` | `/api/ssh/sessions` | List active sessions and history |
+| `DELETE` | `/api/ssh/sessions/{id}` | Disconnect session |
+| `GET` | `/api/ssh/sessions/{id}/discover` | Discover datasets on remote server |
+| `GET` | `/api/ssh/dl_status/{ds}/{idx}` | Download progress for a remote episode |
 
 ---
 
-## ⌨️ Keyboard Shortcuts
+## 📁 Project Structure
 
-### Playback
-| Key | Action |
-|---|---|
-| `Space` | Play / Pause |
-| `←` / `→` | Step ±1 frame |
-| `Shift+←` / `Shift+→` | Step ±10 frames |
-| `Alt+←` / `Alt+→` | Navigate frame history |
-| `R` / `Home` | Rewind to start |
-| `End` | Jump to last frame |
-| `+` / `−` | Speed up / slow down |
-| `L` | Toggle loop |
-
-### Navigation
-| Key | Action |
-|---|---|
-| `Ctrl+J` | Jump to frame (with timestamp support) |
-| `[` / `]` | Previous / next episode |
-| `Shift+[` / `Shift+]` | First / last episode |
-| `0`–`9` | Jump to 0%–90% of episode |
-| `/` / `G` / `Ctrl+K` | Focus search |
-
-### Charts & View
-| Key | Action |
-|---|---|
-| `H` / `Shift+H` | Toggle state / action histogram |
-| `E` / `Shift+E` | Split state / action chart by dimension |
-| `T` | Toggle time × dimension heatmap |
-| `K` | Toggle action correlation matrix |
-| `N` | Toggle normalization |
-| `I` | Toggle episode info strip |
-
-### Annotations
-| Key | Action |
-|---|---|
-| `A` | Switch to Annotate tab |
-| `Ctrl+S` | Fill & Save annotations (Annotate tab) |
-| `Del` | Clear all annotations for episode |
-| `Arrow keys` | Navigate between fields / frames (in Annotate tab) |
-
-### Export & UI
-| Key | Action |
-|---|---|
-| `C` | Copy episode URL |
-| `Ctrl+Shift+C` | Copy current frame values as JSON |
-| `X` | Export episode as CSV |
-| `J` | Export episode as JSON |
-| `D` | Download current frame / image |
-| `Ctrl+D` | Toggle dark mode |
-| `V` / `P` | Toggle frame values panel |
-| `Z` | Toggle raw frame data (JSON) viewer |
-| `F` | Fullscreen camera |
-| `M` | Mirror mode (hide labels) |
-| `B` | Toggle sidebar |
-| `?` | Show this help |
+```
+lerobot-visualizer/
+├── server.py               FastAPI backend (~1280 lines)
+├── requirements.txt        Python dependencies
+├── compute_norm_stats.py   Compute Q01/Q99 normalization stats
+├── static/
+│   ├── index.html          Single-page app shell (~390 lines)
+│   ├── app.js              All client logic — playback, charts, annotation, SSH (~5900 lines)
+│   └── style.css           Light + dark themes, design tokens (~2970 lines)
+├── tools/
+│   ├── utils.py            LeRobotWriter — exact v2.0 Parquet schema
+│   ├── convert_hdf5.py     HDF5 → LeRobot (ALOHA / RoboMimic / LIBERO / custom)
+│   └── convert_folder.py   Folder + CSV → LeRobot (layout A & B)
+└── data/                   Datasets go here (git-ignored)
+```
 
 ---
 
 ## 📋 Requirements
 
-- Python ≥ 3.9
-- `fastapi`, `uvicorn`, `pyarrow`, `pillow`
-- Modern browser (Chrome / Firefox / Safari)
+| Package | Purpose |
+|---------|---------|
+| `fastapi >= 0.100` | HTTP server |
+| `uvicorn >= 0.20` | ASGI runner |
+| `pyarrow >= 12.0` | Parquet read/write |
+| `pillow >= 10.0` | Image encoding |
+| `paramiko >= 3.0` | SSH / SFTP remote datasets |
 
-For conversion tools, additionally: `h5py` (HDF5), `numpy`
+Optional:
 
 ```bash
-pip install h5py   # only needed for convert_hdf5.py
+pip install h5py        # HDF5 conversion (convert_hdf5.py)
+pip install opencv-python  # video dataset support (dtype="video")
 ```
+
+Python ≥ 3.9, any modern browser (Chrome / Firefox / Safari).
 
 ---
 
@@ -409,11 +469,11 @@ MIT
 
 ## 🤝 Contributing
 
-Bug reports and pull requests welcome! This is an active research project.
+Bug reports and pull requests are welcome. For larger changes, please open an issue first to discuss the approach.
 
 ---
 
 ## 📚 Related
 
-- [LeRobot](https://github.com/huggingface/lerobot) — Main robot learning dataset framework
-- [HuggingFace](https://huggingface.co/) — Model and dataset hub
+- [LeRobot](https://github.com/huggingface/lerobot) — Hugging Face robot learning library and dataset format
+- [LeRobot datasets on HuggingFace](https://huggingface.co/datasets?other=LeRobot) — Community datasets

@@ -2,7 +2,7 @@
 
 ## Current State
 
-**Version**: app.js v98, style.css v89, index.html updated
+**Version**: app.js v102, style.css v89
 **Status**: Fully functional with annotation system, JSON viewer, SSH remote support, and extensive keyboard navigation
 
 ### Architecture
@@ -19,8 +19,8 @@
 #### Frontend (static/)
 - **Single-page app** (no build step)
 - **Chart.js** for state/action plots (v4.4.2 CDN)
-- **~5500 lines** of vanilla JavaScript (no framework)
-- **~2800 lines** of CSS (design tokens, light + dark modes)
+- **~5900 lines** of vanilla JavaScript (no framework)
+- **~2970 lines** of CSS (design tokens, light + dark modes)
 
 #### Key Data Flow
 1. User selects episode → `selectEpisode()` → fetch metadata, cache Parquet
@@ -108,19 +108,16 @@ lsBool(k)              // localStorage bool persistence
 
 ## Recent Changes & Version History
 
-### Session 1: Annotation System Foundation
-- Added annotation schema (define fields per dataset)
-- Draft storage in JSON sidecar
-- Commit endpoint to write Parquet columns
-- Fill strategies (none, fixed, forward fill, linear interp)
+### Session 7: Bug Fixes — SSH, Annotation, Cache (Latest)
+- **SSH discover timeout** (`da60d75`): `discover_ssh_datasets` was calling `_cache_remote_meta` synchronously for every dataset (~33s on cold cache), exceeding the browser's 30s timeout and appearing as a 500 error. Fix: write `info.json` immediately from the already-fetched `info_raw` in memory; move all `_cache_remote_meta` + episode-0 prefetch into one background thread. Discover now returns in ~3s.
+- **`sshDisconnect` optimistic state update** (`1e9d58f`): session removed from `state.sshSessions` before DELETE confirmed; sidebar lost the entry on network failure. Fix: use `finally` for `refreshSSHSections()` to always re-fetch ground truth.
+- **`clear_cache` missing `_CONFIG_CACHE`** (`b0b7543`): `POST /api/cache/clear` cleared four caches but left `_CONFIG_CACHE` populated. Camera label configs persisted incorrectly after a cache clear. Fixed.
+- **Frame counter double-fire on Enter** (`b0b7543`): `initFrameCounterJump`'s `commit()` called `input.replaceWith(counter)`, firing a `blur` event that called `commit()` a second time. Fix: set `_jumpCancelled = true` as first action in `commit()`.
+- **Annotation timeline event listener leak** (`b0b7543`): `_annTimelineMove`/`_annTimelineUp` document-level listeners were never removed when `buildAnnotationPanel` rebuilt for a non-annotate tab. Fix: always clean them at the start of `buildAnnotationPanel`.
+- **Boolean annotation `false` treated as null** (`c3cfb01`): `_readInputValue` returned `null` for unchecked checkboxes. Fix: return `input.checked` directly so `false` is stored as a valid annotation value.
+- **SSH SFTP lock race, port parsing, lock leak** (`a579a07`): three separate fixes in one commit.
 
-### Session 2: UI Enhancements
-- Annotated tab: stats grid with sparklines for numeric/category/boolean fields
-- Tab badges showing field completion counts
-- Progress timeline (green = full, amber = partial)
-- Keyboard shortcuts (A for tab, Del to clear)
-
-### Session 6: SSH Remote Server Support (Latest)
+### Session 6: SSH Remote Server Support
 - **SSH remote dataset visualization**: connect to remote servers (e.g. `ssh H100-SQZ`) via paramiko
   - Backend: `POST /api/ssh/connect`, `GET /api/ssh/sessions`, `DELETE /api/ssh/sessions/{id}`, `GET /api/ssh/sessions/{id}/discover`
   - Discovery algorithm: recursive SFTP walk (max depth 7), detects `meta/info.json` markers
@@ -164,6 +161,18 @@ lsBool(k)              // localStorage bool persistence
 - **Fixed _jumpToUnannotated**: per-field logic (skip frames unannotated on ANY field)
 - **GitHub link**: top-right button to repository
 - **CSV export**: download annotations as structured CSV file
+
+### Session 2: UI Enhancements
+- Annotated tab: stats grid with sparklines for numeric/category/boolean fields
+- Tab badges showing field completion counts
+- Progress timeline (green = full, amber = partial)
+- Keyboard shortcuts (A for tab, Del to clear)
+
+### Session 1: Annotation System Foundation
+- Added annotation schema (define fields per dataset)
+- Draft storage in JSON sidecar
+- Commit endpoint to write Parquet columns
+- Fill strategies (none, fixed, forward fill, linear interp)
 
 ---
 
@@ -261,20 +270,20 @@ Before committing:
 lerobot-visualizer/
 ├── README.md                    User-facing documentation
 ├── CLAUDE.md                    This file (engineering notes)
-├── server.py                    FastAPI backend (742 lines)
+├── server.py                    FastAPI backend (~1280 lines)
 ├── requirements.txt             Python dependencies
 ├── compute_norm_stats.py        Normalization helper
 ├── static/
-│   ├── index.html              Main HTML (v88, 339 lines)
-│   ├── app.js                  JavaScript logic (v95, ~5500 lines)
-│   └── style.css               Styling (v88, ~2800 lines)
+│   ├── index.html              Single-page app shell (v102, ~390 lines)
+│   ├── app.js                  All client logic (v102, ~5900 lines)
+│   └── style.css               Light/dark themes, design tokens (v89, ~2970 lines)
 ├── tools/
-│   ├── utils.py                LeRobot Parquet writer
-│   ├── convert_hdf5.py         HDF5 conversion
-│   └── convert_folder.py       Folder/CSV conversion
+│   ├── utils.py                LeRobotWriter — exact v2.0 Parquet schema
+│   ├── convert_hdf5.py         HDF5 → LeRobot (ALOHA / RoboMimic / LIBERO / custom)
+│   └── convert_folder.py       Folder + CSV → LeRobot (layout A & B)
 └── data/                        Dataset directory (git-ignored)
 ```
 
 ---
 
-Last updated: 2026-05-25 (v98)
+Last updated: 2026-05-27 (v102)
