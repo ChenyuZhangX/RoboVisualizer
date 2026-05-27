@@ -1,57 +1,12 @@
 # LeRobot Visualizer
 
-A polished, browser-based viewer for [LeRobot](https://github.com/huggingface/lerobot) v2.0 datasets. Browse episodes, watch synchronized multi-camera playback, inspect state/action trajectories, annotate frames with custom metadata, and connect to remote GPU servers over SSH — all from a fast, keyboard-driven UI backed by a lightweight FastAPI server.
+A browser-based viewer for [LeRobot](https://github.com/huggingface/lerobot) v2.0 robot datasets, built on FastAPI + vanilla JS.
 
----
-
-## ✨ Features
-
-### Playback & Navigation
-- **Dataset browser** — sidebar tree: datasets → tasks → episodes with frame counts and durations
-- **Multi-camera playback** — up to 6 synchronized camera views with grey placeholders for missing feeds
-- **Smooth scrubbing** — click/drag timeline, click frame counter to jump-by-number, frame history with Alt+←/→
-- **Speed control** — 0.25× to 4× in half-steps; loop mode; rewind; jump to 0–90% with digit keys
-- **Episode navigation** — `[` / `]` to step episodes, `Shift+[`/`Shift+]` for first/last, `Backspace` for previous
-- **Compare overlay** — Ctrl+click any episode to overlay its trajectory as a dashed line over the active one
-
-### Charts & Inspection
-- **State & Action charts** — Chart.js line plots with live playback cursor and per-frame highlight
-- **Per-dimension expand** — split any chart into individual mini-plots; Ctrl+click to isolate one dimension
-- **Time × dimension heatmap** — colour-coded magnitude map across the full episode
-- **Action correlation matrix** — interactive heatmap of pairwise correlations
-- **Normalization** — auto-detects `norm_stats.json`; Q01/Q99 clip-normalize to [−1, 1] with one keypress
-- **Histogram overlay** — per-dimension distribution bars overlaid on the chart
-
-### Frame Inspection
-- **Raw data viewer** — JSON-style display of every Parquet column (scalars, vectors, annotations)
-- **Column search** — filter keys by name with live re-render, no re-fetch
-- **Delta display** — green/red badges show numeric change vs previous frame
-- **Expandable arrays** — inline vector/array expansion; large arrays truncated with "show more"
-
-### Data Annotation
-- **Custom fields** — define number, string, boolean, or category fields per dataset
-- **Input chips** — one compact chip per field at the current frame; auto-saves on change (800 ms debounce)
-- **Fill strategies** — fixed value, forward fill, or linear interpolation for unannotated frames
-- **Draft → Commit** — edits land in a JSON sidecar first; one click permanently writes new Parquet columns
-- **Stats tab** — sparklines, min/avg/max, category distributions, and boolean counts per field
-- **Progress timeline** — canvas bar shows annotation coverage at a glance; click to seek
-- **CSV export** — download all annotations for an episode as a structured CSV
-
-### SSH Remote Datasets
-- **Connect to any server** — paste an SSH command (`ssh user@host` or an alias from `~/.ssh/config`)
-- **Auto-discovery** — recursive SFTP walk finds all LeRobot datasets under the remote path
-- **On-demand download** — Parquet files are fetched the first time an episode is opened and cached locally
-- **Connection history** — recent connections remembered; one click to reconnect
-- **Transparent integration** — remote datasets appear alongside local ones; all features work identically
-
-### UI / UX
-- **Dark mode** — polished light and dark themes with persistent preference
-- **Keyboard first** — 40+ shortcuts for every action; `?` shows the full reference
-- **Mirror mode** — hide all labels and UI chrome for clean screen recordings
-- **Episode info strip** — task description, episode index, fps, duration, and camera list
-- **Responsive layout** — sidebar collapses on small screens; mobile-friendly touch controls
-- **Recent episodes** — quick-access list of the last 8 visited episodes
-- **Toast notifications** — feedback for save, commit, copy, and error events
+- **Playback** — browse datasets → tasks → episodes; multi-camera video with synchronized state/action charts
+- **Annotation** — define custom fields per dataset, annotate per frame, commit to Parquet with one click
+- **SSH remote** — connect to a GPU server and browse its datasets without copying files locally
+- **Inspection** — raw Parquet data viewer per frame, delta display, normalization, histogram, correlation matrix
+- **Polish** — 40+ keyboard shortcuts, dark mode, mirror mode, episode compare overlay
 
 ---
 
@@ -301,6 +256,57 @@ python tools/convert_folder.py /path/to/dataset output/my_dataset \
     --action-cols action_0 action_1 action_2 action_3 action_4 action_5 action_6 \
     --image-cols  image wrist_image
 ```
+
+---
+
+## ✨ Full Feature List
+
+### Playback & Navigation
+- **Dataset browser** — sidebar tree: datasets → tasks → episodes with frame counts and durations
+- **Multi-camera playback** — up to 6 synchronized camera views with grey placeholders for missing feeds
+- **Smooth scrubbing** — click/drag timeline, click frame counter to jump-by-number, frame history with Alt+←/→
+- **Speed control** — 0.25× to 4× in half-steps; loop mode; rewind; jump to 0–90% with digit keys
+- **Episode navigation** — `[` / `]` to step episodes, `Shift+[`/`Shift+]` for first/last, `Backspace` for previous
+- **Compare overlay** — Ctrl+click any episode to overlay its trajectory as a dashed line over the active one
+
+### Charts & Inspection
+- **State & Action charts** — Chart.js line plots with live playback cursor and per-frame highlight
+- **Per-dimension expand** — split any chart into individual mini-plots; Ctrl+click to isolate one dimension
+- **Time × dimension heatmap** — colour-coded magnitude map across the full episode
+- **Action correlation matrix** — interactive heatmap of pairwise correlations
+- **Normalization** — auto-detects `norm_stats.json`; Q01/Q99 clip-normalize to [−1, 1] with one keypress
+- **Histogram overlay** — per-dimension distribution bars overlaid on the chart
+
+### Frame Inspection
+- **Raw data viewer** — JSON-style display of every Parquet column (scalars, vectors, annotations)
+- **Column search** — filter keys by name with live re-render, no re-fetch
+- **Delta display** — green/red badges show numeric change vs previous frame
+- **Expandable arrays** — inline vector/array expansion; large arrays truncated with "show more"
+
+### Data Annotation
+- **Custom fields** — define number, string, boolean, or category fields per dataset
+- **Input chips** — one compact chip per field at the current frame; auto-saves on change (800 ms debounce)
+- **Fill strategies** — fixed value, forward fill, or linear interpolation for unannotated frames
+- **Draft → Commit** — edits land in a JSON sidecar first; one click permanently writes new Parquet columns
+- **Stats tab** — sparklines, min/avg/max, category distributions, and boolean counts per field
+- **Progress timeline** — canvas bar shows annotation coverage at a glance; click to seek
+- **CSV export** — download all annotations for an episode as a structured CSV
+
+### SSH Remote Datasets
+- **Connect to any server** — paste an SSH command (`ssh user@host` or an alias from `~/.ssh/config`)
+- **Auto-discovery** — recursive SFTP walk finds all LeRobot datasets under the remote path
+- **On-demand download** — Parquet files are fetched the first time an episode is opened and cached locally
+- **Connection history** — recent connections remembered; one click to reconnect
+- **Transparent integration** — remote datasets appear alongside local ones; all features work identically
+
+### UI / UX
+- **Dark mode** — polished light and dark themes with persistent preference
+- **Keyboard first** — 40+ shortcuts for every action; `?` shows the full reference
+- **Mirror mode** — hide all labels and UI chrome for clean screen recordings
+- **Episode info strip** — task description, episode index, fps, duration, and camera list
+- **Responsive layout** — sidebar collapses on small screens; mobile-friendly touch controls
+- **Recent episodes** — quick-access list of the last 8 visited episodes
+- **Toast notifications** — feedback for save, commit, copy, and error events
 
 ---
 
