@@ -8,7 +8,7 @@
   <title>LeRobot Visualizer</title>
   <link rel="stylesheet" href="/style.css?v=89" />
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
-  <script defer src="/app.js?v=102"></script>
+  <script defer src="/app.js?v=103"></script>
 </head>
 <body>
   <div id="app">
@@ -175,6 +175,18 @@
                 <div class="chart-body" id="chart-body-action"></div>
               </div>
             </div>
+
+              <div class="chart-card" id="chart-card-delta" role="region" aria-labelledby="chart-title-delta">
+                <div class="chart-title-bar">
+                  <span class="chart-title-text" id="chart-title-delta">Δ State Norm</span>
+                  <div class="chart-btn-group">
+                    <button type="button" class="chart-tool-btn" id="dl-delta" title="Download chart as PNG" aria-label="Download delta norm chart">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="chart-body" id="chart-body-delta"></div>
+              </div>
 
             <!-- Correlation heatmap (collapsed by default) -->
             <div id="corr-section" class="chart-card hidden">

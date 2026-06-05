@@ -536,6 +536,11 @@ def parquet_path_for(base: Path, episode_index: int, info: dict) -> Path:
 
 
 def video_path_for(base: Path, key: str, chunk: int, episode_index: int) -> Path:
+    # LeRobot v2.1: videos/chunk-000/{key}/episode_000000.mp4
+    new = base / "videos" / f"chunk-{chunk:03d}" / key / f"episode_{episode_index:06d}.mp4"
+    if new.exists():
+        return new
+    # Legacy flat layout: videos/chunk-000/{key}_episode_000000.mp4
     return base / "videos" / f"chunk-{chunk:03d}" / f"{key}_episode_{episode_index:06d}.mp4"
 
 
@@ -763,12 +768,15 @@ def get_episode(dataset: str, episode_index: Annotated[int, _PathParam(ge=0)]):
 
     # Support both "action" (v1) and "actions" (v2) column names
     action_col = "actions" if "actions" in df_dict else "action"
+    # Support both "state" (v1) and "observation.state" (LeRobot v2.1) column names
+    state_col = "observation.state" if "observation.state" in df_dict else "state"
 
-    _state_data = df_dict.get("state", [])
+    _state_data = df_dict.get(state_col, [])
     _action_data = df_dict.get(action_col, [])
     _state_dim = len(_state_data[0]) if _state_data else 0
     _action_dim = len(_action_data[0]) if _action_data else 0
     action_feat_key = "actions" if "actions" in features else "action"
+    state_feat_key = "observation.state" if "observation.state" in features else "state"
 
     def _resolve_names(raw, dim: int, prefix: str) -> list[str]:
         if not raw or not isinstance(raw, list):
@@ -780,7 +788,7 @@ def get_episode(dataset: str, episode_index: Annotated[int, _PathParam(ge=0)]):
             return [f"{raw[0]}_{i}" for i in range(dim)]
         return list(raw) + [f"{prefix}_{i}" for i in range(len(raw), dim)]
 
-    state_names = _resolve_names(features.get("state", {}).get("names"), _state_dim, "state")
+    state_names = _resolve_names(features.get(state_feat_key, {}).get("names"), _state_dim, "state")
     action_names = _resolve_names(features.get(action_feat_key, {}).get("names"), _action_dim, "action")
 
     return {
@@ -793,7 +801,7 @@ def get_episode(dataset: str, episode_index: Annotated[int, _PathParam(ge=0)]):
             )
             for t in df_dict.get("timestamp", [])
         ],
-        "state": _to_list(df_dict.get("state", [])),
+        "state": _to_list(df_dict.get(state_col, [])),
         "actions": _to_list(df_dict.get(action_col, [])),
         "state_names": state_names if isinstance(state_names, list) else list(state_names),
         "action_names": action_names if isinstance(action_names, list) else list(action_names),

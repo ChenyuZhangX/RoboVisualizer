@@ -46,6 +46,7 @@ const state = {
   lastTick: null,
   stateCharts: [],
   actionCharts: [],
+  deltaCharts: [],
   stateExpanded: false,
   actionExpanded: false,
   histState: false,
@@ -102,7 +103,7 @@ function _refreshChartObserver() {
   _visibleChartsArr = [];
   _chartIntersectObs?.disconnect();
   _chartIntersectObs = null;
-  _allChartsCache = [...state.stateCharts, ...state.actionCharts].filter(c => c?.canvas);
+  _allChartsCache = [...state.stateCharts, ...state.actionCharts, ...(state.deltaCharts ?? [])].filter(c => c?.canvas);
   const allCharts = _allChartsCache;
   if (!('IntersectionObserver' in window)) return;
   if (!allCharts.length) return;
@@ -1925,6 +1926,61 @@ function fmtAxisTick(v) {
   return v.toExponential(1);
 }
 
+/* ── Δ State Norm chart ──────────────────────────────────── */
+
+// Returns Float32Array of length T: norm[t] = ‖state[t+1] − state[t]‖₂
+// Last frame is always 0 (no t+1 available).
+function computeDeltaNorm(stateData) {
+  const T = stateData.length;
+  const out = new Float32Array(T);
+  for (let t = 0; t < T - 1; t++) {
+    const a = stateData[t], b = stateData[t + 1];
+    let sq = 0;
+    for (let d = 0; d < a.length; d++) { const diff = b[d] - a[d]; sq += diff * diff; }
+    out[t] = Math.sqrt(sq);
+  }
+  return out;
+}
+
+function buildDeltaNormChart(ep) {
+  const body = el("chart-body-delta");
+  if (!body) return [];
+  (state.deltaCharts ?? []).forEach(c => c?.destroy());
+
+  if (!ep.state?.length) {
+    body.innerHTML = `<div class="chart-no-data">No state data</div>`;
+    return [];
+  }
+
+  const norms  = computeDeltaNorm(ep.state);  // Float32Array [T]
+  const T      = norms.length;
+  const labels = Array.from({ length: T }, (_, i) => i);
+  // Wrap as 2D [T][1] so makeChart can handle it uniformly
+  const data2d = Array.from(norms, v => [v]);
+
+  body.innerHTML = `<div class="chart-wrap"><canvas id="delta-chart"></canvas></div>`;
+  const chart = makeChart("delta-chart", labels, data2d, ["‖Δstate‖₂"], false, 1, 0, null, null);
+  if (chart) {
+    // Override dataset color to amber so it's visually distinct from state/action
+    chart.data.datasets[0].borderColor = "rgb(245,158,11)";
+    chart.update("none");
+  }
+
+  // Download button
+  const dlBtn = el("dl-delta");
+  if (dlBtn) {
+    dlBtn.onclick = () => {
+      if (!chart) return;
+      const a = document.createElement("a");
+      a.download = `delta_norm_ep${String(state.activeEpIndex ?? 0).padStart(6,"0")}.png`;
+      a.href = chart.toBase64Image();
+      a.click();
+    };
+  }
+
+  return chart ? [chart] : [];
+}
+
 function buildCharts(ep) {
   if (!ep) return;
   const ns = state.normalizeEnabled ? state.normStats : null;
@@ -1940,6 +1996,7 @@ function buildCharts(ep) {
 
   state.stateCharts  = buildChartCard("state",  stateData,  ep.state_names,  sNorm, ep, cmpState,  nsState);
   state.actionCharts = buildChartCard("action", actionData, ep.action_names, aNorm, ep, cmpAction, nsAction);
+  state.deltaCharts  = buildDeltaNormChart(ep);
   _visibleCharts.clear();
   _refreshChartObserver();
 }
