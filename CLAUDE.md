@@ -2,8 +2,8 @@
 
 ## Current State
 
-**Version**: app.js v102, style.css v89
-**Status**: Fully functional with annotation system, JSON viewer, SSH remote support, and extensive keyboard navigation
+**Version**: app.js v109, style.css v90
+**Status**: Fully functional with annotation system, JSON viewer, SSH remote support, extensive keyboard navigation, and interactive 3D Franka robot visualization panel
 
 ### Architecture
 
@@ -108,7 +108,67 @@ lsBool(k)              // localStorage bool persistence
 
 ## Recent Changes & Version History
 
-### Session 7: Bug Fixes — SSH, Annotation, Cache (Latest)
+### Session 8: Franka 3D Robot Visualization Panel (Latest)
+
+New right sidebar showing the actual Franka Panda arm driven by episode state/action data.
+
+#### Architecture
+
+**Assets** (`static/robot/`):
+- `panda_arm.urdf` — official Franka Panda URDF (from frankaemika/polymetis)
+- `meshes/collision/*.stl` — 10 collision STL meshes, 136 KB total (fast loading)
+- `meshes/visual/*.dae` — 10 visual Collada meshes, 10 MB total (reserved for future upgrade)
+
+**JavaScript module** (`RobotPanel` IIFE in app.js):
+- `_parseURDF(xml)` — DOMParser-based URDF XML parser, extracts links + joints
+- `_loadMeshes(links)` — concurrent STL loads via `THREE.STLLoader`; maps `.dae` → `.stl` paths
+- `_buildGraph(links, joints, meshMap)` — recursive scene-graph builder matching URDF kinematic chain
+  - Each revolute joint → `origGroup` (fixed URDF origin transform) + `rotGroup` (variable `rotation.z = θ`)
+  - `_jNodes["panda_joint{1..7}"]` → direct Group reference for O(1) per-frame update
+  - Tracks `_flangeGroup` (panda_link8) to attach Robotiq gripper
+- `_buildGripper()` — procedural Robotiq 2F-85 geometry (no external files)
+  - Bodies: BoxGeometry / CylinderGeometry at real-world dimensions (68 mm wide, 115 mm tall)
+  - Fingers: `_fingerR` / `_fingerL` Groups animated via `_updateGripper(gState)`
+  - `gripper_state 0→0.75` maps to `halfGap 42 mm → 21 mm` per finger
+- `_pan(dx, dy)` — analytically computes camera right/up vectors from spherical coords (no THREE.Vector3)
+- `_saveDefaultView()` / `_loadSavedView()` — persist `_orb` + `_orbTgt` to `localStorage["robotPanelView"]`
+
+**Data flow per frame**:
+```
+setFrame(f)
+  → RobotPanel.update(episode.state[f].slice(0, 8))
+      → for i in 0..6: _jNodes["panda_joint{i+1}"].rotation.z = joints[i]
+      → _updateGripper(joints[7])
+```
+
+**Coordinate system**: URDF is z-up; Three.js is y-up. Fixed by `root.rotation.x = -π/2` on the robot root group.
+
+#### UI controls
+
+| Action | Effect |
+|--------|--------|
+| Left-drag | Orbit (rotate around target) |
+| Right-drag / Shift+drag | Pan (translate the look-at target) |
+| Scroll wheel | Zoom (orbit radius 0.4–5 m) |
+| Two-finger pinch | Zoom (mobile) |
+| Two-finger drag | Pan (mobile) |
+| ⭐ Star button (panel header) | Save current view as default (persisted in localStorage) |
+| › Chevron (panel header) | Collapse panel; ‹ when collapsed |
+| Topbar robot icon | Toggle panel open/closed |
+| Left edge drag handle | Resize panel width (200–640 px, persisted) |
+
+#### External dependencies added
+```html
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
+```
+
+#### Data conversion helper added
+`tools/hdf5_to_lerobot.py` — converts custom HDF5 format to LeRobot v2.0 Parquet (JPEG-encoded images, state/action arrays, meta files). Used for `pickcup070626` dataset.
+
+---
+
+### Session 7: Bug Fixes — SSH, Annotation, Cache
 - **SSH discover timeout** (`da60d75`): `discover_ssh_datasets` was calling `_cache_remote_meta` synchronously for every dataset (~33s on cold cache), exceeding the browser's 30s timeout and appearing as a 500 error. Fix: write `info.json` immediately from the already-fetched `info_raw` in memory; move all `_cache_remote_meta` + episode-0 prefetch into one background thread. Discover now returns in ~3s.
 - **`sshDisconnect` optimistic state update** (`1e9d58f`): session removed from `state.sshSessions` before DELETE confirmed; sidebar lost the entry on network failure. Fix: use `finally` for `refreshSSHSections()` to always re-fetch ground truth.
 - **`clear_cache` missing `_CONFIG_CACHE`** (`b0b7543`): `POST /api/cache/clear` cleared four caches but left `_CONFIG_CACHE` populated. Camera label configs persisted incorrectly after a cache clear. Fixed.
@@ -274,16 +334,22 @@ lerobot-visualizer/
 ├── requirements.txt             Python dependencies
 ├── compute_norm_stats.py        Normalization helper
 ├── static/
-│   ├── index.html              Single-page app shell (v102, ~390 lines)
-│   ├── app.js                  All client logic (v102, ~5900 lines)
-│   └── style.css               Light/dark themes, design tokens (v89, ~2970 lines)
+│   ├── index.html              Single-page app shell (v109, ~420 lines)
+│   ├── app.js                  All client logic (v109, ~6600 lines)
+│   ├── style.css               Light/dark themes, design tokens (v90, ~3110 lines)
+│   └── robot/                  Franka Panda robot assets (served as static files)
+│       ├── panda_arm.urdf      Official URDF (from frankaemika/polymetis)
+│       └── meshes/
+│           ├── collision/      *.stl — 10 files, 136 KB total (used for rendering)
+│           └── visual/         *.dae — 10 files, 10 MB total (Collada, reserved)
 ├── tools/
 │   ├── utils.py                LeRobotWriter — exact v2.0 Parquet schema
 │   ├── convert_hdf5.py         HDF5 → LeRobot (ALOHA / RoboMimic / LIBERO / custom)
-│   └── convert_folder.py       Folder + CSV → LeRobot (layout A & B)
+│   ├── convert_folder.py       Folder + CSV → LeRobot (layout A & B)
+│   └── hdf5_to_lerobot.py      Custom HDF5 → LeRobot v2.0 (Franka/Robotiq data)
 └── data/                        Dataset directory (git-ignored)
 ```
 
 ---
 
-Last updated: 2026-05-27 (v102)
+Last updated: 2026-06-08 (v109)

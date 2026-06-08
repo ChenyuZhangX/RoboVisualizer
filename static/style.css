@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   LeRobot Visualizer — style.css  v89
+   LeRobot Visualizer — style.css  v90
    ────────────────────────────────────────────────────────── */
 
 /* ── Reset & Base ─────────────────────────────────────────── */
@@ -2970,4 +2970,141 @@ html.dark .ssh-section-header { background: #1a2332; border-color: #2d3748; }
     font-size: 11pt; font-weight: 600; margin-bottom: 6px;
     border-left: 3px solid var(--blue); background: var(--blue-lt); padding: 4px 8px;
   }
+}
+
+/* ─── Robot 3D Panel ─────────────────────────────────────────────────────── */
+#robot-panel {
+  width: 300px;
+  min-width: 200px;
+  max-width: 640px;
+  position: relative;         /* anchor for resize handle */
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  background: var(--bg);
+  overflow: hidden;
+  transition: width .18s ease, min-width .18s ease, opacity .18s ease;
+  flex-shrink: 0;
+}
+/* !important overrides any inline width set by the resize JS */
+#robot-panel.rp-hide {
+  width: 0 !important;
+  min-width: 0 !important;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ── Resize handle ───────────────────────────────────────────────────────── */
+#robot-resize-handle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 20;
+  background: transparent;
+  transition: background .15s;
+}
+#robot-resize-handle::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 32px;
+  border-radius: 2px;
+  background: var(--border);
+  opacity: 0;
+  transition: opacity .15s;
+}
+#robot-resize-handle:hover::after,
+#robot-resize-handle.rh-active::after {
+  opacity: 1;
+}
+#robot-resize-handle:hover,
+#robot-resize-handle.rh-active {
+  background: rgba(59, 130, 246, 0.12);
+}
+#robot-panel-hdr {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  height: var(--topbar-h);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.rp-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+#robot-canvas-wrap {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+  background: var(--bg-alt, #0d0d1a);
+}
+[data-theme="light"] #robot-canvas-wrap { background: #1a1a2e; }
+#robot-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: grab;
+  touch-action: none;
+}
+#robot-canvas:active { cursor: grabbing; }
+#robot-empty-msg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #6b7280;
+  text-align: center;
+  padding: 16px;
+  pointer-events: none;
+}
+#robot-panel-btn.active { color: var(--blue); }
+
+/* ── Save-view button ─────────────────────────────────────────────────────── */
+#robot-save-view-btn.rp-saved {
+  color: var(--amber);
+  transition: color .15s;
+}
+#robot-save-view-btn.rp-saved svg {
+  stroke: var(--amber);
+  fill: var(--amber);
+  transition: stroke .15s, fill .15s;
+}
+
+/* ── Robot panel toast notification ─────────────────────────────────────── */
+.rp-toast {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--amber);
+  color: #111;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: var(--radius-md, 6px);
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 100;
+  animation: rp-toast-in .18s ease;
+}
+@keyframes rp-toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(6px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+@media (max-width: 920px) {
+  #robot-panel { display: none; }
 }

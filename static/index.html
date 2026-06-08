@@ -6,9 +6,11 @@
   <meta name="description" content="Interactive visualizer for LeRobot robot learning datasets — browse episodes, inspect state/action trajectories, and view camera frames." />
   <meta name="color-scheme" content="light dark" />
   <title>LeRobot Visualizer</title>
-  <link rel="stylesheet" href="/style.css?v=89" />
+  <link rel="stylesheet" href="/style.css?v=90" />
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
-  <script defer src="/app.js?v=103"></script>
+  <script defer src="/app.js?v=109"></script>
 </head>
 <body>
   <div id="app">
@@ -33,6 +35,9 @@
       <button type="button" id="dark-mode-btn" class="icon-btn" title="Toggle dark mode  Ctrl+D" aria-label="Toggle dark mode" aria-pressed="false">
         <svg class="icon-moon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
         <svg class="icon-sun hidden" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      </button>
+      <button type="button" id="robot-panel-btn" class="icon-btn" title="Toggle 3D robot view" aria-label="Toggle 3D robot panel" aria-pressed="true">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L8 6H4v4l-2 2 2 2v4h4l4 4 4-4h4v-4l2-2-2-2V6h-4z"/><circle cx="12" cy="12" r="3"/></svg>
       </button>
     </header>
 
@@ -264,6 +269,29 @@
           </div>
         </div>
       </main>
+
+      <!-- Robot 3D panel (right sidebar) -->
+      <div id="robot-panel">
+        <!-- drag-resize handle on the left edge -->
+        <div id="robot-resize-handle" title="Drag to resize panel" aria-hidden="true"></div>
+        <div id="robot-panel-hdr">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;opacity:.6"><path d="M12 2L8 6H4v4l-2 2 2 2v4h4l4 4 4-4h4v-4l2-2-2-2V6h-4z"/><circle cx="12" cy="12" r="3"/></svg>
+          <span class="rp-title">Franka 3D</span>
+          <div style="flex:1"></div>
+          <button type="button" id="robot-save-view-btn" class="icon-btn-sm" title="Save current view as default" aria-label="Save camera view as default">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          </button>
+          <button type="button" id="robot-panel-collapse" class="icon-btn-sm" title="Collapse robot panel" aria-label="Collapse 3D robot panel">
+            <!-- chevron points right (›) = collapse; updated by JS when state changes -->
+            <svg id="rp-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+        </div>
+        <div id="robot-canvas-wrap">
+          <canvas id="robot-canvas"></canvas>
+          <div id="robot-empty-msg">Select an episode<br>to view robot</div>
+        </div>
+      </div>
+
     </div>
   </div>
 
