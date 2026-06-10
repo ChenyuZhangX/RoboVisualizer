@@ -1660,6 +1660,22 @@ const _saveCropConfigDebounced = debounce(() => {
     .catch(() => {});
 }, 600);
 
+function _syncCropUI() {
+  const chk = el("crop-enable-chk");
+  if (chk) chk.checked = state.cropConfig.enabled;
+  el("crop-panel")?.classList.toggle("crop-active", state.cropConfig.enabled);
+  const [rw, rh] = state.cropConfig.resize;
+  const hasResize = rw > 0;
+  const resizeChk = el("crop-resize-chk");
+  const rwInp = el("crop-resize-w");
+  const rhInp = el("crop-resize-h");
+  if (resizeChk) resizeChk.checked = hasResize;
+  if (rwInp) { rwInp.value = rw || 224; rwInp.disabled = !hasResize; }
+  if (rhInp) { rhInp.value = rh || 224; rhInp.disabled = !hasResize; }
+  const dimSpan = el("crop-resize-dims");
+  if (dimSpan) dimSpan.style.opacity = hasResize ? "1" : "0.35";
+}
+
 function loadCropConfig() {
   const saved = state.datasetConfig.crop_config;
   if (saved) {
@@ -1671,13 +1687,8 @@ function loadCropConfig() {
     state.cropConfig.cameras = {};
     state.cropConfig.resize  = [224, 224];
   }
-  const chk = el("crop-enable-chk");
-  if (chk) chk.checked = state.cropConfig.enabled;
-  el("crop-panel")?.classList.toggle("crop-active", state.cropConfig.enabled);
-  const rwInp = el("crop-resize-w");
-  const rhInp = el("crop-resize-h");
-  if (rwInp) rwInp.value = state.cropConfig.resize[0];
-  if (rhInp) rhInp.value = state.cropConfig.resize[1];
+  _syncCropUI();
+  updateCropPresetsBar();
 }
 
 function _invalidateCropCache() {
@@ -1688,12 +1699,14 @@ function _invalidateCropCache() {
 
 async function _applyImageCrop(dataUri, x, y, w, h, rw, rh) {
   if (w <= 0 || h <= 0) return dataUri;
+  const outW = rw > 0 ? rw : w;  // rw=0 → no resize, use crop width
+  const outH = rh > 0 ? rh : h;
   return new Promise(resolve => {
     const img = new Image();
     img.onload = () => {
       const c = document.createElement("canvas");
-      c.width = rw; c.height = rh;
-      c.getContext("2d").drawImage(img, x, y, w, h, 0, 0, rw, rh);
+      c.width = outW; c.height = outH;
+      c.getContext("2d").drawImage(img, x, y, w, h, 0, 0, outW, outH);
       resolve(c.toDataURL("image/jpeg", 0.92));
     };
     img.onerror = () => resolve(dataUri);
@@ -1790,7 +1803,7 @@ function _refreshCropBadge(key) {
       slot.style.position = "relative";
       slot.appendChild(badge);
     }
-    badge.textContent = `✂ ${rw}×${rh}`;
+    badge.textContent = rw > 0 ? `✂ ${rw}×${rh}` : `✂ ${cfg.w}×${cfg.h}`;
   } else if (badge) {
     badge.remove();
   }
@@ -1801,11 +1814,128 @@ function _refreshAllCropBadges() {
   keys.forEach(k => _refreshCropBadge(k));
 }
 
+/* ── Crop preset & import helpers ────────────────────────── */
+function _parseCropPython(text) {
+  const cameras = {};
+  // Match each camera entry: "key": dict(x=N, y=N, w=N, h=N)
+  const camRe = /"([^"]+)"\s*:\s*dict\(x\s*=\s*(\d+)\s*,\s*y\s*=\s*(\d+)\s*,\s*w\s*=\s*(\d+)\s*,\s*h\s*=\s*(\d+)\s*\)/g;
+  let m;
+  while ((m = camRe.exec(text)) !== null) {
+    cameras[m[1]] = { x: +m[2], y: +m[3], w: +m[4], h: +m[5] };
+  }
+  if (!Object.keys(cameras).length) return null;
+  let resize = null;
+  const resRe = /RESIZE\s*=\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)/;
+  const rm = resRe.exec(text);
+  if (rm) resize = [+rm[1], +rm[2]];
+  return { cameras, resize };
+}
+
+function _applyCropToInputs(cameras, resize) {
+  state.cropConfig.cameras = cameras;
+  if (resize) state.cropConfig.resize = resize;
+  _syncCropUI();
+  updateCropPanelCameras();
+  _invalidateCropCache();
+  _saveCropConfigDebounced();
+  _refreshAllCropBadges();
+  if (state.cropConfig.enabled && state.episode) updateImages();
+}
+
+function saveCropAsPreset(name) {
+  if (!name?.trim()) return;
+  const presets = state.datasetConfig.crop_presets ?? [];
+  const existing = presets.findIndex(p => p.name === name);
+  const preset = {
+    name,
+    cameras: JSON.parse(JSON.stringify(state.cropConfig.cameras)),
+    resize: [...state.cropConfig.resize],
+  };
+  if (existing >= 0) presets[existing] = preset;
+  else presets.push(preset);
+  state.datasetConfig.crop_presets = presets;
+  _saveCropConfigDebounced();
+  updateCropPresetsBar();
+  showCopyToast(`✓ Preset "${name}" saved`, "success");
+}
+
+function deleteCropPreset(name) {
+  const presets = state.datasetConfig.crop_presets ?? [];
+  state.datasetConfig.crop_presets = presets.filter(p => p.name !== name);
+  _saveCropConfigDebounced();
+  updateCropPresetsBar();
+}
+
+function loadCropPreset(name) {
+  const preset = (state.datasetConfig.crop_presets ?? []).find(p => p.name === name);
+  if (!preset) return;
+  _applyCropToInputs(preset.cameras, preset.resize);
+  showCopyToast(`Loaded preset "${name}"`);
+}
+
+function updateCropPresetsBar() {
+  const bar = el("crop-presets-bar");
+  if (!bar) return;
+  const presets = state.datasetConfig.crop_presets ?? [];
+  bar.innerHTML = "";
+  if (!presets.length) { hide(bar); return; }
+  show(bar);
+  presets.forEach(p => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "crop-preset-chip";
+    chip.title = `Load preset "${p.name}"`;
+    chip.addEventListener("click", () => loadCropPreset(p.name));
+
+    const nameSp = document.createElement("span");
+    nameSp.textContent = p.name;
+    const delBtn = document.createElement("span");
+    delBtn.className = "crop-preset-del";
+    delBtn.textContent = "×";
+    delBtn.title = `Delete preset "${p.name}"`;
+    delBtn.addEventListener("click", e => { e.stopPropagation(); deleteCropPreset(p.name); });
+
+    chip.appendChild(nameSp);
+    chip.appendChild(delBtn);
+    bar.appendChild(chip);
+  });
+  const saveBtn = document.createElement("button");
+  saveBtn.type = "button";
+  saveBtn.className = "crop-save-preset-btn";
+  saveBtn.textContent = "+ Save";
+  saveBtn.title = "Save current config as a named preset";
+  saveBtn.addEventListener("click", () => {
+    const name = prompt("Preset name:", "default");
+    if (name?.trim()) saveCropAsPreset(name.trim());
+  });
+  bar.appendChild(saveBtn);
+}
+
+function toggleCropImportArea() {
+  const area = el("crop-import-area");
+  if (!area) return;
+  const nowHidden = toggle(area, "hidden");
+  el("crop-import-btn")?.classList.toggle("active", !nowHidden);
+  if (!nowHidden) el("crop-import-ta")?.focus();
+}
+
+function applyCropImport() {
+  const text = el("crop-import-ta")?.value ?? "";
+  const parsed = _parseCropPython(text);
+  if (!parsed) { showCopyToast("Could not parse config — check format", "error"); return; }
+  _applyCropToInputs(parsed.cameras, parsed.resize ?? null);
+  // auto-save as "default" preset for this dataset
+  saveCropAsPreset("default");
+  hide("crop-import-area");
+  el("crop-import-btn")?.classList.remove("active");
+  showCopyToast(`✓ Imported ${Object.keys(parsed.cameras).length} camera(s), saved as "default" preset`, "success");
+}
+
 function buildCropPanel() {
   const panel = el("crop-panel");
   if (!panel) return;
 
-  // Header
+  // ── Header ──────────────────────────────────────────────
   const hdr = document.createElement("div");
   hdr.className = "crop-panel-header";
 
@@ -1830,6 +1960,14 @@ function buildCropPanel() {
   enableWrap.appendChild(enableChk);
   enableWrap.appendChild(document.createTextNode("Apply"));
 
+  const importBtn = document.createElement("button");
+  importBtn.type = "button";
+  importBtn.className = "crop-copy-btn";
+  importBtn.id = "crop-import-btn";
+  importBtn.title = "Import CropLab Python config";
+  importBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Import`;
+  importBtn.addEventListener("click", toggleCropImportArea);
+
   const copyBtn = document.createElement("button");
   copyBtn.type = "button";
   copyBtn.className = "crop-copy-btn";
@@ -1839,26 +1977,46 @@ function buildCropPanel() {
 
   hdr.appendChild(title);
   hdr.appendChild(enableWrap);
+  hdr.appendChild(importBtn);
   hdr.appendChild(copyBtn);
   panel.appendChild(hdr);
 
-  // Camera rows container
+  // ── Presets bar ──────────────────────────────────────────
+  const presetsBar = document.createElement("div");
+  presetsBar.id = "crop-presets-bar";
+  presetsBar.className = "crop-presets-bar hidden";
+  panel.appendChild(presetsBar);
+
+  // ── Camera rows ──────────────────────────────────────────
   const rowsEl = document.createElement("div");
   rowsEl.id = "crop-cam-rows";
   rowsEl.className = "crop-cam-rows";
   panel.appendChild(rowsEl);
 
-  // Resize row
+  // ── Resize row (optional) ────────────────────────────────
   const resizeRow = document.createElement("div");
   resizeRow.className = "crop-resize-row";
+
   const resizeLbl = document.createElement("span");
   resizeLbl.className = "crop-resize-label";
   resizeLbl.textContent = "Resize →";
 
+  const resizeEnableWrap = document.createElement("label");
+  resizeEnableWrap.className = "crop-enable-wrap";
+  const resizeChk = document.createElement("input");
+  resizeChk.type = "checkbox";
+  resizeChk.id = "crop-resize-chk";
+  resizeChk.checked = state.cropConfig.resize[0] > 0;
+  const resizeDims = document.createElement("span");
+  resizeDims.id = "crop-resize-dims";
+  resizeDims.style.display = "flex";
+  resizeDims.style.alignItems = "center";
+  resizeDims.style.gap = "3px";
+
   const rwInp = document.createElement("input");
   rwInp.type = "number"; rwInp.min = "1"; rwInp.step = "1";
   rwInp.className = "crop-input"; rwInp.id = "crop-resize-w";
-  rwInp.value = state.cropConfig.resize[0];
+  rwInp.value = state.cropConfig.resize[0] || 224;
   rwInp.title = "Resize width";
 
   const sep = document.createElement("span");
@@ -1867,10 +2025,34 @@ function buildCropPanel() {
   const rhInp = document.createElement("input");
   rhInp.type = "number"; rhInp.min = "1"; rhInp.step = "1";
   rhInp.className = "crop-input"; rhInp.id = "crop-resize-h";
-  rhInp.value = state.cropConfig.resize[1];
+  rhInp.value = state.cropConfig.resize[1] || 224;
   rhInp.title = "Resize height";
 
+  const _syncResizeDimsVisibility = () => {
+    resizeDims.style.opacity = resizeChk.checked ? "1" : "0.35";
+    rwInp.disabled = !resizeChk.checked;
+    rhInp.disabled = !resizeChk.checked;
+  };
+  _syncResizeDimsVisibility();
+
+  resizeChk.addEventListener("change", () => {
+    _syncResizeDimsVisibility();
+    if (!resizeChk.checked) {
+      state.cropConfig.resize = [0, 0];
+    } else {
+      state.cropConfig.resize = [
+        Math.max(1, parseInt(rwInp.value, 10) || 224),
+        Math.max(1, parseInt(rhInp.value, 10) || 224),
+      ];
+    }
+    _invalidateCropCache();
+    _saveCropConfigDebounced();
+    _refreshAllCropBadges();
+    if (state.cropConfig.enabled && state.episode) updateImages();
+  });
+
   const onResizeChange = () => {
+    if (!resizeChk.checked) return;
     const rw = Math.max(1, parseInt(rwInp.value, 10) || 224);
     const rh = Math.max(1, parseInt(rhInp.value, 10) || 224);
     rwInp.value = rw; rhInp.value = rh;
@@ -1883,11 +2065,52 @@ function buildCropPanel() {
   rwInp.addEventListener("change", onResizeChange);
   rhInp.addEventListener("change", onResizeChange);
 
+  resizeDims.appendChild(rwInp);
+  resizeDims.appendChild(sep);
+  resizeDims.appendChild(rhInp);
+  resizeEnableWrap.appendChild(resizeChk);
   resizeRow.appendChild(resizeLbl);
-  resizeRow.appendChild(rwInp);
-  resizeRow.appendChild(sep);
-  resizeRow.appendChild(rhInp);
+  resizeRow.appendChild(resizeEnableWrap);
+  resizeRow.appendChild(resizeDims);
   panel.appendChild(resizeRow);
+
+  // ── Import area (collapsible) ────────────────────────────
+  const importArea = document.createElement("div");
+  importArea.id = "crop-import-area";
+  importArea.className = "crop-import-area hidden";
+
+  const importHint = document.createElement("div");
+  importHint.className = "crop-import-hint";
+  importHint.textContent = "Paste CropLab Python config (CROP_CONFIGS dict + optional RESIZE):";
+
+  const ta = document.createElement("textarea");
+  ta.id = "crop-import-ta";
+  ta.className = "crop-import-ta";
+  ta.rows = 8;
+  ta.placeholder = `CROP_CONFIGS = {\n    "observation.images.wrist": dict(x=156, y=0, w=400, h=376),\n}\nRESIZE = (224, 224)  # optional`;
+  ta.spellcheck = false;
+
+  const importActions = document.createElement("div");
+  importActions.className = "crop-import-actions";
+
+  const applyBtn = document.createElement("button");
+  applyBtn.type = "button";
+  applyBtn.className = "crop-import-apply";
+  applyBtn.textContent = "Apply & Save as Preset";
+  applyBtn.addEventListener("click", applyCropImport);
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.className = "crop-import-cancel";
+  cancelBtn.textContent = "Cancel";
+  cancelBtn.addEventListener("click", toggleCropImportArea);
+
+  importActions.appendChild(applyBtn);
+  importActions.appendChild(cancelBtn);
+  importArea.appendChild(importHint);
+  importArea.appendChild(ta);
+  importArea.appendChild(importActions);
+  panel.appendChild(importArea);
 
   panel.classList.toggle("crop-active", state.cropConfig.enabled);
 

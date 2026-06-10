@@ -3246,3 +3246,104 @@ html.dark .ssh-section-header { background: #1a2332; border-color: #2d3748; }
   color: var(--green);
   vertical-align: middle;
 }
+
+/* Presets bar */
+.crop-presets-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 0 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 7px;
+}
+.crop-preset-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  background: var(--blue-lt);
+  border: 1px solid var(--blue);
+  border-radius: 100px;
+  cursor: pointer;
+  font-size: var(--font-2xs);
+  color: var(--blue);
+  transition: all var(--transition);
+}
+.crop-preset-chip:hover { background: var(--blue); color: #fff; }
+.crop-preset-del {
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.7;
+}
+.crop-preset-del:hover { opacity: 1; }
+.crop-save-preset-btn {
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: 100px;
+  cursor: pointer;
+  padding: 2px 8px;
+  font-size: var(--font-2xs);
+  color: var(--text-3);
+  transition: all var(--transition);
+}
+.crop-save-preset-btn:hover { border-color: var(--blue); color: var(--blue); }
+
+/* Import area */
+.crop-import-area {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.crop-import-hint {
+  font-size: var(--font-2xs);
+  color: var(--text-3);
+  margin-bottom: 5px;
+}
+.crop-import-ta {
+  width: 100%;
+  box-sizing: border-box;
+  height: 130px;
+  padding: 7px 8px;
+  font-size: var(--font-2xs);
+  font-family: "SFMono-Regular", "Consolas", monospace;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  resize: vertical;
+  outline: none;
+  transition: border-color var(--transition);
+}
+.crop-import-ta:focus { border-color: var(--blue); box-shadow: var(--shadow-inset-focus); }
+.crop-import-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.crop-import-apply {
+  flex: 1;
+  height: 28px;
+  background: var(--blue);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: var(--font-xs);
+  font-weight: 500;
+  transition: opacity var(--transition);
+}
+.crop-import-apply:hover { opacity: 0.88; }
+.crop-import-cancel {
+  height: 28px;
+  padding: 0 12px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: var(--font-xs);
+  color: var(--text-2);
+  transition: all var(--transition);
+}
+.crop-import-cancel:hover { border-color: var(--red); color: var(--red); }
