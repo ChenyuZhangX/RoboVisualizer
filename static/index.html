@@ -6,11 +6,11 @@
   <meta name="description" content="Interactive visualizer for LeRobot robot learning datasets — browse episodes, inspect state/action trajectories, and view camera frames." />
   <meta name="color-scheme" content="light dark" />
   <title>LeRobot Visualizer</title>
-  <link rel="stylesheet" href="/style.css?v=90" />
+  <link rel="stylesheet" href="/style.css?v=91" />
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
-  <script defer src="/app.js?v=109"></script>
+  <script defer src="/app.js?v=110"></script>
 </head>
 <body>
   <div id="app">
@@ -109,6 +109,9 @@
                 <button type="button" id="btn-export" class="icon-btn-sm" title="Export current frame as PNG  Ctrl+S" aria-label="Export current frame as PNG">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 </button>
+                <button type="button" id="btn-crop" class="icon-btn-sm" title="Image transforms  R" aria-label="Toggle image transforms panel" aria-pressed="false">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
+                </button>
               </div>
             </div>
 
@@ -137,6 +140,9 @@
 
             <!-- Camera views (shared across tabs) -->
             <div id="cameras"></div>
+
+            <!-- Image transforms panel (crop/resize preview) -->
+            <div id="crop-panel" class="crop-panel hidden"></div>
 
             <!-- Annotation panel (visible in Annotate tab) -->
             <div id="annotation-panel" class="annotation-panel hidden" role="tabpanel" aria-labelledby="vtab-annotate"></div>

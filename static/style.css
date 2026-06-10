@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────
-   LeRobot Visualizer — style.css  v90
+   LeRobot Visualizer — style.css  v91
    ────────────────────────────────────────────────────────── */
 
 /* ── Reset & Base ─────────────────────────────────────────── */
@@ -3107,4 +3107,142 @@ html.dark .ssh-section-header { background: #1a2332; border-color: #2d3748; }
 }
 @media (max-width: 920px) {
   #robot-panel { display: none; }
+}
+
+/* ── Image Transforms / Crop Panel ──────────────────────── */
+.crop-panel {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin: 0 0 10px;
+  padding: 9px 12px 10px;
+}
+.crop-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.crop-panel-title {
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--text);
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.crop-enable-wrap {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--font-xs);
+  color: var(--text-2);
+  cursor: pointer;
+  user-select: none;
+}
+.crop-enable-wrap input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: var(--blue);
+  width: 13px;
+  height: 13px;
+}
+.crop-copy-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  padding: 3px 8px;
+  color: var(--text-3);
+  font-size: var(--font-2xs);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+.crop-copy-btn:hover { border-color: var(--green); color: var(--green); background: var(--green-lt); }
+.crop-cam-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.crop-cam-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+}
+.crop-cam-label {
+  flex: 0 0 80px;
+  font-size: var(--font-xs);
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.crop-field-group {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.crop-field-lbl {
+  font-size: var(--font-3xs);
+  color: var(--text-3);
+  min-width: 10px;
+  text-align: right;
+}
+.crop-input {
+  width: 54px;
+  height: 24px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--font-xs);
+  text-align: right;
+  transition: border-color var(--transition);
+}
+.crop-input:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: var(--shadow-inset-focus);
+}
+.crop-resize-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.crop-resize-label {
+  font-size: var(--font-xs);
+  color: var(--text-2);
+  flex: 0 0 80px;
+}
+.crop-sep {
+  font-size: var(--font-2xs);
+  color: var(--text-3);
+}
+.crop-badge {
+  position: absolute;
+  bottom: 4px;
+  left: 4px;
+  background: rgba(16, 185, 129, 0.85);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 3px;
+  pointer-events: none;
+  z-index: 2;
+  line-height: 14px;
+}
+.crop-panel.crop-active .crop-panel-title::after {
+  content: "●";
+  font-size: 7px;
+  color: var(--green);
+  vertical-align: middle;
 }

@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   LeRobot Visualizer — app.js  v104
+   LeRobot Visualizer — app.js  v110
    ══════════════════════════════════════════════════════════ */
 
 /* ── Constants ───────────────────────────────────────────── */
@@ -70,6 +70,7 @@ const state = {
   annFillConfig: {},      // {fieldName: {strategy: "none"|"fixed"|"linear"|"prev", fixedValue: ""}}
   datasetConfig: {},      // per-dataset config: {camera_labels: {...}, ...}
   sshSessions: [],        // active SSH sessions [{session_id, label, ssh_command, remote_path, datasets:[]}]
+  cropConfig: { enabled: false, cameras: {}, resize: [224, 224] }, // per-camera crop/resize settings
 };
 
 /* ── Frame navigation history ────────────────────────────── */
@@ -1076,6 +1077,7 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
     try {
       state.datasetConfig = await apiFetch(`${apiDs(dsPath)}/config`);
     } catch (_) {}
+    loadCropConfig();
   }
 
   state.activeDataset = dsPath;
@@ -1142,6 +1144,7 @@ async function selectEpisode(dsPath, epIndex, taskText, clickedEl) {
     buildTimeDimHeatmap(ep);
     buildFrameValuesPanel(ep);
     buildCameraGrid(ep);
+    updateCropPanelCameras();
     setupControls(ep);
     updateScrubber();
     updateImages();
@@ -1487,7 +1490,17 @@ function lightboxNavigate(delta) {
   if (img) openLightbox(img.src, camLabel(keys[next]), next);
 }
 
-function renderFrameData(keys, frames) {
+async function renderFrameData(keys, frames) {
+  if (state.cropConfig.enabled) {
+    const [rw, rh] = state.cropConfig.resize;
+    const cropped = await Promise.all(keys.map(key => {
+      const cfg = state.cropConfig.cameras[key];
+      return (cfg?.w > 0 && cfg?.h > 0 && frames[key])
+        ? _applyImageCrop(frames[key], cfg.x, cfg.y, cfg.w, cfg.h, rw, rh)
+        : Promise.resolve(frames[key]);
+    }));
+    frames = Object.fromEntries(keys.map((k, i) => [k, cropped[i]]));
+  }
   keys.forEach((key, i) => {
     const slot = el(`cam-${i}`);
     if (!slot) return;
@@ -1579,7 +1592,8 @@ async function updateImages() {
 
   const f = state.frame;
   if (state.frameCache.has(f)) {
-    renderFrameData(keys, state.frameCache.get(f));
+    await renderFrameData(keys, state.frameCache.get(f));
+    _refreshAllCropBadges();
   } else {
     // Dim existing images to signal loading
     keys.forEach((_, i) => {
@@ -1599,7 +1613,8 @@ async function updateImages() {
       if (fetchController.signal.aborted) return;
       if (state.frame === f) {
         state.frameCache.set(f, frames);
-        renderFrameData(keys, frames);
+        await renderFrameData(keys, frames);
+        _refreshAllCropBadges();
         keys.forEach((_, i) => {
           const slot = el(`cam-${i}`);
           if (slot) { slot.classList.remove("loading"); }
@@ -1631,6 +1646,258 @@ async function updateImages() {
     }
   }
   prefetchFrames();
+}
+
+/* ── Image Transforms / CropLab panel ───────────────────── */
+const _saveCropConfigDebounced = debounce(() => {
+  if (!state.activeDataset) return;
+  state.datasetConfig.crop_config = {
+    enabled: state.cropConfig.enabled,
+    cameras: state.cropConfig.cameras,
+    resize: state.cropConfig.resize,
+  };
+  apiPost(`${apiDs(state.activeDataset)}/config`, state.datasetConfig, "PUT")
+    .catch(() => {});
+}, 600);
+
+function loadCropConfig() {
+  const saved = state.datasetConfig.crop_config;
+  if (saved) {
+    state.cropConfig.enabled = saved.enabled ?? false;
+    state.cropConfig.cameras = saved.cameras ?? {};
+    state.cropConfig.resize  = saved.resize  ?? [224, 224];
+  } else {
+    state.cropConfig.enabled = false;
+    state.cropConfig.cameras = {};
+    state.cropConfig.resize  = [224, 224];
+  }
+  const chk = el("crop-enable-chk");
+  if (chk) chk.checked = state.cropConfig.enabled;
+  el("crop-panel")?.classList.toggle("crop-active", state.cropConfig.enabled);
+  const rwInp = el("crop-resize-w");
+  const rhInp = el("crop-resize-h");
+  if (rwInp) rwInp.value = state.cropConfig.resize[0];
+  if (rhInp) rhInp.value = state.cropConfig.resize[1];
+}
+
+function _invalidateCropCache() {
+  state.frameCache.clear();
+  state.prefetchPending.clear();
+  _lastImageUpdateFrame = -1;
+}
+
+async function _applyImageCrop(dataUri, x, y, w, h, rw, rh) {
+  if (w <= 0 || h <= 0) return dataUri;
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement("canvas");
+      c.width = rw; c.height = rh;
+      c.getContext("2d").drawImage(img, x, y, w, h, 0, 0, rw, rh);
+      resolve(c.toDataURL("image/jpeg", 0.92));
+    };
+    img.onerror = () => resolve(dataUri);
+    img.src = dataUri;
+  });
+}
+
+function toggleCropPanel() {
+  const panel = el("crop-panel");
+  const btn   = el("btn-crop");
+  if (!panel) return;
+  const nowVisible = toggle(panel, "hidden");
+  btn?.classList.toggle("active", !nowVisible);
+  attr("btn-crop", "aria-pressed", boolStr(!nowVisible));
+  try { localStorage.setItem("cropPanelOpen", !nowVisible ? "1" : "0"); } catch (_) {}
+}
+
+function copyCropPython() {
+  const cams = state.cropConfig.cameras;
+  const [rw, rh] = state.cropConfig.resize;
+  const lines = Object.entries(cams)
+    .filter(([, c]) => c.w > 0 && c.h > 0)
+    .map(([k, c]) => `    "${k}": dict(x=${c.x}, y=${c.y}, w=${c.w}, h=${c.h}),`);
+  if (!lines.length) { showCopyToast("No crop regions defined yet", "error"); return; }
+  const text = `crops = {\n${lines.join("\n")}\n}\nRESIZE = (${rw}, ${rh})`;
+  navigator.clipboard.writeText(text).then(
+    () => showCopyToast("✓ Copied Python config", "success"),
+    () => showCopyToast("Copy failed", "error")
+  );
+}
+
+function updateCropPanelCameras() {
+  const rowsEl = el("crop-cam-rows");
+  if (!rowsEl) return;
+  rowsEl.innerHTML = "";
+  const keys = state.episode?.image_keys?.slice(0, MAX_CAMS) ?? [];
+  if (!keys.length) {
+    rowsEl.innerHTML = `<span class="text-muted" style="font-size:var(--font-xs)">No cameras in this episode</span>`;
+    return;
+  }
+  keys.forEach(key => {
+    const cfg = state.cropConfig.cameras[key] ?? { x: 0, y: 0, w: 0, h: 0 };
+    state.cropConfig.cameras[key] = cfg;
+    const row = document.createElement("div");
+    row.className = "crop-cam-row";
+    const lbl = document.createElement("span");
+    lbl.className = "crop-cam-label";
+    lbl.textContent = camLabel(key);
+    lbl.title = key;
+    row.appendChild(lbl);
+    [["x", "X"], ["y", "Y"], ["w", "W"], ["h", "H"]].forEach(([field, label]) => {
+      const grp = document.createElement("span");
+      grp.className = "crop-field-group";
+      const fLbl = document.createElement("span");
+      fLbl.className = "crop-field-lbl";
+      fLbl.textContent = label;
+      const inp = document.createElement("input");
+      inp.type = "number";
+      inp.min = "0";
+      inp.step = "1";
+      inp.value = cfg[field];
+      inp.className = "crop-input";
+      inp.title = `${camLabel(key)} — ${field}`;
+      inp.addEventListener("change", () => {
+        const v = Math.max(0, parseInt(inp.value, 10) || 0);
+        inp.value = v;
+        state.cropConfig.cameras[key][field] = v;
+        _invalidateCropCache();
+        _saveCropConfigDebounced();
+        if (state.cropConfig.enabled) updateImages();
+        _refreshCropBadge(key);
+      });
+      grp.appendChild(fLbl);
+      grp.appendChild(inp);
+      row.appendChild(grp);
+    });
+    rowsEl.appendChild(row);
+  });
+}
+
+function _refreshCropBadge(key) {
+  const keys = state.episode?.image_keys?.slice(0, MAX_CAMS) ?? [];
+  const idx = keys.indexOf(key);
+  if (idx < 0) return;
+  const slot = el(`cam-${idx}`);
+  if (!slot) return;
+  let badge = slot.querySelector(".crop-badge");
+  const cfg = state.cropConfig.cameras[key];
+  const [rw, rh] = state.cropConfig.resize;
+  if (state.cropConfig.enabled && cfg?.w > 0 && cfg?.h > 0) {
+    if (!badge) {
+      badge = document.createElement("div");
+      badge.className = "crop-badge";
+      slot.style.position = "relative";
+      slot.appendChild(badge);
+    }
+    badge.textContent = `✂ ${rw}×${rh}`;
+  } else if (badge) {
+    badge.remove();
+  }
+}
+
+function _refreshAllCropBadges() {
+  const keys = state.episode?.image_keys?.slice(0, MAX_CAMS) ?? [];
+  keys.forEach(k => _refreshCropBadge(k));
+}
+
+function buildCropPanel() {
+  const panel = el("crop-panel");
+  if (!panel) return;
+
+  // Header
+  const hdr = document.createElement("div");
+  hdr.className = "crop-panel-header";
+
+  const title = document.createElement("span");
+  title.className = "crop-panel-title";
+  title.textContent = "Image Transforms";
+
+  const enableWrap = document.createElement("label");
+  enableWrap.className = "crop-enable-wrap";
+  const enableChk = document.createElement("input");
+  enableChk.type = "checkbox";
+  enableChk.id = "crop-enable-chk";
+  enableChk.checked = state.cropConfig.enabled;
+  enableChk.addEventListener("change", () => {
+    state.cropConfig.enabled = enableChk.checked;
+    panel.classList.toggle("crop-active", enableChk.checked);
+    _invalidateCropCache();
+    _saveCropConfigDebounced();
+    _refreshAllCropBadges();
+    if (state.episode) updateImages();
+  });
+  enableWrap.appendChild(enableChk);
+  enableWrap.appendChild(document.createTextNode("Apply"));
+
+  const copyBtn = document.createElement("button");
+  copyBtn.type = "button";
+  copyBtn.className = "crop-copy-btn";
+  copyBtn.title = "Copy crop config as Python dict";
+  copyBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy Python`;
+  copyBtn.addEventListener("click", copyCropPython);
+
+  hdr.appendChild(title);
+  hdr.appendChild(enableWrap);
+  hdr.appendChild(copyBtn);
+  panel.appendChild(hdr);
+
+  // Camera rows container
+  const rowsEl = document.createElement("div");
+  rowsEl.id = "crop-cam-rows";
+  rowsEl.className = "crop-cam-rows";
+  panel.appendChild(rowsEl);
+
+  // Resize row
+  const resizeRow = document.createElement("div");
+  resizeRow.className = "crop-resize-row";
+  const resizeLbl = document.createElement("span");
+  resizeLbl.className = "crop-resize-label";
+  resizeLbl.textContent = "Resize →";
+
+  const rwInp = document.createElement("input");
+  rwInp.type = "number"; rwInp.min = "1"; rwInp.step = "1";
+  rwInp.className = "crop-input"; rwInp.id = "crop-resize-w";
+  rwInp.value = state.cropConfig.resize[0];
+  rwInp.title = "Resize width";
+
+  const sep = document.createElement("span");
+  sep.className = "crop-sep"; sep.textContent = "×";
+
+  const rhInp = document.createElement("input");
+  rhInp.type = "number"; rhInp.min = "1"; rhInp.step = "1";
+  rhInp.className = "crop-input"; rhInp.id = "crop-resize-h";
+  rhInp.value = state.cropConfig.resize[1];
+  rhInp.title = "Resize height";
+
+  const onResizeChange = () => {
+    const rw = Math.max(1, parseInt(rwInp.value, 10) || 224);
+    const rh = Math.max(1, parseInt(rhInp.value, 10) || 224);
+    rwInp.value = rw; rhInp.value = rh;
+    state.cropConfig.resize = [rw, rh];
+    _invalidateCropCache();
+    _saveCropConfigDebounced();
+    _refreshAllCropBadges();
+    if (state.cropConfig.enabled && state.episode) updateImages();
+  };
+  rwInp.addEventListener("change", onResizeChange);
+  rhInp.addEventListener("change", onResizeChange);
+
+  resizeRow.appendChild(resizeLbl);
+  resizeRow.appendChild(rwInp);
+  resizeRow.appendChild(sep);
+  resizeRow.appendChild(rhInp);
+  panel.appendChild(resizeRow);
+
+  panel.classList.toggle("crop-active", state.cropConfig.enabled);
+
+  // Restore open/closed state
+  const wasOpen = localStorage.getItem("cropPanelOpen") === "1";
+  if (wasOpen) {
+    show(panel);
+    el("btn-crop")?.classList.add("active");
+    attr("btn-crop", "aria-pressed", "true");
+  }
 }
 
 /* ── Export current frame as PNG ─────────────────────────── */
@@ -5756,6 +6023,9 @@ document.addEventListener("DOMContentLoaded", () => {
   initRobotPanelToggle();
   initRobotPanelResize();
 
+  // Image transforms panel
+  buildCropPanel();
+
   // SSH modal
   el("ssh-btn")?.addEventListener("click", openSSHModal);
   el("ssh-cancel-btn")?.addEventListener("click", closeSSHModal);
@@ -5804,6 +6074,7 @@ document.addEventListener("DOMContentLoaded", () => {
     showCopyToast(state.looping ? "Loop on" : "Loop off");
   });
   el("btn-export").addEventListener("click", exportFrame);
+  el("btn-crop")?.addEventListener("click", toggleCropPanel);
   el("btn-frame-values").addEventListener("click", toggleFrameValuesPanel);
   el("btn-frame-json")?.addEventListener("click", toggleFrameJsonViewer);
   el("btn-normalize")?.addEventListener("click", toggleNormalize);
@@ -6033,6 +6304,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (isKey(e, "t")) {
       e.preventDefault();
       el("timedim-toggle")?.click();
+      return;
+    }
+    if (isKey(e, "r") && !modKey) {
+      e.preventDefault();
+      toggleCropPanel();
       return;
     }
     if (isKey(e, "k")) {
