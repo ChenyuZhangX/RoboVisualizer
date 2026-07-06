@@ -2,8 +2,8 @@
 
 ## Current State
 
-**Version**: app.js v109, style.css v90
-**Status**: Fully functional with annotation system, JSON viewer, SSH remote support, extensive keyboard navigation, and interactive 3D Franka robot visualization panel
+**Version**: app.js v111, style.css v91
+**Status**: Fully functional with annotation system, JSON viewer, SSH remote support, extensive keyboard navigation, and interactive 3D Franka robot visualization panel (via viser iframe)
 
 ### Architecture
 
@@ -108,7 +108,44 @@ lsBool(k)              // localStorage bool persistence
 
 ## Recent Changes & Version History
 
-### Session 8: Franka 3D Robot Visualization Panel (Latest)
+### Session 9: Viser Integration — Replace Three.js with iframe (Latest)
+
+Replaced the in-browser Three.js robot renderer with an embedded viser iframe.
+
+#### Architecture
+
+**viser_server.py** (`tools/viser_server.py`):
+- Standalone script; spawned by `server.py` at startup using `~/viser-env/bin/python`
+- Starts a `viser.ViserServer` on port 8090 (configurable via `VISER_PORT` env var)
+- Loads `static/robot/panda_arm.urdf` via `viser.extras.ViserUrdf`
+- Touches `/tmp/lerobot_viser_ready` when URDF+meshes are fully loaded
+- Polls `/tmp/lerobot_viser_joints.json` at 40 Hz; calls `robot.update_cfg()` on change
+
+**server.py** additions:
+- `_spawn_viser()`: launches `viser_server.py` as a `subprocess.Popen`, daemon
+- `GET /api/viser/status`: returns `{available, running, robot_loaded, port}`
+- `POST /api/viser/frame`: writes `{joints}` to `/tmp/lerobot_viser_joints.json`
+- File-based IPC avoids the need to install viser in the main server's Python env
+
+**app.js** — new `RobotPanel` (98 lines replacing 427 lines of Three.js):
+- `init()` → polls `/api/viser/status`, creates `<iframe src="http://localhost:8090">` once ready
+- `update(joints)` → rate-limited to 25 fps, POSTs to `/api/viser/frame`
+- `reset()` → no-op (viser keeps its pose between episodes)
+- `saveView()` → toast informing user to use viser's built-in controls
+
+**Python environment** (`~/viser-env/`):
+- Created with `/opt/homebrew/opt/python@3.12/bin/python3.12`
+- Fixed pyexpat dylib symlink issue (macOS 25.2 system libexpat missing symbol)
+- Packages: `viser==1.0.30`, `yourdfpy==0.0.60`, `fastapi`, `uvicorn`, `pyarrow`, `paramiko`, `pillow`, `opencv-python-headless`
+- Run server: `~/viser-env/bin/python server.py`
+
+**Vendor cleanup**:
+- Removed `<script>` tags for `three.min.js` and `STLLoader.js` from `index.html`
+- Files still exist in `static/vendor/` (not loaded; can be deleted manually)
+
+---
+
+### Session 8: Franka 3D Robot Visualization Panel
 
 New right sidebar showing the actual Franka Panda arm driven by episode state/action data.
 
@@ -346,10 +383,12 @@ lerobot-visualizer/
 │   ├── utils.py                LeRobotWriter — exact v2.0 Parquet schema
 │   ├── convert_hdf5.py         HDF5 → LeRobot (ALOHA / RoboMimic / LIBERO / custom)
 │   ├── convert_folder.py       Folder + CSV → LeRobot (layout A & B)
-│   └── hdf5_to_lerobot.py      Custom HDF5 → LeRobot v2.0 (Franka/Robotiq data)
+│   ├── hdf5_to_lerobot.py      Custom HDF5 → LeRobot v2.0 (Franka/Robotiq data)
+│   ├── viser_server.py         Viser 3-D robot server (spawned by server.py, port 8090)
+│   └── viser_demo.py           Standalone viser demo (dataset replay, not used by app)
 └── data/                        Dataset directory (git-ignored)
 ```
 
 ---
 
-Last updated: 2026-06-08 (v109)
+Last updated: 2026-07-06 (v111)
