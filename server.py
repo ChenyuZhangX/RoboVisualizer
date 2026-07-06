@@ -40,6 +40,8 @@ except ImportError:
     _cv2 = None
     _HAS_CV2 = False
 
+import subprocess as _subprocess
+
 _SERVER_START_TIME = time.time()
 _JPEG_QUALITY = 85
 _FRAME_CACHE_CONTROL = "max-age=3600, stale-while-revalidate=300"
@@ -465,6 +467,35 @@ def write_annotations(base: Path, episode_index: int, data: dict) -> None:
 
 DATA_DIR = Path(__file__).parent / "data"
 STATIC_DIR = Path(__file__).parent / "static"
+VISER_PORT = int(os.environ.get("VISER_PORT", "8090"))
+
+# ── Viser 3-D robot viewer — subprocess approach ─────────────────────────────
+# Viser is installed in ~/viser-env (separate Python).  We spawn the
+# tools/viser_server.py script as a child process and communicate via two
+# temp files:
+#   _VISER_JOINTS_FILE  – main server writes [{joints: [...]}] here
+#   _VISER_READY_FILE   – viser_server.py touches this when robot is loaded
+
+_VISER_JOINTS_FILE = Path("/tmp/lerobot_viser_joints.json")
+_VISER_READY_FILE  = Path("/tmp/lerobot_viser_ready")
+_VISER_PYTHON      = Path.home() / "viser-env" / "bin" / "python"
+_VISER_SCRIPT      = Path(__file__).parent / "tools" / "viser_server.py"
+_viser_proc: "_subprocess.Popen | None" = None
+
+
+def _spawn_viser() -> None:
+    global _viser_proc
+    if not _VISER_PYTHON.exists() or not _VISER_SCRIPT.exists():
+        return
+    # Clean up stale ready-file from a previous run
+    _VISER_READY_FILE.unlink(missing_ok=True)
+    _viser_proc = _subprocess.Popen(
+        [str(_VISER_PYTHON), str(_VISER_SCRIPT),
+         "--port", str(VISER_PORT)],
+        stdout=_subprocess.DEVNULL,
+        stderr=_subprocess.DEVNULL,
+    )
+
 
 app = FastAPI(title="LeRobot Visualizer")
 
@@ -475,6 +506,37 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(GZipMiddleware, minimum_size=512)
+
+
+@app.on_event("startup")
+async def _startup_viser() -> None:
+    threading.Thread(target=_spawn_viser, daemon=True, name="viser-spawn").start()
+
+
+# ── Viser 3-D viewer endpoints ────────────────────────────────────────────────
+
+@app.get("/api/viser/status")
+def viser_status():
+    proc_alive = _viser_proc is not None and _viser_proc.poll() is None
+    return {
+        "available":    _VISER_PYTHON.exists() and _VISER_SCRIPT.exists(),
+        "running":      proc_alive,
+        "robot_loaded": proc_alive and _VISER_READY_FILE.exists(),
+        "port":         VISER_PORT,
+    }
+
+
+@app.post("/api/viser/frame")
+def viser_frame(body: dict = Body(...)):
+    if _viser_proc is None or _viser_proc.poll() is not None:
+        return {"ok": False, "reason": "viser not running"}
+    joints = body.get("joints", [])
+    try:
+        _VISER_JOINTS_FILE.write_text(json.dumps({"joints": [float(j) for j in joints]}))
+    except Exception as exc:
+        return {"ok": False, "reason": str(exc)}
+    return {"ok": True}
+
 
 # ── Parquet table cache (LRU, max 24 tables) ─────────────────────────────────
 _TABLE_CACHE: OrderedDict = OrderedDict()

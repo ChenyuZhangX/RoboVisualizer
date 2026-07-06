@@ -3058,6 +3058,12 @@ html.dark .ssh-section-header { background: #1a2332; border-color: #2d3748; }
   touch-action: none;
 }
 #robot-canvas:active { cursor: grabbing; }
+#robot-iframe {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border: none;
+}
 #robot-empty-msg {
   position: absolute;
   inset: 0;

@@ -4,3 +4,5 @@ pyarrow>=12.0.0
 pillow>=10.0.0
 paramiko>=3.0.0
 opencv-python-headless>=4.8.0  # video dataset support (dtype=="video" in info.json)
+viser>=1.0.0                   # 3-D robot panel (optional; server degrades gracefully)
+yourdfpy>=0.0.60               # URDF loader used by viser.extras.ViserUrdf

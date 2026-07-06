@@ -5667,434 +5667,107 @@ function renderSSHSections() {
 // Each revolute joint: T = T_origin(xyz,rpy) × Rz(θ).  All axes = [0 0 1].
 // URDF uses z-up; Three.js uses y-up → robotGroup.rotation.x = -π/2.
 
-// ── Robot 3D Panel — URDF + STL mesh renderer ────────────────────────────────
-// Loads /robot/panda_arm.urdf, parses the kinematic chain, then loads the
-// collision STL meshes (/robot/meshes/collision/*.stl).  Joint angles from
-// episode.state[:,0:7] drive the scene-graph rotations in real time.
+// ── Robot 3D Panel — Viser-based viewer ──────────────────────────────────────
+// Embeds the viser server (port from /api/viser/status) in an iframe inside
+// #robot-canvas-wrap.  Joint angles from episode.state[:,0:7] are forwarded
+// to /api/viser/frame (rate-limited to 25 fps) so viser drives the URDF.
 
 const RobotPanel = (() => {
-  const URDF_URL  = "/robot/panda_arm.urdf";
-  const MESH_BASE = "/robot/";           // base URL; mesh filename from URDF appended
+  let _port   = null;
+  let _ready  = false;
+  let _iframeCreated = false;
+  let _lastSend = 0;
+  const _MIN_MS = 40;   // 25 fps cap on backend calls
 
-  // ── URDF helpers ─────────────────────────────────────────────────────────
-  function _v3(s) { return (s || "0 0 0").trim().split(/\s+/).map(Number); }
+  function _createIframe(port) {
+    const wrap = document.getElementById("robot-canvas-wrap");
+    if (!wrap || _iframeCreated) return;
+    _iframeCreated = true;
 
-  // URDF rpy convention: R = Rz(yaw)·Ry(pitch)·Rx(roll) = intrinsic XYZ
-  function _originGroup(xyz, rpy) {
-    const g = new THREE.Group();
-    g.position.set(...xyz);
-    g.rotation.set(...rpy);   // default order 'XYZ' matches URDF intrinsic XYZ
-    return g;
-  }
-
-  function _parseURDF(xmlText) {
-    const doc = new DOMParser().parseFromString(xmlText, "text/xml");
-    const links = {}, joints = {};
-    for (const el of doc.querySelectorAll("link")) {
-      const name    = el.getAttribute("name");
-      const meshEl  = el.querySelector("visual mesh");
-      const origEl  = el.querySelector("visual origin");
-      links[name] = {
-        meshFile: meshEl?.getAttribute("filename") ?? null,
-        vOrigin:  { xyz: _v3(origEl?.getAttribute("xyz")), rpy: _v3(origEl?.getAttribute("rpy")) },
-      };
-    }
-    for (const el of doc.querySelectorAll("joint")) {
-      const name   = el.getAttribute("name");
-      const origEl = el.querySelector("origin");
-      joints[name] = {
-        parent: el.querySelector("parent")?.getAttribute("link"),
-        child:  el.querySelector("child")?.getAttribute("link"),
-        type:   el.getAttribute("type"),
-        origin: { xyz: _v3(origEl?.getAttribute("xyz")), rpy: _v3(origEl?.getAttribute("rpy")) },
-      };
-    }
-    return { links, joints };
-  }
-
-  // ── STL mesh loader ───────────────────────────────────────────────────────
-  const LINK_COLOR = {
-    panda_link0: 0x555555, panda_link7: 0x666666,
-  };
-  const DEF_COLOR_WHITE = 0xd8d8d8;
-  const DEF_COLOR_DARK  = 0x666666;
-
-  function _loadMeshes(links) {
-    const loader  = new THREE.STLLoader();
-    const meshMap = {};
-    const proms   = Object.entries(links).map(([name, def]) => {
-      if (!def.meshFile) return Promise.resolve();
-      // Map visual DAE path → collision STL path
-      const stlFile = def.meshFile.replace("visual/", "collision/").replace(".dae", ".stl");
-      const url     = MESH_BASE + stlFile;
-      const color   = LINK_COLOR[name] ?? DEF_COLOR_WHITE;
-      return new Promise(res => {
-        loader.load(url, geo => {
-          geo.computeVertexNormals();
-          const mat  = new THREE.MeshPhongMaterial({ color, specular: 0x333333, shininess: 80 });
-          const mesh = new THREE.Mesh(geo, mat);
-          // Apply per-link visual origin offset (usually zero for Panda)
-          if (def.vOrigin) {
-            mesh.position.set(...def.vOrigin.xyz);
-            mesh.rotation.set(...def.vOrigin.rpy);
-          }
-          meshMap[name] = mesh;
-          res();
-        }, undefined, () => res());   // ignore load errors — link just stays invisible
-      });
-    });
-    return Promise.all(proms).then(() => meshMap);
-  }
-
-  // ── Kinematic scene graph ─────────────────────────────────────────────────
-  // _jNodes[jname]   = rotGroup that gets rotation.z = θ (revolute joints)
-  // _flangeGroup     = panda_link8 Group; Robotiq gripper is attached here
-  const _jNodes = {};
-  let _flangeGroup = null;
-
-  function _buildGraph(links, joints, meshMap) {
-    const isChild = new Set(Object.values(joints).map(j => j.child));
-    const rootName = Object.keys(links).find(n => !isChild.has(n)) ?? "panda_link0";
-
-    const childOf = {};
-    for (const [jn, jd] of Object.entries(joints)) {
-      (childOf[jd.parent] ??= []).push(jn);
-    }
-
-    function buildLink(linkName) {
-      const linkGroup = new THREE.Group();
-      linkGroup.name = linkName;
-      if (meshMap[linkName]) linkGroup.add(meshMap[linkName]);
-      // Track the flange so we can attach the gripper after the graph is built
-      if (linkName === "panda_link8") _flangeGroup = linkGroup;
-
-      for (const jname of (childOf[linkName] ?? [])) {
-        const jd = joints[jname];
-        const origG = _originGroup(jd.origin.xyz, jd.origin.rpy);
-        origG.name  = `${jname}_origin`;
-        linkGroup.add(origG);
-
-        const rotG = new THREE.Group();
-        rotG.name  = `${jname}_rot`;
-        origG.add(rotG);
-
-        if (jd.type === "revolute" || jd.type === "continuous") {
-          _jNodes[jname] = rotG;
-        }
-
-        rotG.add(buildLink(jd.child));
-      }
-      return linkGroup;
-    }
-
-    return buildLink(rootName);
-  }
-
-  // ── Robotiq 2F-85 gripper geometry ───────────────────────────────────────
-  // Hand-crafted from the official spec: 68 mm wide, ~115 mm total height,
-  // 85 mm full stroke (42.5 mm per finger from center-line).
-  // Coordinate frame: panda_link8 local, +Z = gripper approach direction.
-  //
-  //   z=0.000  flange face
-  //   z=0.012  top of coupler plate
-  //   z=0.066  top of main housing
-  //   z=0.092  start of finger rail
-  //   z=0.118  fingertip (roughly)
-  //
-  let _fingerR = null, _fingerL = null;
-
-  function _buildGripper() {
-    const group = new THREE.Group();
-    group.name  = "robotiq_2f85";
-
-    // Shared materials — Robotiq's dark charcoal / anthracite palette
-    const mBody   = () => new THREE.MeshPhongMaterial({ color: 0x2b2b2b, specular: 0x3a3a3a, shininess: 90 });
-    const mHouse  = () => new THREE.MeshPhongMaterial({ color: 0x1e1e1e, specular: 0x282828, shininess: 70 });
-    const mFinger = () => new THREE.MeshPhongMaterial({ color: 0x3c3c3c, specular: 0x303030, shininess: 60 });
-    const mPad    = () => new THREE.MeshPhongMaterial({ color: 0x111111, specular: 0x111111, shininess: 20 });
-
-    function addBox(parent, w, d, h, x, y, z, matFn) {
-      // Three.js BoxGeometry(width=X, height=Y, depth=Z) — our "up" axis in gripper frame is Z
-      const m = new THREE.Mesh(new THREE.BoxGeometry(w, d, h), matFn());
-      m.position.set(x, y, z);
-      parent.add(m);
-      return m;
-    }
-    function addCyl(parent, r, h, x, y, z, rx, matFn) {
-      // CylinderGeometry aligned along Y by default; rx rotates it to desired axis
-      const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 14), matFn());
-      m.rotation.x = rx ?? 0;
-      m.position.set(x, y, z);
-      parent.add(m);
-      return m;
-    }
-
-    // ── Coupler plate (ISO 9283 flange adapter) ─────────────────────────────
-    addBox(group, 0.062, 0.062, 0.012,  0,  0, 0.006,  mBody);   // plate
-    addCyl(group, 0.012, 0.006, 0,  0,  0.009, Math.PI/2, mHouse); // center boss
-
-    // ── Main housing ────────────────────────────────────────────────────────
-    addBox(group, 0.068, 0.046, 0.052,  0,  0, 0.038,  mHouse);  // main block
-    addBox(group, 0.060, 0.040, 0.008,  0,  0, 0.068,  mHouse);  // top cap
-    // Side shoulders (where fingers are guided)
-    addBox(group, 0.068, 0.010, 0.022,  0, +0.028, 0.055, mBody);
-    addBox(group, 0.068, 0.010, 0.022,  0, -0.028, 0.055, mBody);
-    // Motor housing (small cylinder on top center)
-    addCyl(group, 0.011, 0.016, 0, 0, 0.080, Math.PI/2, mBody);
-
-    // ── Static finger rails (guide tracks) ─────────────────────────────────
-    addBox(group, 0.014, 0.014, 0.026,  0, +0.025, 0.085, mFinger);
-    addBox(group, 0.014, 0.014, 0.026,  0, -0.025, 0.085, mFinger);
-
-    // ── Moveable finger groups ─────────────────────────────────────────────
-    // Each finger: proximal link + distal tip + rubber pad
-    function makeFinger(ySign) {
-      const fg = new THREE.Group();
-      // Proximal link
-      addBox(fg, 0.018, 0.012, 0.044,  0, 0, 0.022, mFinger);
-      // Knuckle / joint sphere suggestion
-      addBox(fg, 0.022, 0.018, 0.010,  0, 0, 0.047, mBody);
-      // Distal link (angled toward center-line)
-      addBox(fg, 0.016, 0.011, 0.028,  0, ySign * (-0.004), 0.069, mFinger);
-      // Rubber contact pad (darkest)
-      addBox(fg, 0.024, 0.012, 0.014,  0, ySign * (-0.008), 0.087, mPad);
-      return fg;
-    }
-
-    _fingerR = makeFinger(+1);
-    _fingerL = makeFinger(-1);
-    _fingerR.name = "finger_right";
-    _fingerL.name = "finger_left";
-    group.add(_fingerR, _fingerL);
-    // Initial position will be set by first _updateGripper() call
-    _updateGripper(0);   // fully open
-
-    return group;
-  }
-
-  // gripper_state: 0.0 = fully open (42.5 mm each side), 0.75 = closed
-  function _updateGripper(gState) {
-    if (!_fingerR || !_fingerL) return;
-    const open   = Math.max(0, Math.min(1, 1 - gState / 0.75));
-    const halfGap = 0.021 + open * 0.021;   // 21 mm closed → 42 mm open (per side)
-    _fingerR.position.set(0, +halfGap, 0.092);
-    _fingerL.position.set(0, -halfGap, 0.092);
-  }
-
-  // ── Orbit + pan camera ───────────────────────────────────────────────────
-  // Left-drag          : orbit (rotate around target)
-  // Right-drag or Shift+left-drag : pan (translate the target point)
-  // Scroll             : zoom (change orbit radius)
-  // Two-finger pinch   : zoom
-  // Two-finger drag    : pan (touch)
-
-  let renderer = null, scene, camera;
-  const _orb    = { theta: 0.7, phi: 1.05, r: 1.9 };
-  const _orbTgt = { x: 0, y: 0.4, z: 0 };   // look-at target; plain obj (no THREE at parse time)
-  const _VIEW_KEY = "robotPanelView";
-  let _drag = false, _panning = false, _lx = 0, _ly = 0, _td = 0;
-
-  function _camUpdate() {
-    const sp = Math.sin(_orb.phi), cp = Math.cos(_orb.phi);
-    const st = Math.sin(_orb.theta), ct = Math.cos(_orb.theta);
-    camera.position.set(_orbTgt.x + _orb.r * sp * st,
-                        _orbTgt.y + _orb.r * cp,
-                        _orbTgt.z + _orb.r * sp * ct);
-    camera.lookAt(_orbTgt.x, _orbTgt.y, _orbTgt.z);
-  }
-
-  // Pan: translate the look-at target in the camera's view-plane.
-  // right = (cos θ,             0,            -sin θ)
-  // up    = (-sin θ · cos φ,  sin φ,  -cos θ · cos φ)
-  // (derived analytically from the spherical-coordinate orbit, avoids THREE.Vector3)
-  function _pan(dx, dy) {
-    const st = Math.sin(_orb.theta), ct = Math.cos(_orb.theta);
-    const sp = Math.sin(_orb.phi),   cp = Math.cos(_orb.phi);
-    const scale = _orb.r * 0.0012;
-    // target += dx * right - dy * up
-    _orbTgt.x += ( dx * ct - dy * (-st * cp)) * scale;
-    _orbTgt.y += (           -dy *   sp      ) * scale;
-    _orbTgt.z += (-dx * st - dy * (-ct * cp) ) * scale;
-    _camUpdate();
-  }
-
-  function _saveDefaultView() {
-    localStorage.setItem(_VIEW_KEY, JSON.stringify({ orb: {..._orb}, tgt: {..._orbTgt} }));
-    // Visual feedback: flash the button yellow
-    const btn = document.getElementById("robot-save-view-btn");
-    if (btn) {
-      btn.classList.add("rp-saved");
-      setTimeout(() => btn.classList.remove("rp-saved"), 1200);
-    }
-    // Toast notification
-    const toast = document.createElement("div");
-    toast.className = "rp-toast";
-    toast.textContent = "View saved as default";
-    (document.getElementById("robot-canvas-wrap") ?? document.body).appendChild(toast);
-    setTimeout(() => toast.remove(), 2000);
-  }
-
-  function _loadSavedView() {
-    try {
-      const d = JSON.parse(localStorage.getItem(_VIEW_KEY) ?? "null");
-      if (d?.orb && d?.tgt) { Object.assign(_orb, d.orb); Object.assign(_orbTgt, d.tgt); }
-    } catch (_) {}
-  }
-
-  function _bindOrbit(canvas) {
-    canvas.addEventListener("contextmenu", e => e.preventDefault());
-
-    canvas.addEventListener("mousedown", e => {
-      if (e.button === 2 || (e.button === 0 && e.shiftKey)) {
-        _panning = true;
-      } else if (e.button === 0) {
-        _drag = true;
-      }
-      _lx = e.clientX; _ly = e.clientY;
-    });
-    canvas.addEventListener("mousemove", e => {
-      const dx = e.clientX - _lx, dy = e.clientY - _ly;
-      if (_panning) {
-        _pan(dx, dy);
-      } else if (_drag) {
-        _orb.theta -= dx * 0.012;
-        _orb.phi    = Math.max(0.05, Math.min(Math.PI - 0.05, _orb.phi + dy * 0.012));
-        _camUpdate();
-      }
-      _lx = e.clientX; _ly = e.clientY;
-    });
-    canvas.addEventListener("mouseup",    () => { _drag = false; _panning = false; });
-    canvas.addEventListener("mouseleave", () => { _drag = false; _panning = false; });
-    canvas.addEventListener("wheel", e => {
-      e.preventDefault();
-      _orb.r = Math.max(0.4, Math.min(5.0, _orb.r + e.deltaY * 0.0025));
-      _camUpdate();
-    }, { passive: false });
-
-    // Touch: single finger = orbit, two fingers = pinch-zoom + two-finger pan
-    let _tlx = 0, _tly = 0;
-    canvas.addEventListener("touchstart", e => {
-      if (e.touches.length === 1) {
-        _drag = true;
-        _lx = e.touches[0].clientX; _ly = e.touches[0].clientY;
-      } else if (e.touches.length === 2) {
-        _drag = false;
-        _td  = Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
-                          e.touches[0].clientY - e.touches[1].clientY);
-        _tlx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-        _tly = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-      }
-    }, { passive: true });
-    canvas.addEventListener("touchmove", e => {
-      e.preventDefault();
-      if (e.touches.length === 1 && _drag) {
-        const dx = e.touches[0].clientX - _lx, dy = e.touches[0].clientY - _ly;
-        _orb.theta -= dx * 0.012;
-        _orb.phi = Math.max(0.05, Math.min(Math.PI - 0.05, _orb.phi + dy * 0.012));
-        _lx = e.touches[0].clientX; _ly = e.touches[0].clientY;
-        _camUpdate();
-      } else if (e.touches.length === 2) {
-        const mx  = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-        const my  = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-        const d   = Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
-                               e.touches[0].clientY - e.touches[1].clientY);
-        _orb.r = Math.max(0.4, Math.min(5.0, _orb.r + (_td - d) * 0.008));
-        _pan(mx - _tlx, my - _tly);   // two-finger pan
-        _td = d; _tlx = mx; _tly = my;
-      }
-    }, { passive: false });
-    canvas.addEventListener("touchend", () => { _drag = false; _panning = false; });
-  }
-
-  // ── init ─────────────────────────────────────────────────────────────────
-  function init() {
-    if (typeof THREE === "undefined" || typeof THREE.STLLoader === "undefined") {
-      console.warn("RobotPanel: THREE or STLLoader not available");
-      return;
-    }
     const canvas = document.getElementById("robot-canvas");
-    const wrap   = document.getElementById("robot-canvas-wrap");
-    if (!canvas || !wrap) return;
+    if (canvas) canvas.remove();   // remove old Three.js canvas
 
-    // Restore previously saved default view (overwrites hardcoded defaults)
-    _loadSavedView();
+    const iframe = document.createElement("iframe");
+    iframe.id    = "robot-iframe";
+    iframe.src   = `http://localhost:${port}`;
+    iframe.allow = "fullscreen";
+    wrap.insertBefore(iframe, wrap.firstChild);
+  }
 
-    scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0d0d1a);
-
-    const w = wrap.clientWidth || 300, h = wrap.clientHeight || 400;
-    camera = new THREE.PerspectiveCamera(44, w / h, 0.01, 10);
-    _camUpdate();
-
-    renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    renderer.setSize(w, h);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-
-    // Lights: key + fill + ambient
-    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-    const key = new THREE.DirectionalLight(0xffffff, 0.9); key.position.set(1.5, 3, 2);   scene.add(key);
-    const fill= new THREE.DirectionalLight(0x88aaff, 0.4); fill.position.set(-2, 1, -1.5);scene.add(fill);
-    const rim = new THREE.DirectionalLight(0xffeedd, 0.3); rim.position.set(0, -1, 2);    scene.add(rim);
-
-    scene.add(new THREE.GridHelper(2, 10, 0x1a3050, 0x0f1f35));
-
-    _bindOrbit(canvas);
-
-    new ResizeObserver(() => {
-      if (!renderer) return;
-      const w2 = wrap.clientWidth, h2 = wrap.clientHeight;
-      if (w2 < 1 || h2 < 1) return;
-      renderer.setSize(w2, h2);
-      camera.aspect = w2 / h2;
-      camera.updateProjectionMatrix();
-    }).observe(wrap);
-
-    (function _loop() { requestAnimationFrame(_loop); if (renderer) renderer.render(scene, camera); })();
-
-    // ── Async load URDF + STL meshes ───────────────────────────────────────
+  function _poll() {
     const emptyEl = document.getElementById("robot-empty-msg");
-    if (emptyEl) emptyEl.textContent = "Loading robot…";
-
-    fetch(URDF_URL)
-      .then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
-      .then(xml => {
-        const { links, joints } = _parseURDF(xml);
-        return _loadMeshes(links).then(meshMap => ({ links, joints, meshMap }));
-      })
-      .then(({ links, joints, meshMap }) => {
-        const root = _buildGraph(links, joints, meshMap);
-        // URDF uses z-up; Three.js uses y-up
-        root.rotation.x = -Math.PI / 2;
-        scene.add(root);
-
-        // Attach Robotiq 2F-85 gripper to Franka flange (panda_link8)
-        if (_flangeGroup) {
-          _flangeGroup.add(_buildGripper());
+    fetch("/api/viser/status")
+      .then(r => r.json())
+      .then(({ available, running, robot_loaded, port }) => {
+        if (!available) {
+          if (emptyEl) emptyEl.textContent = "3D view unavailable\n(pip install viser)";
+          return;
         }
+        if (!running) {
+          if (emptyEl) emptyEl.textContent = "3D viewer starting…";
+          setTimeout(_poll, 1500);
+          return;
+        }
+        // Server is up — create iframe immediately so user sees the canvas
+        _port = port;
+        _createIframe(port);
 
-        if (emptyEl) emptyEl.style.display = "none";
-        // Apply pose if episode already playing (pass full 8-element state)
+        if (!robot_loaded) {
+          if (emptyEl) emptyEl.textContent = "Loading robot model…";
+          setTimeout(_poll, 1500);
+          return;
+        }
+        _ready = true;
         if (state.episode?.state?.[state.frame]) {
           update(state.episode.state[state.frame].slice(0, 8));
+        } else if (emptyEl) {
+          emptyEl.style.display = "";
+          emptyEl.innerHTML = "Select an episode<br>to view robot";
         }
       })
-      .catch(err => {
-        console.error("RobotPanel load error:", err);
-        if (emptyEl) emptyEl.textContent = "Failed to load robot";
+      .catch(() => {
+        if (emptyEl) emptyEl.textContent = "3D viewer offline";
+        setTimeout(_poll, 3000);
       });
   }
 
-  // ── update: joints[0..6] = arm angles, joints[7] = gripper state ─────────
-  function update(joints) {
-    if (!renderer) return;
-    for (let i = 0; i < 7; i++) {
-      const g = _jNodes[`panda_joint${i + 1}`];
-      if (g) g.rotation.z = joints[i];
-    }
-    if (joints.length > 7) _updateGripper(joints[7]);
+  function init() {
+    const emptyEl = document.getElementById("robot-empty-msg");
+    if (emptyEl) emptyEl.textContent = "Connecting to 3D viewer…";
+    _poll();
   }
 
-  function reset() { /* keep model visible; episode unloaded is fine */ }
+  function update(joints) {
+    if (!_ready) return;
+    const now = Date.now();
+    if (now - _lastSend < _MIN_MS) return;
+    _lastSend = now;
+
+    const emptyEl = document.getElementById("robot-empty-msg");
+    if (emptyEl) emptyEl.style.display = "none";
+
+    fetch("/api/viser/frame", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ joints: Array.from(joints) }),
+    }).catch(() => {});
+  }
+
+  function reset() { /* viser keeps its pose; no action needed */ }
+
+  function _saveDefaultView() {
+    // Camera is controlled interactively inside viser — nothing to save here.
+    const btn = document.getElementById("robot-save-view-btn");
+    if (!btn) return;
+    btn.classList.add("rp-saved");
+    setTimeout(() => btn.classList.remove("rp-saved"), 1200);
+    const wrap = document.getElementById("robot-canvas-wrap");
+    const toast = document.createElement("div");
+    toast.className = "rp-toast";
+    toast.textContent = "Use viser\'s own controls to save view";
+    (wrap ?? document.body).appendChild(toast);
+    setTimeout(() => toast.remove(), 2200);
+  }
 
   return { init, update, reset, saveView: _saveDefaultView };
 })();
